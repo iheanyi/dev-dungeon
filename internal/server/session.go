@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
@@ -15,6 +16,13 @@ import (
 	"github.com/iheanyi/devdungeon/internal/db"
 	"github.com/iheanyi/devdungeon/internal/save"
 	"github.com/iheanyi/devdungeon/internal/ui"
+)
+
+// Database operation timeouts
+const (
+	dbLoadTimeout   = 10 * time.Second
+	dbSaveTimeout   = 10 * time.Second
+	dbCreateTimeout = 5 * time.Second
 )
 
 // GameSession represents an active player session.
@@ -100,7 +108,14 @@ func saveSessionToDatabase(ctx context.Context, dbClient *db.Client, session *Ga
 // newGameSession creates a new Bubble Tea model for a game session.
 func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOption) {
 	ctx := sess.Context()
-	fingerprint, _ := ctx.Value("fingerprint").(string)
+
+	// Safe type assertions with validation
+	fingerprint, ok := ctx.Value("fingerprint").(string)
+	if !ok || fingerprint == "" {
+		log.Error("Missing or invalid fingerprint in session context")
+		return nil, nil
+	}
+
 	needsRegistration, _ := ctx.Value("needs_registration").(bool)
 
 	// Get PTY info
@@ -114,10 +129,15 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 		return s.newRegistrationModel(sess, fingerprint), []tea.ProgramOption{tea.WithAltScreen()}
 	}
 
-	// Get existing user from context
-	user, _ := ctx.Value("user").(*db.User)
-	if user == nil {
+	// Get existing user from context - must be present for authenticated sessions
+	userVal := ctx.Value("user")
+	if userVal == nil {
 		log.Error("No user in context after auth")
+		return nil, nil
+	}
+	user, ok := userVal.(*db.User)
+	if !ok || user == nil {
+		log.Error("Invalid user type in context", "type", fmt.Sprintf("%T", userVal))
 		return nil, nil
 	}
 
@@ -133,13 +153,16 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 	}
 
 	// Try to load existing save from database
-	gameSave, err := s.db.GetGameSave(context.Background(), user.ID)
+	loadCtx, loadCancel := context.WithTimeout(context.Background(), dbLoadTimeout)
+	defer loadCancel()
+	gameSave, err := s.db.GetGameSave(loadCtx, user.ID)
 	if err != nil {
 		log.Error("Failed to load save", "error", err)
 	}
 
 	// Create UI model
 	model := ui.NewWithRenderer(cfg, renderer)
+	model.SetMultiplayerMode(user.Username) // Disable cheats in multiplayer
 	gameSession.Model = model
 
 	// If we have a save, restore it
@@ -250,10 +273,12 @@ func (m *registrationModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "enter":
 			if len(m.username) >= 3 {
-				// Try to create user
-				user, err := m.server.db.CreateUser(context.Background(), m.username, m.fingerprint)
+				// Try to create user with timeout
+				createCtx, cancel := context.WithTimeout(context.Background(), dbCreateTimeout)
+				user, err := m.server.db.CreateUser(createCtx, m.username, m.fingerprint)
+				cancel()
 				if err != nil {
-					m.err = fmt.Sprintf("Failed to create account: %v", err)
+					m.err = "Registration failed - please try again"
 				} else {
 					// Success! Store user and transition to game
 					m.sess.Context().SetValue("user", user)
@@ -272,11 +297,16 @@ func (m *registrationModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.err = ""
 		default:
-			// Only allow alphanumeric and underscore
+			// Only allow lowercase alphanumeric and dashes (SSH-friendly)
 			if len(msg.String()) == 1 && len(m.username) < 20 {
 				c := msg.String()[0]
-				if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' {
-					m.username += msg.String()
+				// Convert uppercase to lowercase
+				if c >= 'A' && c <= 'Z' {
+					c = c + 32 // to lowercase
+				}
+				// Allow: a-z, 0-9, dash (but dash can't be first char)
+				if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || (c == '-' && len(m.username) > 0) {
+					m.username += string(c)
 					m.err = ""
 				}
 			}
@@ -299,7 +329,7 @@ func (m *registrationModel) View() string {
 	if m.err != "" {
 		s += fmt.Sprintf("  ║  ERROR: %-30s ║\n", m.err)
 	} else {
-		s += "  ║  (3-20 chars, alphanumeric + _)       ║\n"
+		s += "  ║  (3-20 chars, lowercase + numbers + -) ║\n"
 	}
 	s += "  ║                                        ║\n"
 	s += "  ║  [Enter] Create   [Esc] Cancel         ║\n"
@@ -325,6 +355,7 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 	}
 
 	model := ui.NewWithRenderer(cfg, renderer)
+	model.SetMultiplayerMode(user.Username) // Disable cheats in multiplayer
 	gameSession.Model = model
 
 	s.sessions.Add(fingerprint, gameSession)
