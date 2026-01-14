@@ -294,11 +294,11 @@ var RarityNames = map[int]string{
 
 // RarityColors maps rarity levels to ANSI color codes.
 var RarityColors = map[int]string{
-	0: "\033[37m",  // White
-	1: "\033[32m",  // Green
-	2: "\033[34m",  // Blue
-	3: "\033[35m",  // Purple/Magenta
-	4: "\033[33m",  // Gold/Yellow
+	0: "\033[37m", // White
+	1: "\033[32m", // Green
+	2: "\033[34m", // Blue
+	3: "\033[35m", // Purple/Magenta
+	4: "\033[33m", // Gold/Yellow
 }
 
 // ItemPickupMessages when picking up items.

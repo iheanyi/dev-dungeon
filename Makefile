@@ -1,4 +1,4 @@
-.PHONY: dev dev-server dev-web dev-all build test docker-up docker-down play
+.PHONY: dev dev-server dev-web dev-all build test test-integration docker-up docker-down play
 
 # Development with live reload (both services)
 dev: dev-all
@@ -33,6 +33,24 @@ build:
 test:
 	go test ./...
 
+# Run integration tests (requires Docker)
+test-integration:
+	@echo "Starting PostgreSQL container..."
+	@docker run -d --name devdungeon-test-db \
+		-e POSTGRES_USER=postgres \
+		-e POSTGRES_PASSWORD=postgres \
+		-e POSTGRES_DB=devdungeon_test \
+		-p 5434:5432 \
+		postgres:18 > /dev/null
+	@echo "Waiting for PostgreSQL to be ready..."
+	@sleep 3
+	@echo "Running integration tests..."
+	@DATABASE_URL="postgres://postgres:postgres@localhost:5434/devdungeon_test?sslmode=disable" \
+		go test -v -tags=integration ./internal/db/... || (docker stop devdungeon-test-db > /dev/null && docker rm devdungeon-test-db > /dev/null && exit 1)
+	@echo "Cleaning up..."
+	@docker stop devdungeon-test-db > /dev/null && docker rm devdungeon-test-db > /dev/null
+	@echo "Done!"
+
 # Docker commands
 docker-up:
 	docker compose up -d
@@ -61,7 +79,8 @@ help:
 	@echo "  make dev-server - Start Go server with Air live reload"
 	@echo "  make dev-web    - Start Vite frontend dev server"
 	@echo "  make build      - Build Go binary and web frontend"
-	@echo "  make test       - Run Go tests"
+	@echo "  make test       - Run Go unit tests"
+	@echo "  make test-integration - Run integration tests (requires Docker)"
 	@echo "  make play       - Play the game locally"
 	@echo "  make server     - Run server without live reload"
 	@echo "  make docker-up  - Start Docker containers"

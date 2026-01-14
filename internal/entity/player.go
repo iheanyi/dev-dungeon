@@ -167,10 +167,10 @@ func giveStartingGear(p *Player, class PlayerClass) {
 func getClassStats(class PlayerClass) (types.Stats, types.MaxStats) {
 	// Base stats for all classes
 	baseStats := types.Stats{
-		RAM:  100, // Health (memory allocation)
-		CPU:  10,  // Attack power
-		FD:   16,  // Ability resource (file descriptors)
-		NICE: 10,  // Speed (lower = faster)
+		RAM:  100,  // Health (memory allocation)
+		CPU:  10,   // Attack power
+		FD:   16,   // Ability resource (file descriptors)
+		NICE: 10,   // Speed (lower = faster)
 		UID:  1000, // Access level (lower = more power, 0 = root)
 	}
 	maxStats := types.MaxStats{
@@ -185,18 +185,18 @@ func getClassStats(class PlayerClass) (types.Stats, types.MaxStats) {
 		baseStats.CPU = 8
 	case ClassBash:
 		// Bash: Powerful shell, high attack
-		baseStats.CPU = 12  // More attack (nerfed from 15 for multiplayer balance)
-		baseStats.FD = 12   // Fewer abilities
+		baseStats.CPU = 12 // More attack (nerfed from 15 for multiplayer balance)
+		baseStats.FD = 12  // Fewer abilities
 		maxStats.MaxFD = 12
 	case ClassVim:
 		// Vim: Complex editor, many abilities
-		baseStats.FD = 20   // More ability capacity (nerfed from 24 for multiplayer balance)
+		baseStats.FD = 20 // More ability capacity (nerfed from 24 for multiplayer balance)
 		maxStats.MaxFD = 20
 		baseStats.CPU = 8
 	case ClassSudo:
 		// Sudo: Privilege escalation, access-focused
-		baseStats.UID = 0    // Root access!
-		baseStats.RAM = 80   // Less health (great power = great risk)
+		baseStats.UID = 0  // Root access!
+		baseStats.RAM = 80 // Less health (great power = great risk)
 		maxStats.MaxRAM = 80
 	}
 
@@ -266,10 +266,10 @@ const (
 
 // Buff represents an active buff on the player.
 type Buff struct {
-	Type      BuffType
-	Name      string
-	Duration  int // Turns remaining
-	Value     int // Effect magnitude (damage bonus, regen amount, etc.)
+	Type     BuffType
+	Name     string
+	Duration int // Turns remaining
+	Value    int // Effect magnitude (damage bonus, regen amount, etc.)
 }
 
 // GetStats returns the player's current stats.

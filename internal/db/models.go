@@ -94,7 +94,7 @@ type DailySeed struct {
 
 // AuthToken represents a magic link token for browser authentication.
 type AuthToken struct {
-	Token     string    `db:"token"`     // 256-bit hex string (64 chars)
+	Token     string    `db:"token"` // 256-bit hex string (64 chars)
 	UserID    int       `db:"user_id"`
 	CreatedAt time.Time `db:"created_at"`
 	ExpiresAt time.Time `db:"expires_at"`
@@ -113,7 +113,7 @@ func GenerateAuthToken() (string, error) {
 
 // WebSession represents an authenticated browser session.
 type WebSession struct {
-	Token      string    `db:"token"`      // 256-bit hex string (64 chars)
+	Token      string    `db:"token"` // 256-bit hex string (64 chars)
 	UserID     int       `db:"user_id"`
 	CreatedAt  time.Time `db:"created_at"`
 	ExpiresAt  time.Time `db:"expires_at"`

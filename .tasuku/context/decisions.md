@@ -30,3 +30,8 @@
 **Over**: Combat-time spawning (fork bomb style), Floor generation weighted spawning, Separate GroupedEnemy entity type
 **Because**: Keeps spawning logic deterministic with seeded RNG, requires minimal code changes, each enemy type can have unique group behavior, and data-driven design makes balance tuning easy. Breaking change is acceptable since game isn't live yet.
 
+## test-db-layer - 2026-01-14T21:52:56Z
+**Chose**: Repository pattern with in-memory implementation for unit tests
+**Over**: E2E tests with real database, Mocking with testify/mock, Test containers with Dockerized PostgreSQL
+**Because**: In-memory repositories keep tests fast, isolated, and don't require external dependencies. The repository interface also improves code organization and makes the database layer more testable.
+

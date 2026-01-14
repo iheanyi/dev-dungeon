@@ -17,55 +17,55 @@ type Config struct {
 
 // GameConfig holds gameplay-related settings.
 type GameConfig struct {
-	StartingClass       string  `json:"starting_class"`
+	StartingClass        string  `json:"starting_class"`
 	DifficultyMultiplier float64 `json:"difficulty_multiplier"`
-	EnablePermadeath    bool    `json:"enable_permadeath"`
-	RandomSeed          int64   `json:"random_seed"` // 0 = random
+	EnablePermadeath     bool    `json:"enable_permadeath"`
+	RandomSeed           int64   `json:"random_seed"` // 0 = random
 }
 
 // DisplayConfig holds display settings.
 type DisplayConfig struct {
-	MapWidth       int  `json:"map_width"`
-	MapHeight      int  `json:"map_height"`
-	ShowMinimap    bool `json:"show_minimap"`
-	ShowStats      bool `json:"show_stats"`
-	AnimationSpeed int  `json:"animation_speed"` // ms between frames
+	MapWidth       int    `json:"map_width"`
+	MapHeight      int    `json:"map_height"`
+	ShowMinimap    bool   `json:"show_minimap"`
+	ShowStats      bool   `json:"show_stats"`
+	AnimationSpeed int    `json:"animation_speed"` // ms between frames
 	ColorScheme    string `json:"color_scheme"`
 }
 
 // ControlsConfig holds key bindings.
 type ControlsConfig struct {
-	MoveUp      string `json:"move_up"`
-	MoveDown    string `json:"move_down"`
-	MoveLeft    string `json:"move_left"`
-	MoveRight   string `json:"move_right"`
-	Inventory   string `json:"inventory"`
-	Attack      string `json:"attack"`
-	Hack        string `json:"hack"`
-	UseItem     string `json:"use_item"`
-	Flee        string `json:"flee"`
-	Confirm     string `json:"confirm"`
-	Cancel      string `json:"cancel"`
-	Pause       string `json:"pause"`
+	MoveUp    string `json:"move_up"`
+	MoveDown  string `json:"move_down"`
+	MoveLeft  string `json:"move_left"`
+	MoveRight string `json:"move_right"`
+	Inventory string `json:"inventory"`
+	Attack    string `json:"attack"`
+	Hack      string `json:"hack"`
+	UseItem   string `json:"use_item"`
+	Flee      string `json:"flee"`
+	Confirm   string `json:"confirm"`
+	Cancel    string `json:"cancel"`
+	Pause     string `json:"pause"`
 }
 
 // DebugConfig holds debug settings.
 type DebugConfig struct {
-	Enabled       bool `json:"enabled"`
-	ShowFPS       bool `json:"show_fps"`
-	GodMode       bool `json:"god_mode"`
-	RevealMap     bool `json:"reveal_map"`
-	LogLevel      string `json:"log_level"`
+	Enabled   bool   `json:"enabled"`
+	ShowFPS   bool   `json:"show_fps"`
+	GodMode   bool   `json:"god_mode"`
+	RevealMap bool   `json:"reveal_map"`
+	LogLevel  string `json:"log_level"`
 }
 
 // DefaultConfig returns the default configuration.
 func DefaultConfig() *Config {
 	return &Config{
 		Game: GameConfig{
-			StartingClass:       "init",
+			StartingClass:        "init",
 			DifficultyMultiplier: 1.0,
-			EnablePermadeath:    true,
-			RandomSeed:          0,
+			EnablePermadeath:     true,
+			RandomSeed:           0,
 		},
 		Display: DisplayConfig{
 			MapWidth:       80,

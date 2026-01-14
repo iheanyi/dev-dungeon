@@ -11,18 +11,18 @@ import (
 
 // Manager handles save/load operations with background auto-save.
 type Manager struct {
-	saveDir      string
+	saveDir          string
 	autoSaveInterval time.Duration
 
 	// Background save state
-	saveChan     chan saveRequest
-	stopChan     chan struct{}
-	wg           sync.WaitGroup
+	saveChan chan saveRequest
+	stopChan chan struct{}
+	wg       sync.WaitGroup
 
 	// Debouncing
-	lastSave     time.Time
-	minInterval  time.Duration
-	mu           sync.Mutex
+	lastSave    time.Time
+	minInterval time.Duration
+	mu          sync.Mutex
 }
 
 type saveRequest struct {
@@ -260,11 +260,11 @@ func (m *Manager) ListSaves() ([]SaveInfo, error) {
 		}
 
 		saves = append(saves, SaveInfo{
-			Seed:       data.MasterSeed,
-			Timestamp:  data.Timestamp,
-			Depth:      data.CurrentDepth,
+			Seed:        data.MasterSeed,
+			Timestamp:   data.Timestamp,
+			Depth:       data.CurrentDepth,
 			PlayerClass: string(data.Player.Class),
-			Level:      data.Player.Level,
+			Level:       data.Player.Level,
 		})
 	}
 

@@ -81,7 +81,7 @@ func (c *Client) GetUserByUsername(ctx context.Context, username string) (*User,
 // CreateUser creates a new user account.
 func (c *Client) CreateUser(ctx context.Context, username, fingerprint string) (*User, error) {
 	nanoid := GenerateNanoID()
-	now := time.Now()
+	now := time.Now().UTC()
 
 	var user User
 	err := c.pool.QueryRow(ctx, `
@@ -112,7 +112,7 @@ func (c *Client) CreateUser(ctx context.Context, username, fingerprint string) (
 func (c *Client) UpdateLastLogin(ctx context.Context, userID int) error {
 	_, err := c.pool.Exec(ctx, `
 		UPDATE users SET last_login = $1 WHERE id = $2
-	`, time.Now(), userID)
+	`, time.Now().UTC(), userID)
 	return err
 }
 
@@ -155,7 +155,7 @@ func (c *Client) UpsertGameSave(ctx context.Context, userID int, saveData interf
 		return fmt.Errorf("failed to marshal save data: %w", err)
 	}
 
-	now := time.Now()
+	now := time.Now().UTC()
 	_, err = c.pool.Exec(ctx, `
 		INSERT INTO game_saves (nanoid, user_id, save_data, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $4)
@@ -214,7 +214,7 @@ func (c *Client) UpdateMetaProgress(ctx context.Context, meta *MetaProgress) err
 // AddLeaderboardEntry adds a new score entry.
 func (c *Client) AddLeaderboardEntry(ctx context.Context, entry *LeaderboardEntry) error {
 	entry.NanoID = GenerateNanoID()
-	entry.CreatedAt = time.Now()
+	entry.CreatedAt = time.Now().UTC()
 
 	_, err := c.pool.Exec(ctx, `
 		INSERT INTO leaderboard_entries
@@ -261,9 +261,9 @@ func (c *Client) GetTopScores(ctx context.Context, runType string, limit int) ([
 // CreateWorldDrop creates a new async drop.
 func (c *Client) CreateWorldDrop(ctx context.Context, drop *WorldDrop) error {
 	drop.NanoID = GenerateNanoID()
-	drop.CreatedAt = time.Now()
+	drop.CreatedAt = time.Now().UTC()
 	if drop.ExpiresAt.IsZero() {
-		drop.ExpiresAt = time.Now().Add(48 * time.Hour)
+		drop.ExpiresAt = time.Now().UTC().Add(48 * time.Hour)
 	}
 
 	_, err := c.pool.Exec(ctx, `
@@ -328,7 +328,7 @@ func (c *Client) GetOrCreateDailySeed(ctx context.Context) (int64, error) {
 		_, err = c.pool.Exec(ctx, `
 			INSERT INTO daily_seeds (date, seed, created_at)
 			VALUES ($1, $2, $3)
-		`, today, seed, time.Now())
+		`, today, seed, time.Now().UTC())
 		if err != nil {
 			return 0, err
 		}
@@ -369,7 +369,7 @@ func (c *Client) CreateAuthToken(ctx context.Context, userID int) (string, error
 		return "", fmt.Errorf("failed to generate token: %w", err)
 	}
 
-	expiresAt := time.Now().Add(5 * time.Minute)
+	expiresAt := time.Now().UTC().Add(5 * time.Minute)
 	_, err = c.pool.Exec(ctx, `
 		INSERT INTO auth_tokens (token, user_id, expires_at)
 		VALUES ($1, $2, $3)
@@ -409,7 +409,7 @@ func (c *Client) VerifyAuthToken(ctx context.Context, token string) (*User, erro
 	}
 
 	// Check if token is valid
-	if used || time.Now().After(expiresAt) {
+	if used || time.Now().UTC().After(expiresAt) {
 		return nil, nil // Token already used or expired
 	}
 
@@ -459,7 +459,7 @@ func (c *Client) CreateWebSession(ctx context.Context, userID int) (string, erro
 		return "", fmt.Errorf("failed to generate session token: %w", err)
 	}
 
-	expiresAt := time.Now().Add(7 * 24 * time.Hour) // 7 days
+	expiresAt := time.Now().UTC().Add(7 * 24 * time.Hour) // 7 days
 	_, err = c.pool.Exec(ctx, `
 		INSERT INTO web_sessions (token, user_id, expires_at)
 		VALUES ($1, $2, $3)
@@ -499,7 +499,7 @@ func (c *Client) GetWebSession(ctx context.Context, token string) (*User, error)
 	}
 
 	// Check if expired
-	if time.Now().After(expiresAt) {
+	if time.Now().UTC().After(expiresAt) {
 		// Delete expired session
 		tx.Exec(ctx, `DELETE FROM web_sessions WHERE token = $1`, token)
 		tx.Commit(ctx)

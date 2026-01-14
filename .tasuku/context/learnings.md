@@ -12,3 +12,9 @@ When setting a flag on a struct that was appended to a slice, the flag must be s
 ## ae99d3 - 2026-01-14T03:01:32Z
 Equipment slots with the same EquipSlot enum value need auto-fill logic to find the next available slot. Without this, equipping two items of the same slot type will overwrite the first one instead of filling the second slot.
 
+## 9f3ff4 - 2026-01-14T21:52:19Z
+Always implement regression tests when fixing bugs - bugs without tests will regress
+
+## bb9090 - 2026-01-14T23:11:01Z
+Always use time.Now().UTC() when storing timestamps in PostgreSQL. Local time (e.g., CST) gets stored without timezone info, then retrieved as UTC, causing 6+ hour discrepancies. This breaks expiry checks where tokens appear expired immediately.
+

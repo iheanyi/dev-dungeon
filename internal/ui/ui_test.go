@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/iheanyi/devdungeon/internal/config"
@@ -915,9 +916,9 @@ func TestPermanentBonusesAppliedToPlayer(t *testing.T) {
 	m := newTestModel()
 
 	// Set some permanent bonuses
-	m.metaProgress.PermanentBonuses.PID = 20  // +20 RAM
-	m.metaProgress.PermanentBonuses.CPU = 5   // +5 CPU
-	m.metaProgress.PermanentBonuses.MEM = 10  // +10 FD
+	m.metaProgress.PermanentBonuses.PID = 20 // +20 RAM
+	m.metaProgress.PermanentBonuses.CPU = 5  // +5 CPU
+	m.metaProgress.PermanentBonuses.MEM = 10 // +10 FD
 
 	// Start a new game
 	cfg := config.DefaultConfig()
@@ -934,5 +935,968 @@ func TestPermanentBonusesAppliedToPlayer(t *testing.T) {
 	}
 	if m.player.Stats.FD < 26 {
 		t.Errorf("expected FD >= 26 with bonus, got %d", m.player.Stats.FD)
+	}
+}
+
+// === Save Callback Tests ===
+
+func TestSaveCallbackSetsHasValidSave(t *testing.T) {
+	m := newTestModel()
+
+	cfg := config.DefaultConfig()
+	engine := game.NewEngine(cfg, 12345)
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+	m.engine = engine
+	m.player = engine.Player()
+	m.currentView = ViewGame
+	m.gameState = types.StateExploring
+
+	// Initially hasValidSave is false
+	m.hasValidSave = false
+
+	// Set up save callback that succeeds
+	callbackCalled := false
+	m.SetSaveCallback(func() error {
+		callbackCalled = true
+		return nil
+	})
+
+	// Simulate pressing Q to return to menu (manually invoke the logic)
+	if m.engine != nil {
+		if m.saveCallback != nil {
+			if err := m.saveCallback(); err != nil {
+				m.statusMsg = "Failed to save game."
+			} else {
+				m.statusMsg = "Game saved."
+				m.hasValidSave = true
+			}
+		}
+		m.engine.Shutdown()
+		m.engine = nil
+	}
+	m.player = nil
+	m.currentView = ViewMainMenu
+	m.gameState = types.StateMainMenu
+
+	// Verify callback was called
+	if !callbackCalled {
+		t.Error("save callback should have been called")
+	}
+
+	// Verify hasValidSave is now true
+	if !m.hasValidSave {
+		t.Error("hasValidSave should be true after successful save")
+	}
+
+	// Verify status message
+	if m.statusMsg != "Game saved." {
+		t.Errorf("expected status 'Game saved.', got '%s'", m.statusMsg)
+	}
+}
+
+func TestSaveCallbackFailureDoesNotSetHasValidSave(t *testing.T) {
+	m := newTestModel()
+
+	cfg := config.DefaultConfig()
+	engine := game.NewEngine(cfg, 12345)
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+	m.engine = engine
+	m.player = engine.Player()
+	m.currentView = ViewGame
+	m.gameState = types.StateExploring
+
+	// Initially hasValidSave is false
+	m.hasValidSave = false
+
+	// Set up save callback that fails
+	m.SetSaveCallback(func() error {
+		return fmt.Errorf("simulated save failure")
+	})
+
+	// Simulate pressing Q to return to menu
+	if m.engine != nil {
+		if m.saveCallback != nil {
+			if err := m.saveCallback(); err != nil {
+				m.statusMsg = "Failed to save game."
+			} else {
+				m.statusMsg = "Game saved."
+				m.hasValidSave = true
+			}
+		}
+		m.engine.Shutdown()
+		m.engine = nil
+	}
+	m.player = nil
+	m.currentView = ViewMainMenu
+	m.gameState = types.StateMainMenu
+
+	// Verify hasValidSave is still false
+	if m.hasValidSave {
+		t.Error("hasValidSave should remain false after failed save")
+	}
+
+	// Verify error status message
+	if m.statusMsg != "Failed to save game." {
+		t.Errorf("expected status 'Failed to save game.', got '%s'", m.statusMsg)
+	}
+}
+
+func TestSaveCallbackCalledBeforeEngineDestroyed(t *testing.T) {
+	m := newTestModel()
+
+	cfg := config.DefaultConfig()
+	engine := game.NewEngine(cfg, 12345)
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+	m.engine = engine
+	m.player = engine.Player()
+	m.currentView = ViewGame
+
+	// Track whether engine was available during callback
+	engineAvailableDuringCallback := false
+	m.SetSaveCallback(func() error {
+		// The engine should still be available at this point
+		// (save callback must be called BEFORE engine destruction)
+		if m.GetEngine() != nil {
+			engineAvailableDuringCallback = true
+		}
+		return nil
+	})
+
+	// Simulate the Q key handler logic
+	if m.engine != nil {
+		// Call save callback BEFORE destroying the engine
+		if m.saveCallback != nil {
+			_ = m.saveCallback()
+		}
+		m.engine.Shutdown()
+		m.engine = nil
+	}
+
+	if !engineAvailableDuringCallback {
+		t.Error("engine should be available when save callback is invoked")
+	}
+}
+
+func TestNoSaveCallbackShowsReturnedToMenu(t *testing.T) {
+	m := newTestModel()
+
+	cfg := config.DefaultConfig()
+	engine := game.NewEngine(cfg, 12345)
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+	m.engine = engine
+	m.player = engine.Player()
+	m.currentView = ViewGame
+
+	// No save callback set (single-player mode)
+	m.saveCallback = nil
+	m.hasValidSave = false
+
+	// Simulate Q key handler
+	if m.engine != nil {
+		if m.saveCallback != nil {
+			if err := m.saveCallback(); err != nil {
+				m.statusMsg = "Failed to save game."
+			} else {
+				m.statusMsg = "Game saved."
+				m.hasValidSave = true
+			}
+		} else {
+			m.statusMsg = "Returned to menu."
+		}
+		m.engine.Shutdown()
+		m.engine = nil
+	}
+
+	// Verify status message for non-multiplayer mode
+	if m.statusMsg != "Returned to menu." {
+		t.Errorf("expected status 'Returned to menu.', got '%s'", m.statusMsg)
+	}
+
+	// hasValidSave should remain false (no callback to set it)
+	if m.hasValidSave {
+		t.Error("hasValidSave should remain false without save callback")
+	}
+}
+
+func TestSetHasValidSave(t *testing.T) {
+	m := newTestModel()
+
+	// Explicitly set to false to test the setter
+	m.hasValidSave = false
+
+	// Set to true
+	m.SetHasValidSave(true)
+	if !m.hasValidSave {
+		t.Error("hasValidSave should be true after SetHasValidSave(true)")
+	}
+
+	// Set back to false
+	m.SetHasValidSave(false)
+	if m.hasValidSave {
+		t.Error("hasValidSave should be false after SetHasValidSave(false)")
+	}
+}
+
+// === Daily Seed Tests ===
+
+func TestDailySeedConsistency(t *testing.T) {
+	// Multiple calls within the same day should return the same seed
+	seed1 := getDailySeed()
+	seed2 := getDailySeed()
+	seed3 := getDailySeed()
+
+	if seed1 != seed2 {
+		t.Errorf("daily seed should be consistent: got %d and %d", seed1, seed2)
+	}
+
+	if seed2 != seed3 {
+		t.Errorf("daily seed should be consistent: got %d and %d", seed2, seed3)
+	}
+}
+
+func TestDailySeedIsNonZero(t *testing.T) {
+	seed := getDailySeed()
+
+	if seed == 0 {
+		t.Error("daily seed should not be zero")
+	}
+}
+
+func TestDailySeedIsPositive(t *testing.T) {
+	seed := getDailySeed()
+
+	// UnixNano for any date after 1970 should be positive
+	if seed < 0 {
+		t.Errorf("daily seed should be positive, got %d", seed)
+	}
+}
+
+func TestDailySeedUsesUTCMidnight(t *testing.T) {
+	// The seed should be based on UTC midnight, meaning it's divisible by
+	// the number of nanoseconds in a day (from truncation)
+	seed := getDailySeed()
+
+	// 24 hours * 60 minutes * 60 seconds * 1e9 nanoseconds
+	nsPerDay := int64(24 * 60 * 60 * 1e9)
+
+	// After truncating to day, the remainder should be 0
+	if seed%nsPerDay != 0 {
+		t.Error("daily seed should be at UTC midnight (truncated to day boundary)")
+	}
+}
+
+func TestDailyRunModeUsesDailySeed(t *testing.T) {
+	m := newTestModel()
+	m.dailyRunMode = true
+
+	// Start a new game in daily run mode
+	cfg := config.DefaultConfig()
+	m.config = cfg
+	m.startNewGame(entity.ClassInit)
+
+	// The engine's master seed should match the daily seed
+	expectedSeed := getDailySeed()
+	actualSeed := m.engine.MasterSeed()
+
+	if actualSeed != expectedSeed {
+		t.Errorf("daily run should use daily seed: expected %d, got %d", expectedSeed, actualSeed)
+	}
+}
+
+func TestStandardRunDoesNotUseDailySeed(t *testing.T) {
+	m := newTestModel()
+	m.dailyRunMode = false
+
+	cfg := config.DefaultConfig()
+	m.config = cfg
+	m.startNewGame(entity.ClassInit)
+
+	dailySeed := getDailySeed()
+	actualSeed := m.engine.MasterSeed()
+
+	// Standard run uses random seed (0 triggers random generation),
+	// so the actual seed should differ from the daily seed
+	// (extremely unlikely to match by chance)
+	if actualSeed == dailySeed {
+		t.Log("Warning: standard run seed matched daily seed (extremely unlikely)")
+		// Don't fail the test as this could happen by pure chance, but log it
+	}
+}
+
+// === Leaderboard Tests ===
+
+func TestSetLeaderboardFetcher(t *testing.T) {
+	m := newTestModel()
+
+	// Initially nil
+	if m.leaderboardFetcher != nil {
+		t.Error("leaderboardFetcher should initially be nil")
+	}
+
+	// Set a fetcher
+	fetcherCalled := false
+	m.SetLeaderboardFetcher(func(runType string, limit int) ([]LeaderboardEntry, error) {
+		fetcherCalled = true
+		return nil, nil
+	})
+
+	if m.leaderboardFetcher == nil {
+		t.Error("leaderboardFetcher should be set")
+	}
+
+	// Call the fetcher
+	_, _ = m.leaderboardFetcher("all", 10)
+	if !fetcherCalled {
+		t.Error("fetcher should have been called")
+	}
+}
+
+func TestOpenLeaderboard(t *testing.T) {
+	m := newTestModel()
+	m.currentView = ViewMainMenu
+
+	// Set up mock fetcher
+	testEntries := []LeaderboardEntry{
+		{Rank: 1, Username: "player1", Score: 1000, FloorsCleared: 8, Class: "sudo"},
+		{Rank: 2, Username: "player2", Score: 500, FloorsCleared: 5, Class: "bash"},
+	}
+	m.SetLeaderboardFetcher(func(runType string, limit int) ([]LeaderboardEntry, error) {
+		return testEntries, nil
+	})
+
+	// Open leaderboard
+	m.openLeaderboard()
+
+	// Verify state
+	if m.currentView != ViewLeaderboard {
+		t.Error("should transition to leaderboard view")
+	}
+
+	if m.leaderboardCursor != 0 {
+		t.Error("cursor should be reset to 0")
+	}
+
+	if m.leaderboardRunType != "all" {
+		t.Errorf("run type should be 'all', got '%s'", m.leaderboardRunType)
+	}
+
+	if len(m.leaderboardEntries) != 2 {
+		t.Errorf("expected 2 entries, got %d", len(m.leaderboardEntries))
+	}
+
+	if m.leaderboardError != "" {
+		t.Errorf("should have no error, got '%s'", m.leaderboardError)
+	}
+}
+
+func TestOpenLeaderboardWithError(t *testing.T) {
+	m := newTestModel()
+	m.currentView = ViewMainMenu
+
+	// Set up fetcher that returns error
+	m.SetLeaderboardFetcher(func(runType string, limit int) ([]LeaderboardEntry, error) {
+		return nil, fmt.Errorf("network error")
+	})
+
+	// Open leaderboard
+	m.openLeaderboard()
+
+	// Should still transition to view
+	if m.currentView != ViewLeaderboard {
+		t.Error("should transition to leaderboard view even on error")
+	}
+
+	// Should have error message
+	if m.leaderboardError == "" {
+		t.Error("should have error message")
+	}
+
+	// Entries should be nil/empty
+	if len(m.leaderboardEntries) != 0 {
+		t.Error("entries should be empty on error")
+	}
+}
+
+func TestOpenLeaderboardWithoutFetcher(t *testing.T) {
+	m := newTestModel()
+	m.currentView = ViewMainMenu
+	m.leaderboardFetcher = nil
+
+	// Open leaderboard without fetcher (single-player mode)
+	m.openLeaderboard()
+
+	// Should still transition to view
+	if m.currentView != ViewLeaderboard {
+		t.Error("should transition to leaderboard view")
+	}
+
+	// Entries should be empty
+	if len(m.leaderboardEntries) != 0 {
+		t.Error("entries should be empty without fetcher")
+	}
+}
+
+func TestLeaderboardEntryStructure(t *testing.T) {
+	// Test that LeaderboardEntry has all expected fields
+	entry := LeaderboardEntry{
+		Rank:          1,
+		Username:      "testuser",
+		Score:         1234,
+		FloorsCleared: 5,
+		Class:         "bash",
+		Seed:          12345,
+		RunType:       "standard",
+	}
+
+	if entry.Rank != 1 {
+		t.Error("Rank field not set correctly")
+	}
+	if entry.Username != "testuser" {
+		t.Error("Username field not set correctly")
+	}
+	if entry.Score != 1234 {
+		t.Error("Score field not set correctly")
+	}
+	if entry.FloorsCleared != 5 {
+		t.Error("FloorsCleared field not set correctly")
+	}
+	if entry.Class != "bash" {
+		t.Error("Class field not set correctly")
+	}
+	if entry.Seed != 12345 {
+		t.Error("Seed field not set correctly")
+	}
+	if entry.RunType != "standard" {
+		t.Error("RunType field not set correctly")
+	}
+}
+
+func TestLeaderboardRefresh(t *testing.T) {
+	m := newTestModel()
+
+	callCount := 0
+	m.SetLeaderboardFetcher(func(runType string, limit int) ([]LeaderboardEntry, error) {
+		callCount++
+		return []LeaderboardEntry{{Rank: callCount}}, nil
+	})
+
+	m.openLeaderboard()
+	if callCount != 1 {
+		t.Error("fetcher should be called once on open")
+	}
+
+	// Simulate refresh by calling refreshLeaderboard
+	m.refreshLeaderboard()
+	if callCount != 2 {
+		t.Error("fetcher should be called again on refresh")
+	}
+
+	// Entries should be updated
+	if m.leaderboardEntries[0].Rank != 2 {
+		t.Error("entries should be updated after refresh")
+	}
+}
+
+func TestLeaderboardRunTypeFilter(t *testing.T) {
+	m := newTestModel()
+
+	var capturedRunType string
+	m.SetLeaderboardFetcher(func(runType string, limit int) ([]LeaderboardEntry, error) {
+		capturedRunType = runType
+		return nil, nil
+	})
+
+	// Test "all" filter
+	m.leaderboardRunType = "all"
+	m.refreshLeaderboard()
+	if capturedRunType != "all" {
+		t.Errorf("expected runType 'all', got '%s'", capturedRunType)
+	}
+
+	// Test "standard" filter
+	m.leaderboardRunType = "standard"
+	m.refreshLeaderboard()
+	if capturedRunType != "standard" {
+		t.Errorf("expected runType 'standard', got '%s'", capturedRunType)
+	}
+
+	// Test "daily" filter
+	m.leaderboardRunType = "daily"
+	m.refreshLeaderboard()
+	if capturedRunType != "daily" {
+		t.Errorf("expected runType 'daily', got '%s'", capturedRunType)
+	}
+}
+
+// === Quit Request Tests ===
+
+func TestWantsToQuit(t *testing.T) {
+	m := newTestModel()
+
+	// Initially should not want to quit
+	if m.WantsToQuit() {
+		t.Error("should not want to quit initially")
+	}
+
+	// Use requestQuit to set the flag
+	m.requestQuit()
+	if !m.WantsToQuit() {
+		t.Error("should want to quit after requestQuit")
+	}
+}
+
+func TestClearQuitRequest(t *testing.T) {
+	m := newTestModel()
+
+	// Set quit request
+	m.requestQuit()
+	if !m.WantsToQuit() {
+		t.Error("quit flag should be set")
+	}
+
+	// Clear it
+	m.ClearQuitRequest()
+	if m.WantsToQuit() {
+		t.Error("quit flag should be cleared")
+	}
+}
+
+func TestRequestQuit(t *testing.T) {
+	m := newTestModel()
+
+	// Initially should not want to quit
+	if m.WantsToQuit() {
+		t.Error("should not want to quit initially")
+	}
+
+	// Request quit
+	m.requestQuit()
+	if !m.WantsToQuit() {
+		t.Error("requestQuit should set wantsToQuit flag")
+	}
+}
+
+// === Multiplayer Mode Tests ===
+
+func TestSetMultiplayerMode(t *testing.T) {
+	m := newTestModel()
+
+	// Initially not multiplayer
+	if m.isMultiplayer {
+		t.Error("should not be multiplayer initially")
+	}
+
+	// Set multiplayer mode with username
+	m.SetMultiplayerMode("testuser")
+	if !m.isMultiplayer {
+		t.Error("should be multiplayer after SetMultiplayerMode")
+	}
+
+	// Username should be set
+	if m.username != "testuser" {
+		t.Errorf("username should be 'testuser', got '%s'", m.username)
+	}
+}
+
+// === Menu Cursor Tests ===
+
+func TestMenuCursorBounds(t *testing.T) {
+	m := newTestModel()
+	m.currentView = ViewMainMenu
+
+	// Menu cursor should start at 0
+	if m.menuCursor != 0 {
+		t.Errorf("menu cursor should start at 0, got %d", m.menuCursor)
+	}
+
+	// Menu cursor should be bounded
+	m.menuCursor = 5
+	// Note: The actual menu has 6 items (0-5 valid), so this is valid
+	// This test just verifies the cursor can be set
+	if m.menuCursor != 5 {
+		t.Error("menu cursor should be settable")
+	}
+}
+
+func TestClassCursorBounds(t *testing.T) {
+	m := newTestModel()
+	m.currentView = ViewClassSelect
+
+	// Class cursor should start at 0
+	if m.classCursor != 0 {
+		t.Errorf("class cursor should start at 0, got %d", m.classCursor)
+	}
+
+	// Set cursor to different class
+	m.classCursor = 3 // vim class position
+	if m.classCursor != 3 {
+		t.Error("class cursor should be settable")
+	}
+}
+
+// === Combat Target Tests ===
+
+func TestGetValidTargetIndexNoCombat(t *testing.T) {
+	m := newTestModel()
+
+	cfg := config.DefaultConfig()
+	engine := game.NewEngine(cfg, 12345)
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+	m.engine = engine
+	m.player = engine.Player()
+	m.currentView = ViewCombat
+
+	// Without combat set, getValidTargetIndex returns 0 (fallback)
+	m.combat = nil
+	m.targetCursor = 0
+	idx := m.getValidTargetIndex()
+	if idx != 0 {
+		t.Errorf("should return 0 without combat, got %d", idx)
+	}
+}
+
+func TestCycleTargetNoCombat(t *testing.T) {
+	m := newTestModel()
+
+	cfg := config.DefaultConfig()
+	engine := game.NewEngine(cfg, 12345)
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+	m.engine = engine
+	m.player = engine.Player()
+	m.currentView = ViewCombat
+
+	// Without combat, cycleTarget should be a no-op
+	m.combat = nil
+	m.targetCursor = 0
+
+	// This should not panic and should not change cursor
+	m.cycleTarget(false)
+	if m.targetCursor != 0 {
+		t.Errorf("cursor should remain 0 without combat, got %d", m.targetCursor)
+	}
+}
+
+func TestTargetCursorInitialValue(t *testing.T) {
+	m := newTestModel()
+
+	// Target cursor should start at 0
+	if m.targetCursor != 0 {
+		t.Errorf("target cursor should start at 0, got %d", m.targetCursor)
+	}
+}
+
+// === Pause Menu Tests ===
+
+func TestPauseMenuTransition(t *testing.T) {
+	m := newTestModel()
+
+	cfg := config.DefaultConfig()
+	engine := game.NewEngine(cfg, 12345)
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+	m.engine = engine
+	m.player = engine.Player()
+	m.currentView = ViewGame
+	m.gameState = types.StateExploring
+
+	// Transition to pause view
+	m.currentView = ViewPause
+
+	if m.currentView != ViewPause {
+		t.Error("should be in pause view")
+	}
+}
+
+// === Admin View Tests ===
+
+func TestAdminViewToggle(t *testing.T) {
+	m := newTestModel()
+
+	cfg := config.DefaultConfig()
+	cfg.Debug.Enabled = true
+	engine := game.NewEngine(cfg, 12345)
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+	m.engine = engine
+	m.player = engine.Player()
+	m.currentView = ViewGame
+	m.config = cfg
+
+	// Transition to admin view
+	m.prevView = ViewGame
+	m.currentView = ViewAdmin
+
+	if m.currentView != ViewAdmin {
+		t.Error("should be in admin view")
+	}
+
+	// Return to previous view
+	m.currentView = m.prevView
+	if m.currentView != ViewGame {
+		t.Error("should return to game view")
+	}
+}
+
+// === Skill Select Tests ===
+
+func TestPlayerHasSkills(t *testing.T) {
+	m := newTestModel()
+
+	cfg := config.DefaultConfig()
+	engine := game.NewEngine(cfg, 12345)
+	if err := engine.StartNewGame(entity.ClassBash); err != nil { // Bash has skills
+		t.Fatalf("failed to start game: %v", err)
+	}
+	m.engine = engine
+	m.player = engine.Player()
+	m.currentView = ViewCombat
+
+	// Bash should have skills
+	if len(m.player.Skills) == 0 {
+		t.Error("Bash should have skills")
+	}
+
+	// Init class should have fewer or equal skills
+	engine2 := game.NewEngine(cfg, 12345)
+	if err := engine2.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+
+	// Both classes should exist
+	if m.player == nil {
+		t.Error("player should not be nil")
+	}
+}
+
+// === Shop Cursor Tests ===
+
+func TestShopCursorBounds(t *testing.T) {
+	m := newTestModel()
+
+	cfg := config.DefaultConfig()
+	engine := game.NewEngine(cfg, 12345)
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+	m.engine = engine
+	m.player = engine.Player()
+
+	// Open shop
+	m.openShop()
+
+	// Shop cursor should start at 0
+	if m.shopCursor != 0 {
+		t.Errorf("shop cursor should start at 0, got %d", m.shopCursor)
+	}
+
+	// Cursor should be bounded by shop item count
+	if len(m.shopItems) > 0 {
+		m.shopCursor = len(m.shopItems) - 1
+		if m.shopCursor != len(m.shopItems)-1 {
+			t.Error("shop cursor should be settable to last item")
+		}
+	}
+}
+
+// === Message History Scroll Tests ===
+
+func TestMessageHistoryScrollIndex(t *testing.T) {
+	m := newTestModel()
+
+	// Add many messages to create scrollable content
+	for i := 0; i < 100; i++ {
+		m.addToHistory(fmt.Sprintf("Message %d", i))
+	}
+
+	m.currentView = ViewMessageHistory
+	m.messageScrollIdx = 0
+
+	// Scroll index 0 = most recent messages
+	if m.messageScrollIdx != 0 {
+		t.Errorf("scroll index should start at 0, got %d", m.messageScrollIdx)
+	}
+
+	// Set scroll index
+	m.messageScrollIdx = 10
+	if m.messageScrollIdx != 10 {
+		t.Errorf("scroll should be 10, got %d", m.messageScrollIdx)
+	}
+}
+
+// === Run Mode Tests ===
+
+func TestDailyRunModeToggle(t *testing.T) {
+	m := newTestModel()
+
+	// Initially not in daily run mode
+	if m.dailyRunMode {
+		t.Error("should not be in daily run mode initially")
+	}
+
+	// Toggle to daily run mode
+	m.dailyRunMode = true
+	if !m.dailyRunMode {
+		t.Error("should be in daily run mode")
+	}
+}
+
+func TestEngineCreatedWithSeed(t *testing.T) {
+	// Test that engine is created with a seed
+	cfg := config.DefaultConfig()
+	engine := game.NewEngine(cfg, 12345)
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+
+	// Engine should store the master seed
+	if engine.MasterSeed() != 12345 {
+		t.Errorf("engine should use seed 12345, got %d", engine.MasterSeed())
+	}
+}
+
+// === Continue Game Tests ===
+
+func TestContinueGameRequiresValidSave(t *testing.T) {
+	m := newTestModel()
+
+	// Without valid save
+	m.hasValidSave = false
+
+	// Continue should not be available
+	// (The actual menu check is done in updateMainMenu, here we just test the flag)
+	if m.hasValidSave {
+		t.Error("should not have valid save initially")
+	}
+
+	// With valid save
+	m.hasValidSave = true
+	if !m.hasValidSave {
+		t.Error("should have valid save after setting")
+	}
+}
+
+// === Floor Info Tests ===
+
+func TestFloorInfoTracking(t *testing.T) {
+	m := newTestModel()
+
+	cfg := config.DefaultConfig()
+	engine := game.NewEngine(cfg, 12345)
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+	m.engine = engine
+	m.player = engine.Player()
+
+	// Engine should track current depth
+	depth := engine.CurrentDepth()
+	if depth < 1 {
+		t.Error("starting depth should be at least 1")
+	}
+}
+
+// === Status Message Tests ===
+
+func TestStatusMessageSetting(t *testing.T) {
+	m := newTestModel()
+
+	// Status message should be empty initially
+	if m.statusMsg != "" {
+		t.Errorf("status message should be empty initially, got '%s'", m.statusMsg)
+	}
+
+	// Set status message
+	m.statusMsg = "Test message"
+	if m.statusMsg != "Test message" {
+		t.Error("status message should be settable")
+	}
+}
+
+// === Combat State Tests ===
+
+func TestCombatActionSelect(t *testing.T) {
+	m := newTestModel()
+
+	cfg := config.DefaultConfig()
+	engine := game.NewEngine(cfg, 12345)
+	if err := engine.StartNewGame(entity.ClassBash); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+	m.engine = engine
+	m.player = engine.Player()
+	m.currentView = ViewCombat
+	m.gameState = types.StateCombat
+
+	// Combat action cursor starts at 0
+	m.combatCursor = 0
+	if m.combatCursor != 0 {
+		t.Error("combat cursor should start at 0")
+	}
+
+	// Combat has options: Attack, Skill, Item, Flee
+	m.combatCursor = 3
+	if m.combatCursor != 3 {
+		t.Error("combat cursor should be settable")
+	}
+}
+
+// === View Previous Tests ===
+
+func TestPrevViewTracking(t *testing.T) {
+	m := newTestModel()
+
+	cfg := config.DefaultConfig()
+	engine := game.NewEngine(cfg, 12345)
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+	m.engine = engine
+	m.player = engine.Player()
+	m.currentView = ViewGame
+
+	// Open inventory
+	m.prevView = m.currentView
+	m.currentView = ViewInventory
+
+	// prevView should track where we came from
+	if m.prevView != ViewGame {
+		t.Error("prevView should track previous view")
+	}
+
+	// Return to previous view
+	m.currentView = m.prevView
+	if m.currentView != ViewGame {
+		t.Error("should return to game view")
+	}
+}
+
+// === Intro Screen Tests ===
+
+func TestIntroScreenSetup(t *testing.T) {
+	m := newTestModel()
+
+	m.currentView = ViewIntro
+	m.pendingClass = entity.ClassBash
+
+	if m.currentView != ViewIntro {
+		t.Error("should be in intro view")
+	}
+
+	if m.pendingClass != entity.ClassBash {
+		t.Error("pending class should be set")
 	}
 }

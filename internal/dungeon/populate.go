@@ -27,19 +27,19 @@ type ItemSpawn struct {
 
 // PopulationConfig holds parameters for entity placement.
 type PopulationConfig struct {
-	BaseEnemyCount    int
+	BaseEnemyCount     int
 	EnemyCountPerDepth int
-	BaseItemCount     int
-	ItemCountPerRoom  float32
+	BaseItemCount      int
+	ItemCountPerRoom   float32
 }
 
 // DefaultPopulationConfig returns default population parameters.
 func DefaultPopulationConfig() PopulationConfig {
 	return PopulationConfig{
-		BaseEnemyCount:    2,
+		BaseEnemyCount:     2,
 		EnemyCountPerDepth: 2,
-		BaseItemCount:     2,
-		ItemCountPerRoom:  0.5,
+		BaseItemCount:      2,
+		ItemCountPerRoom:   0.5,
 	}
 }
 

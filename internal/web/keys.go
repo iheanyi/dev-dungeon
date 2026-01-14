@@ -9,13 +9,13 @@ import (
 
 // Supported SSH key types (all standard secure algorithms).
 var supportedKeyTypes = map[string]bool{
-	ssh.KeyAlgoED25519:        true, // Ed25519 - recommended
-	ssh.KeyAlgoECDSA256:       true, // ECDSA P-256
-	ssh.KeyAlgoECDSA384:       true, // ECDSA P-384
-	ssh.KeyAlgoECDSA521:       true, // ECDSA P-521
-	ssh.KeyAlgoRSA:            true, // RSA
-	ssh.KeyAlgoSKED25519:      true, // Security Key Ed25519
-	ssh.KeyAlgoSKECDSA256:     true, // Security Key ECDSA
+	ssh.KeyAlgoED25519:    true, // Ed25519 - recommended
+	ssh.KeyAlgoECDSA256:   true, // ECDSA P-256
+	ssh.KeyAlgoECDSA384:   true, // ECDSA P-384
+	ssh.KeyAlgoECDSA521:   true, // ECDSA P-521
+	ssh.KeyAlgoRSA:        true, // RSA
+	ssh.KeyAlgoSKED25519:  true, // Security Key Ed25519
+	ssh.KeyAlgoSKECDSA256: true, // Security Key ECDSA
 }
 
 // parseAuthorizedKey parses an SSH authorized_keys format public key.

@@ -164,16 +164,16 @@ func (r Room) Intersects(other Room) bool {
 
 // Floor represents a single dungeon level.
 type Floor struct {
-	Type       FloorType
-	Depth      int // 1 = first floor, increases as you descend
-	Width      int
-	Height     int
-	Tiles      [][]Tile
-	Rooms      []Room
-	Seed       int64    // For reproducibility
+	Type        FloorType
+	Depth       int // 1 = first floor, increases as you descend
+	Width       int
+	Height      int
+	Tiles       [][]Tile
+	Rooms       []Room
+	Seed        int64 // For reproducibility
 	PlayerStart Position
-	StairsUp   Position
-	StairsDown Position
+	StairsUp    Position
+	StairsDown  Position
 }
 
 // NewFloor creates an empty floor filled with walls.

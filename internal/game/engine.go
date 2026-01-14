@@ -14,11 +14,11 @@ import (
 
 // MoveResult represents the outcome of a player movement action.
 type MoveResult struct {
-	Moved      bool             // Whether the player actually moved
-	Combat     []*entity.Enemy  // Non-nil if bumped into enemies (includes nearby group members)
-	PickedUp   *entity.Item     // Non-nil if picked up an item
-	UsedStairs bool             // Whether stairs were used
-	Message    string           // Status message to display
+	Moved      bool            // Whether the player actually moved
+	Combat     []*entity.Enemy // Non-nil if bumped into enemies (includes nearby group members)
+	PickedUp   *entity.Item    // Non-nil if picked up an item
+	UsedStairs bool            // Whether stairs were used
+	Message    string          // Status message to display
 }
 
 // Engine is the core game engine that manages game state and logic.
@@ -52,8 +52,8 @@ type Engine struct {
 	masterSeed    int64
 	messages      []string // Recent game messages
 	saveManager   *save.Manager
-	stats         *RunStats  // Current run statistics
-	unlockedItems []string   // Items unlocked via meta-progression (added to loot pool)
+	stats         *RunStats // Current run statistics
+	unlockedItems []string  // Items unlocked via meta-progression (added to loot pool)
 }
 
 // NewEngine creates a new game engine with the given configuration and seed.

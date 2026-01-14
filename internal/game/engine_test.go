@@ -690,3 +690,203 @@ func TestLoadGamePreservesInventory(t *testing.T) {
 		t.Errorf("expected firewall armor, got %s", engine.Player().Equipment.Armor.TemplateID)
 	}
 }
+
+func TestGatherNearbyEnemies(t *testing.T) {
+	cfg := config.DefaultConfig()
+	engine := NewEngine(cfg, 12345)
+
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("StartNewGame failed: %v", err)
+	}
+
+	// Clear existing enemies and place our own for controlled test
+	engine.world.Enemies = nil
+
+	// Create a target enemy at known position
+	targetPos := types.Position{X: 10, Y: 10}
+	target := entity.NewEnemy("zombie", "target-1", targetPos, 1)
+
+	// Create enemies at various distances
+	nearEnemy1 := entity.NewEnemy("zombie", "near-1", types.Position{X: 11, Y: 10}, 1) // 1 tile away (within radius 2)
+	nearEnemy2 := entity.NewEnemy("zombie", "near-2", types.Position{X: 10, Y: 11}, 1) // 1 tile away (within radius 2)
+	nearEnemy3 := entity.NewEnemy("zombie", "near-3", types.Position{X: 12, Y: 12}, 1) // 2 tiles away diagonally (within radius 2)
+	farEnemy := entity.NewEnemy("zombie", "far-1", types.Position{X: 15, Y: 15}, 1)    // 5 tiles away (outside radius 2)
+
+	// Add enemies to world
+	engine.world.Enemies = []*entity.Enemy{target, nearEnemy1, nearEnemy2, nearEnemy3, farEnemy}
+
+	// Test gathering with radius 2
+	enemies := engine.gatherNearbyEnemies(target, 2)
+
+	// Should include target + 3 nearby enemies (4 total)
+	if len(enemies) != 4 {
+		t.Errorf("expected 4 enemies (target + 3 nearby), got %d", len(enemies))
+	}
+
+	// Verify target is included
+	foundTarget := false
+	for _, e := range enemies {
+		if e.ID() == "target-1" {
+			foundTarget = true
+			break
+		}
+	}
+	if !foundTarget {
+		t.Error("target enemy should be included in results")
+	}
+
+	// Verify far enemy is NOT included
+	foundFar := false
+	for _, e := range enemies {
+		if e.ID() == "far-1" {
+			foundFar = true
+			break
+		}
+	}
+	if foundFar {
+		t.Error("far enemy (distance 5) should NOT be included in radius 2 search")
+	}
+}
+
+func TestGatherNearbyEnemiesSingleEnemy(t *testing.T) {
+	cfg := config.DefaultConfig()
+	engine := NewEngine(cfg, 12345)
+
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("StartNewGame failed: %v", err)
+	}
+
+	// Clear existing enemies
+	engine.world.Enemies = nil
+
+	// Create only one enemy
+	targetPos := types.Position{X: 10, Y: 10}
+	target := entity.NewEnemy("zombie", "alone-1", targetPos, 1)
+	engine.world.Enemies = []*entity.Enemy{target}
+
+	// Test gathering - should return just the target
+	enemies := engine.gatherNearbyEnemies(target, 2)
+
+	if len(enemies) != 1 {
+		t.Errorf("expected 1 enemy (just target), got %d", len(enemies))
+	}
+
+	if enemies[0].ID() != "alone-1" {
+		t.Errorf("expected target enemy, got %s", enemies[0].ID())
+	}
+}
+
+func TestGatherNearbyEnemiesExcludesDeadEnemies(t *testing.T) {
+	cfg := config.DefaultConfig()
+	engine := NewEngine(cfg, 12345)
+
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("StartNewGame failed: %v", err)
+	}
+
+	// Clear existing enemies
+	engine.world.Enemies = nil
+
+	// Create enemies
+	targetPos := types.Position{X: 10, Y: 10}
+	target := entity.NewEnemy("zombie", "target-1", targetPos, 1)
+	nearEnemy := entity.NewEnemy("zombie", "near-1", types.Position{X: 11, Y: 10}, 1)
+	deadEnemy := entity.NewEnemy("zombie", "dead-1", types.Position{X: 10, Y: 11}, 1)
+
+	// Kill the dead enemy
+	deadEnemy.Stats.RAM = 0
+
+	engine.world.Enemies = []*entity.Enemy{target, nearEnemy, deadEnemy}
+
+	// Test gathering
+	enemies := engine.gatherNearbyEnemies(target, 2)
+
+	// Should include target + near enemy, but NOT dead enemy (2 total)
+	if len(enemies) != 2 {
+		t.Errorf("expected 2 enemies (target + near), got %d", len(enemies))
+	}
+
+	// Verify dead enemy is NOT included
+	foundDead := false
+	for _, e := range enemies {
+		if e.ID() == "dead-1" {
+			foundDead = true
+			break
+		}
+	}
+	if foundDead {
+		t.Error("dead enemy should NOT be included in results")
+	}
+}
+
+func TestGatherNearbyEnemiesChebyshevDistance(t *testing.T) {
+	cfg := config.DefaultConfig()
+	engine := NewEngine(cfg, 12345)
+
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("StartNewGame failed: %v", err)
+	}
+
+	// Clear existing enemies
+	engine.world.Enemies = nil
+
+	// Test Chebyshev distance (king's move): diagonal distance should equal max of dx, dy
+	// With target at (10,10) and radius 2:
+	// - (12, 12) is 2 away (should be included)
+	// - (13, 13) is 3 away (should NOT be included)
+	targetPos := types.Position{X: 10, Y: 10}
+	target := entity.NewEnemy("zombie", "target", targetPos, 1)
+	diag2 := entity.NewEnemy("zombie", "diag2", types.Position{X: 12, Y: 12}, 1) // Chebyshev dist = 2
+	diag3 := entity.NewEnemy("zombie", "diag3", types.Position{X: 13, Y: 13}, 1) // Chebyshev dist = 3
+
+	engine.world.Enemies = []*entity.Enemy{target, diag2, diag3}
+
+	enemies := engine.gatherNearbyEnemies(target, 2)
+
+	if len(enemies) != 2 {
+		t.Errorf("expected 2 enemies (target + diag2), got %d", len(enemies))
+	}
+
+	// Verify diag2 IS included
+	foundDiag2 := false
+	for _, e := range enemies {
+		if e.ID() == "diag2" {
+			foundDiag2 = true
+			break
+		}
+	}
+	if !foundDiag2 {
+		t.Error("enemy at distance 2 (diagonal) should be included")
+	}
+
+	// Verify diag3 is NOT included
+	foundDiag3 := false
+	for _, e := range enemies {
+		if e.ID() == "diag3" {
+			foundDiag3 = true
+			break
+		}
+	}
+	if foundDiag3 {
+		t.Error("enemy at distance 3 (diagonal) should NOT be included in radius 2 search")
+	}
+}
+
+func TestGatherNearbyEnemiesNilWorld(t *testing.T) {
+	cfg := config.DefaultConfig()
+	engine := NewEngine(cfg, 12345)
+
+	// Don't start a game - world will be nil
+	target := entity.NewEnemy("zombie", "target", types.Position{X: 5, Y: 5}, 1)
+
+	enemies := engine.gatherNearbyEnemies(target, 2)
+
+	// Should return just the target
+	if len(enemies) != 1 {
+		t.Errorf("expected 1 enemy when world is nil, got %d", len(enemies))
+	}
+
+	if enemies[0].ID() != "target" {
+		t.Error("should return target when world is nil")
+	}
+}

@@ -57,10 +57,10 @@ var EnemyTemplates = map[EnemyType]EnemyTemplate{
 		Name:  "zombie process",
 		Glyph: 'z',
 		BaseStats: types.Stats{
-			RAM:  30,  // Low health, easy to kill
-			CPU:  5,   // Low damage
-			FD:   4,   // Few abilities
-			NICE: 15,  // Slow
+			RAM:  30, // Low health, easy to kill
+			CPU:  5,  // Low damage
+			FD:   4,  // Few abilities
+			NICE: 15, // Slow
 			UID:  1000,
 		},
 		XPReward:  10,
@@ -91,10 +91,10 @@ var EnemyTemplates = map[EnemyType]EnemyTemplate{
 		Name:  "fork bomb",
 		Glyph: 'f',
 		BaseStats: types.Stats{
-			RAM:  20,  // Weak individually
+			RAM:  20, // Weak individually
 			CPU:  3,
-			FD:   2,   // Uses FDs fast (forking!)
-			NICE: 5,   // Fast
+			FD:   2, // Uses FDs fast (forking!)
+			NICE: 5, // Fast
 			UID:  1000,
 		},
 		XPReward:  15,
@@ -109,7 +109,7 @@ var EnemyTemplates = map[EnemyType]EnemyTemplate{
 		Glyph: 's',
 		BaseStats: types.Stats{
 			RAM:  40,
-			CPU:  12,  // High damage (memory corruption)
+			CPU:  12, // High damage (memory corruption)
 			FD:   6,
 			NICE: 8,
 			UID:  1000,
@@ -128,8 +128,8 @@ var EnemyTemplates = map[EnemyType]EnemyTemplate{
 			RAM:  80,
 			CPU:  15,
 			FD:   12,
-			NICE: 12,  // Slower but stealthy
-			UID:  0,   // Root access!
+			NICE: 12, // Slower but stealthy
+			UID:  0,  // Root access!
 		},
 		XPReward:  50,
 		Behavior:  BehaviorStealth,
@@ -142,11 +142,11 @@ var EnemyTemplates = map[EnemyType]EnemyTemplate{
 		Name:  "KERNEL PANIC",
 		Glyph: 'K',
 		BaseStats: types.Stats{
-			RAM:  500,  // Boss health
-			CPU:  30,   // High damage
-			FD:   32,   // Many abilities
-			NICE: 5,    // Fast
-			UID:  0,    // Kernel-level
+			RAM:  500, // Boss health
+			CPU:  30,  // High damage
+			FD:   32,  // Many abilities
+			NICE: 5,   // Fast
+			UID:  0,   // Kernel-level
 		},
 		XPReward:  500,
 		Behavior:  BehaviorAggressive,

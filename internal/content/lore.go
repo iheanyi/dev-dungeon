@@ -3,11 +3,11 @@ package content
 
 // MainStoryline contains the overarching plot of the game.
 var MainStoryline = struct {
-	Premise     string
-	Corruption  string
-	Mission     string
-	Stakes      string
-	Resolution  string
+	Premise    string
+	Corruption string
+	Mission    string
+	Stakes     string
+	Resolution string
 }{
 	Premise: `SYSTEM LOG - TIMESTAMP: [CORRUPTED]
 
@@ -241,11 +241,11 @@ type FloorLoreEntry struct {
 
 // KernelPanicLore contains the backstory of the final boss.
 var KernelPanicLore = struct {
-	Origin      string
-	Evolution   string
-	Nature      string
-	Weakness    string
-	FinalWords  string
+	Origin     string
+	Evolution  string
+	Nature     string
+	Weakness   string
+	FinalWords string
 }{
 	Origin: `In the beginning, there was init - PID 1, the first process, parent of all.
 

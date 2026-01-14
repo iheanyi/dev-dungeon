@@ -5,13 +5,13 @@ import "github.com/iheanyi/devdungeon/internal/types"
 
 // Re-export commonly used types for convenience
 type (
-	Position  = types.Position
-	Direction = types.Direction
-	Stats     = types.Stats
-	MaxStats  = types.MaxStats
-	GameState = types.GameState
-	FloorType = types.FloorType
-	TileType  = types.TileType
+	Position   = types.Position
+	Direction  = types.Direction
+	Stats      = types.Stats
+	MaxStats   = types.MaxStats
+	GameState  = types.GameState
+	FloorType  = types.FloorType
+	TileType   = types.TileType
 	ActionType = types.ActionType
 )
 

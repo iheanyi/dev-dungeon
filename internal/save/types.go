@@ -13,13 +13,13 @@ const Version = 1
 
 // SaveData represents a complete game save.
 type SaveData struct {
-	Version      int           `json:"version"`
-	MasterSeed   int64         `json:"master_seed"`
-	Timestamp    time.Time     `json:"timestamp"`
-	Player       PlayerData    `json:"player"`
-	CurrentDepth int           `json:"current_depth"`
-	FloorStates  []FloorState  `json:"floor_states"`
-	MetaProgress MetaProgress  `json:"meta_progress"`
+	Version      int          `json:"version"`
+	MasterSeed   int64        `json:"master_seed"`
+	Timestamp    time.Time    `json:"timestamp"`
+	Player       PlayerData   `json:"player"`
+	CurrentDepth int          `json:"current_depth"`
+	FloorStates  []FloorState `json:"floor_states"`
+	MetaProgress MetaProgress `json:"meta_progress"`
 }
 
 // PlayerData represents saved player state.
@@ -45,7 +45,7 @@ type ItemData struct {
 
 // EquipmentData represents saved equipment slots.
 type EquipmentData struct {
-	Weapon   string `json:"weapon,omitempty"`   // Template ID
+	Weapon   string `json:"weapon,omitempty"` // Template ID
 	Armor    string `json:"armor,omitempty"`
 	Utility1 string `json:"utility1,omitempty"`
 	Utility2 string `json:"utility2,omitempty"`
@@ -55,21 +55,21 @@ type EquipmentData struct {
 // We don't save the full floor - it regenerates from seed.
 // We only save what changed.
 type FloorState struct {
-	Depth        int              `json:"depth"`
+	Depth         int              `json:"depth"`
 	ExploredTiles []types.Position `json:"explored_tiles"`
-	DeadEnemies  []string         `json:"dead_enemies"`   // Enemy IDs
-	LootedItems  []string         `json:"looted_items"`   // Item IDs
+	DeadEnemies   []string         `json:"dead_enemies"` // Enemy IDs
+	LootedItems   []string         `json:"looted_items"` // Item IDs
 }
 
 // MetaProgress represents permanent unlocks that persist across runs.
 type MetaProgress struct {
-	TotalExitCodes   int            `json:"total_exit_codes"`
-	UnlockedClasses  []string       `json:"unlocked_classes"`
-	PermanentBonuses StatBonuses    `json:"permanent_bonuses"`
-	UnlockedItems    []string       `json:"unlocked_items"`  // Items added to loot pool
-	RunsCompleted    int            `json:"runs_completed"`
-	DeepestFloor     int            `json:"deepest_floor"`
-	TotalDeaths      int            `json:"total_deaths"`
+	TotalExitCodes   int         `json:"total_exit_codes"`
+	UnlockedClasses  []string    `json:"unlocked_classes"`
+	PermanentBonuses StatBonuses `json:"permanent_bonuses"`
+	UnlockedItems    []string    `json:"unlocked_items"` // Items added to loot pool
+	RunsCompleted    int         `json:"runs_completed"`
+	DeepestFloor     int         `json:"deepest_floor"`
+	TotalDeaths      int         `json:"total_deaths"`
 }
 
 // StatBonuses represents permanent stat bonuses from meta-progression.

@@ -40,9 +40,9 @@ type attemptInfo struct {
 
 // Rate limit settings
 const (
-	maxAuthAttempts   = 5           // Max attempts per window
-	rateLimitWindow   = time.Minute // Window duration
-	blockDuration     = 5 * time.Minute
+	maxAuthAttempts = 5           // Max attempts per window
+	rateLimitWindow = time.Minute // Window duration
+	blockDuration   = 5 * time.Minute
 )
 
 func newRateLimiter() *rateLimiter {

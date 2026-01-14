@@ -168,10 +168,10 @@ func HTTPRecoveryMiddleware(next http.Handler) http.Handler {
 // SSHSessionTags returns common tags for SSH session events.
 func SSHSessionTags(username, fingerprint, remoteAddr string) map[string]string {
 	return map[string]string{
-		"session.type":   "ssh",
-		"user.username":  username,
+		"session.type":     "ssh",
+		"user.username":    username,
 		"user.fingerprint": fingerprint,
-		"remote.addr":    remoteAddr,
+		"remote.addr":      remoteAddr,
 	}
 }
 

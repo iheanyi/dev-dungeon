@@ -201,14 +201,22 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 		return entries, nil
 	})
 
+	// Set up save callback - this is called when user presses Q to return to menu
+	model.SetSaveCallback(func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), dbSaveTimeout)
+		defer cancel()
+		return saveSessionToDatabase(ctx, s.db, gameSession)
+	})
+
 	gameSession.Model = model
 
-	// If we have a save, restore it
+	// If we have a save, restore it and enable Continue option
 	if gameSave != nil {
 		var saveData save.SaveData
 		if err := json.Unmarshal(gameSave.SaveData, &saveData); err != nil {
 			log.Error("Failed to unmarshal save data", "error", err)
 		} else {
+			model.SetHasValidSave(true) // Enable Continue option in menu
 			if engine := model.GetEngine(); engine != nil {
 				if err := engine.LoadGame(&saveData); err != nil {
 					log.Error("Failed to load game state", "error", err)
@@ -235,13 +243,13 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 
 // sessionWrapper wraps the game UI to handle session lifecycle.
 type sessionWrapper struct {
-	model        *ui.Model
-	server       *Server
-	session      *GameSession
-	fingerprint  string
-	showingLink  bool   // Whether the link modal is currently displayed
-	linkURL      string // The generated magic link URL
-	linkError    string // Error message if link generation failed
+	model       *ui.Model
+	server      *Server
+	session     *GameSession
+	fingerprint string
+	showingLink bool   // Whether the link modal is currently displayed
+	linkURL     string // The generated magic link URL
+	linkError   string // Error message if link generation failed
 }
 
 func (sw *sessionWrapper) Init() tea.Cmd {
@@ -526,6 +534,13 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 			}
 		}
 		return entries, nil
+	})
+
+	// Set up save callback - this is called when user presses Q to return to menu
+	model.SetSaveCallback(func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), dbSaveTimeout)
+		defer cancel()
+		return saveSessionToDatabase(ctx, s.db, gameSession)
 	})
 
 	gameSession.Model = model

@@ -6,6 +6,8 @@ _Auto-synced from .tasuku/context/learnings.md_
 
 - Always use *rand.Rand instances from seeds, never global rand, for reproducible procedural generation. Create RNG at generation entry point and pass to all helpers.
 - When setting a flag on a struct that was appended to a slice, the flag must be set BEFORE the append, not after. Structs are copied by value on append, so mutations after append don't affect the slice copy.
+- Always implement regression tests when fixing bugs - bugs without tests will regress
+- Always use time.Now().UTC() when storing timestamps in PostgreSQL. Local time (e.g., CST) gets stored without timezone info, then retrieved as UTC, causing 6+ hour discrepancies. This breaks expiry checks where tokens appear expired immediately.
 
 ## Insights
 

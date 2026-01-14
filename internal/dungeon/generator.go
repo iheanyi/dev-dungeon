@@ -15,12 +15,12 @@ type Config struct {
 	Height int
 
 	// BSP parameters
-	MinCellSize  int // Minimum cell size before stopping splits
-	MaxCellSize  int // Maximum cell size (forces split if larger)
-	MinRoomSize  int // Minimum room dimensions
-	MaxRoomSize  int // Maximum room dimensions
-	RoomPadding  int // Minimum space between room and cell edge
-	SplitChance  int // Percentage chance to split (0-100)
+	MinCellSize int // Minimum cell size before stopping splits
+	MaxCellSize int // Maximum cell size (forces split if larger)
+	MinRoomSize int // Minimum room dimensions
+	MaxRoomSize int // Maximum room dimensions
+	RoomPadding int // Minimum space between room and cell edge
+	SplitChance int // Percentage chance to split (0-100)
 
 	// Population parameters
 	MinRooms int
@@ -30,16 +30,16 @@ type Config struct {
 // DefaultConfig returns default generation parameters.
 func DefaultConfig() Config {
 	return Config{
-		Width:        80,
-		Height:       40,
-		MinCellSize:  10,
-		MaxCellSize:  25,
-		MinRoomSize:  4,
-		MaxRoomSize:  10,
-		RoomPadding:  1,
-		SplitChance:  75,
-		MinRooms:     5,
-		MaxRooms:     12,
+		Width:       80,
+		Height:      40,
+		MinCellSize: 10,
+		MaxCellSize: 25,
+		MinRoomSize: 4,
+		MaxRoomSize: 10,
+		RoomPadding: 1,
+		SplitChance: 75,
+		MinRooms:    5,
+		MaxRooms:    12,
 	}
 }
 

@@ -32,11 +32,11 @@ func TestNewItem(t *testing.T) {
 func TestItemTemplates(t *testing.T) {
 	// Verify some key items exist in templates
 	expectedItems := []string{
-		"malloc", "realloc", "mmap",        // Consumables
-		"basic_script", "vim_blade",        // Weapons
-		"basic_shell", "firewall",          // Armor
-		"ssh_key", "env_vars",              // Utilities
-		"nice_boost", "cpu_boost",          // Buffs
+		"malloc", "realloc", "mmap", // Consumables
+		"basic_script", "vim_blade", // Weapons
+		"basic_shell", "firewall", // Armor
+		"ssh_key", "env_vars", // Utilities
+		"nice_boost", "cpu_boost", // Buffs
 	}
 
 	for _, itemID := range expectedItems {

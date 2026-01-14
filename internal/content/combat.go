@@ -293,11 +293,11 @@ func GetFleeMessage(success bool) string {
 
 // CombatActionDescriptions describe what happens during combat actions.
 var CombatActionDescriptions = map[string]string{
-	"attack":   "You execute a direct syscall attack!",
-	"hack":     "You attempt to exploit a vulnerability!",
-	"item":     "You reach into your inventory...",
-	"flee":     "You attempt to context-switch away!",
-	"defend":   "You raise your defenses, reducing NICE...",
+	"attack": "You execute a direct syscall attack!",
+	"hack":   "You attempt to exploit a vulnerability!",
+	"item":   "You reach into your inventory...",
+	"flee":   "You attempt to context-switch away!",
+	"defend": "You raise your defenses, reducing NICE...",
 }
 
 // GetActionDescription returns the description for a combat action.

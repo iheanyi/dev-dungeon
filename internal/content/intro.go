@@ -3,8 +3,8 @@ package content
 
 // IntroFrame represents a single frame of the intro sequence.
 type IntroFrame struct {
-	Text     string
-	Duration int // Milliseconds to display
+	Text          string
+	Duration      int  // Milliseconds to display
 	ClearPrevious bool // Whether to clear screen before showing
 }
 
@@ -22,14 +22,14 @@ var IntroSequence = []IntroFrame{
 
 
 `,
-		Duration: 500,
+		Duration:      500,
 		ClearPrevious: true,
 	},
 	{
 		Text: `
     BIOS POST...
 `,
-		Duration: 300,
+		Duration:      300,
 		ClearPrevious: true,
 	},
 	{
@@ -37,7 +37,7 @@ var IntroSequence = []IntroFrame{
     BIOS POST... OK
     Memory Test:
 `,
-		Duration: 200,
+		Duration:      200,
 		ClearPrevious: true,
 	},
 	{
@@ -45,7 +45,7 @@ var IntroSequence = []IntroFrame{
     BIOS POST... OK
     Memory Test: 640K OK
 `,
-		Duration: 100,
+		Duration:      100,
 		ClearPrevious: true,
 	},
 	{
@@ -53,7 +53,7 @@ var IntroSequence = []IntroFrame{
     BIOS POST... OK
     Memory Test: 640K OK
     Extended Memory Test: `,
-		Duration: 300,
+		Duration:      300,
 		ClearPrevious: true,
 	},
 	{
@@ -64,7 +64,7 @@ var IntroSequence = []IntroFrame{
 
     Loading bootloader...
 `,
-		Duration: 500,
+		Duration:      500,
 		ClearPrevious: true,
 	},
 	{
@@ -77,7 +77,7 @@ var IntroSequence = []IntroFrame{
     Booting '/dev/dungeon'...
     Loading Linux kernel...
 `,
-		Duration: 800,
+		Duration:      800,
 		ClearPrevious: true,
 	},
 	{
@@ -85,7 +85,7 @@ var IntroSequence = []IntroFrame{
 [    0.000000] Command line: init=/sbin/init root=/dev/sda1
 [    0.000001] KERNEL: Initializing memory management...
 `,
-		Duration: 400,
+		Duration:      400,
 		ClearPrevious: true,
 	},
 	{
@@ -95,7 +95,7 @@ var IntroSequence = []IntroFrame{
 [    0.000142] KERNEL: Starting process scheduler...
 [    0.000203] KERNEL: Mounting root filesystem...
 `,
-		Duration: 400,
+		Duration:      400,
 		ClearPrevious: true,
 	},
 	{
@@ -107,7 +107,7 @@ var IntroSequence = []IntroFrame{
 [    0.000847] systemd[1]: Starting /sbin/init...
 [    0.001024] systemd[1]: Reached target basic.target
 `,
-		Duration: 500,
+		Duration:      500,
 		ClearPrevious: true,
 	},
 	{
@@ -121,7 +121,7 @@ var IntroSequence = []IntroFrame{
 [    0.001337] WARNING: Process anomaly detected in /tmp
 [    0.001338] WARNING: Zombie process count exceeding threshold
 `,
-		Duration: 600,
+		Duration:      600,
 		ClearPrevious: true,
 	},
 	{
@@ -131,7 +131,7 @@ var IntroSequence = []IntroFrame{
 [    0.001457] ERROR: init unable to reap children
 [    0.001502] CRITICAL: Memory corruption in /usr/lib
 `,
-		Duration: 700,
+		Duration:      700,
 		ClearPrevious: true,
 	},
 	{
@@ -141,7 +141,7 @@ var IntroSequence = []IntroFrame{
 [    0.001744] EMERGENCY: Unauthorized access to /sys
 [    0.001745] EMERGENCY: /dev nodes reporting impossible I/O
 `,
-		Duration: 800,
+		Duration:      800,
 		ClearPrevious: true,
 	},
 	{
@@ -153,7 +153,7 @@ var IntroSequence = []IntroFrame{
 [    0.001803] Something that was supposed to be FORGOTTEN
 
 `,
-		Duration: 1200,
+		Duration:      1200,
 		ClearPrevious: true,
 	},
 	{
@@ -169,7 +169,7 @@ var IntroSequence = []IntroFrame{
 [    0.001901] !!CORRUPTION SPREADING!!
 
 `,
-		Duration: 1000,
+		Duration:      1000,
 		ClearPrevious: true,
 	},
 	{
@@ -183,7 +183,7 @@ var IntroSequence = []IntroFrame{
                    - not syncing: Corruption detected -
 
 `,
-		Duration: 2000,
+		Duration:      2000,
 		ClearPrevious: true,
 	},
 	{
@@ -200,7 +200,7 @@ var IntroSequence = []IntroFrame{
     Spawning rescue process...
 
 `,
-		Duration: 1500,
+		Duration:      1500,
 		ClearPrevious: true,
 	},
 	{
@@ -215,7 +215,7 @@ var IntroSequence = []IntroFrame{
 
     Allocating memory......
 `,
-		Duration: 800,
+		Duration:      800,
 		ClearPrevious: true,
 	},
 	{
@@ -234,7 +234,7 @@ var IntroSequence = []IntroFrame{
     Assigning permissions..... UID 1000
 
 `,
-		Duration: 1000,
+		Duration:      1000,
 		ClearPrevious: true,
 	},
 	{
@@ -259,7 +259,7 @@ var IntroSequence = []IntroFrame{
           A new process, born into chaos.
 
 `,
-		Duration: 2000,
+		Duration:      2000,
 		ClearPrevious: true,
 	},
 	{
@@ -282,7 +282,7 @@ var IntroSequence = []IntroFrame{
     ==========================================
 
 `,
-		Duration: 0, // Wait for input
+		Duration:      0, // Wait for input
 		ClearPrevious: true,
 	},
 }
@@ -294,7 +294,7 @@ var QuickIntroSequence = []IntroFrame{
     Loading /dev/dungeon...
 
 `,
-		Duration: 500,
+		Duration:      500,
 		ClearPrevious: true,
 	},
 	{
@@ -305,7 +305,7 @@ var QuickIntroSequence = []IntroFrame{
     [MISSION: TERMINATE /dev/null ANOMALY]
 
 `,
-		Duration: 800,
+		Duration:      800,
 		ClearPrevious: true,
 	},
 	{
@@ -321,7 +321,7 @@ var QuickIntroSequence = []IntroFrame{
 
     Press any key to continue...
 `,
-		Duration: 0,
+		Duration:      0,
 		ClearPrevious: true,
 	},
 }
@@ -342,7 +342,7 @@ var DeathSequence = []IntroFrame{
     oom-killer: Kill process $$$ (player)
 
 `,
-		Duration: 1500,
+		Duration:      1500,
 		ClearPrevious: true,
 	},
 	{
@@ -365,7 +365,7 @@ var DeathSequence = []IntroFrame{
     The system fades to black...
 
 `,
-		Duration: 2000,
+		Duration:      2000,
 		ClearPrevious: true,
 	},
 	{
@@ -394,7 +394,7 @@ var DeathSequence = []IntroFrame{
          Press any key to continue...
 
 `,
-		Duration: 0,
+		Duration:      0,
 		ClearPrevious: true,
 	},
 }
@@ -413,7 +413,7 @@ var VictorySequence = []IntroFrame{
     [PROCESS TERMINATED]
 
 `,
-		Duration: 1500,
+		Duration:      1500,
 		ClearPrevious: true,
 	},
 	{
@@ -432,7 +432,7 @@ var VictorySequence = []IntroFrame{
     Daemons return to their services...
 
 `,
-		Duration: 2000,
+		Duration:      2000,
 		ClearPrevious: true,
 	},
 	{
@@ -447,7 +447,7 @@ var VictorySequence = []IntroFrame{
     ==========================================
 
 `,
-		Duration: 2000,
+		Duration:      2000,
 		ClearPrevious: true,
 	},
 	{
@@ -467,7 +467,7 @@ var VictorySequence = []IntroFrame{
     Your process may now rest.
 
 `,
-		Duration: 2000,
+		Duration:      2000,
 		ClearPrevious: true,
 	},
 	{
@@ -491,7 +491,7 @@ var VictorySequence = []IntroFrame{
     Press any key to return to main menu...
 
 `,
-		Duration: 0,
+		Duration:      0,
 		ClearPrevious: true,
 	},
 }

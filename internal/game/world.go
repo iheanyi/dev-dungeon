@@ -8,11 +8,11 @@ import (
 // GameWorld manages the game world state including floors, enemies, and items.
 // It implements the World interface.
 type GameWorld struct {
-	CurrentFloor *types.Floor          // The currently active floor
-	Enemies      []*entity.Enemy       // Enemies on the current floor
-	Items        []*entity.Item        // Items on the current floor
-	FloorCache   map[int]*FloorState   // Cache of visited floors with their state
-	CurrentDepth int                   // Current depth (1 = first floor)
+	CurrentFloor *types.Floor        // The currently active floor
+	Enemies      []*entity.Enemy     // Enemies on the current floor
+	Items        []*entity.Item      // Items on the current floor
+	FloorCache   map[int]*FloorState // Cache of visited floors with their state
+	CurrentDepth int                 // Current depth (1 = first floor)
 }
 
 // FloorState stores the complete state of a floor for caching.

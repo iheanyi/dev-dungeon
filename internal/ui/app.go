@@ -124,25 +124,25 @@ type Model struct {
 	gameState types.GameState
 
 	// UI state
-	currentView  ViewType
-	width        int
-	height       int
+	currentView ViewType
+	width       int
+	height      int
 
 	// Menu state
-	menuCursor   int
-	menuOptions  []string
+	menuCursor  int
+	menuOptions []string
 
 	// Combat state
-	combatCursor    int
-	combatLog       []string
-	enemies         []*entity.Enemy
-	combat          *game.CombatState
-	selectingSkill  bool
-	skillCursor     int
-	targetCursor    int // Which enemy is targeted
+	combatCursor   int
+	combatLog      []string
+	enemies        []*entity.Enemy
+	combat         *game.CombatState
+	selectingSkill bool
+	skillCursor    int
+	targetCursor   int // Which enemy is targeted
 
 	// Inventory state
-	invCursor    int
+	invCursor int
 
 	// Class selection state
 	classCursor  int
@@ -155,30 +155,30 @@ type Model struct {
 	prevView     ViewType // View to return to after admin
 
 	// Messages
-	statusMsg         string
-	messageHistory    []string // Full message history
-	messageScrollIdx  int      // Current scroll position (0 = most recent)
-	showingHistory    bool     // Whether message history view is active
+	statusMsg        string
+	messageHistory   []string // Full message history
+	messageScrollIdx int      // Current scroll position (0 = most recent)
+	showingHistory   bool     // Whether message history view is active
 
 	// Intro animation state
-	introFrame     int  // Current frame of intro
-	introSkipped   bool // User skipped intro
-	pendingClass   entity.PlayerClass // Class to use after intro
+	introFrame   int                // Current frame of intro
+	introSkipped bool               // User skipped intro
+	pendingClass entity.PlayerClass // Class to use after intro
 
 	// Shop state
-	shopCursor     int
-	shopItems      []ShopItem
+	shopCursor int
+	shopItems  []ShopItem
 
 	// Meta-progression state
-	metaProgress    *save.MetaProgress
-	saveManager     *save.Manager
+	metaProgress *save.MetaProgress
+	saveManager  *save.Manager
 
 	// Unlock shop state
-	unlockCursor    int
-	unlockCategory  int // 0=classes, 1=bonuses, 2=items
+	unlockCursor   int
+	unlockCategory int // 0=classes, 1=bonuses, 2=items
 
 	// Exit codes earned this run (calculated on death/victory)
-	runExitCodesEarned int
+	runExitCodesEarned    int
 	runExitCodesBreakdown []string
 
 	// Multiplayer session info
@@ -187,18 +187,19 @@ type Model struct {
 	dailyRunMode  bool   // True when starting a daily run (uses fixed seed)
 
 	// Save state
-	hasValidSave   bool // True if a valid save file exists
-	quitRequested  bool // True when user wants to quit (for sessionWrapper to intercept)
+	hasValidSave  bool         // True if a valid save file exists
+	quitRequested bool         // True when user wants to quit (for sessionWrapper to intercept)
+	saveCallback  SaveCallback // Callback to save game (set by server for multiplayer)
 
 	// Leaderboard state
-	leaderboardEntries   []LeaderboardEntry
-	leaderboardCursor    int
-	leaderboardRunType   string             // "all", "standard", "daily"
-	leaderboardFetcher   LeaderboardFetcher // Callback to fetch data (set by server)
-	leaderboardError     string             // Error message if fetch failed
+	leaderboardEntries []LeaderboardEntry
+	leaderboardCursor  int
+	leaderboardRunType string             // "all", "standard", "daily"
+	leaderboardFetcher LeaderboardFetcher // Callback to fetch data (set by server)
+	leaderboardError   string             // Error message if fetch failed
 
 	// Styles
-	styles       *Styles
+	styles *Styles
 }
 
 // ShopItem represents an item for sale.
@@ -220,14 +221,14 @@ type UnlockableClass struct {
 
 // UnlockableBonus represents a permanent stat bonus for purchase.
 type UnlockableBonus struct {
-	ID          string
-	Name        string
-	Description string
-	StatType    string // "RAM", "CPU", "MEM", "NICE"
-	BonusAmount int
+	ID           string
+	Name         string
+	Description  string
+	StatType     string // "RAM", "CPU", "MEM", "NICE"
+	BonusAmount  int
 	CurrentLevel int
-	MaxLevel    int
-	BasePrice   int
+	MaxLevel     int
+	BasePrice    int
 }
 
 // UnlockableItem represents a loot pool item unlock.
@@ -254,38 +255,42 @@ type LeaderboardEntry struct {
 // Returns entries and any error. Set by server for multiplayer mode.
 type LeaderboardFetcher func(runType string, limit int) ([]LeaderboardEntry, error)
 
+// SaveCallback is a callback function to save game state.
+// Called before returning to main menu in multiplayer mode.
+type SaveCallback func() error
+
 // Styles holds all UI styles.
 type Styles struct {
 	// Layout
-	Container    lipgloss.Style
-	Header       lipgloss.Style
-	Footer       lipgloss.Style
+	Container lipgloss.Style
+	Header    lipgloss.Style
+	Footer    lipgloss.Style
 
 	// Game view
-	MapBorder    lipgloss.Style
-	StatPanel    lipgloss.Style
-	LogPanel     lipgloss.Style
+	MapBorder lipgloss.Style
+	StatPanel lipgloss.Style
+	LogPanel  lipgloss.Style
 
 	// Text
-	Title        lipgloss.Style
-	Subtitle     lipgloss.Style
-	Normal       lipgloss.Style
-	Highlight    lipgloss.Style
-	Danger       lipgloss.Style
-	Success      lipgloss.Style
-	Muted        lipgloss.Style
+	Title     lipgloss.Style
+	Subtitle  lipgloss.Style
+	Normal    lipgloss.Style
+	Highlight lipgloss.Style
+	Danger    lipgloss.Style
+	Success   lipgloss.Style
+	Muted     lipgloss.Style
 
 	// Menu
 	MenuItem     lipgloss.Style
 	MenuSelected lipgloss.Style
 
 	// Tiles
-	Wall         lipgloss.Style
-	Floor        lipgloss.Style
-	Player       lipgloss.Style
-	Enemy        lipgloss.Style
-	Item         lipgloss.Style
-	Stairs       lipgloss.Style
+	Wall   lipgloss.Style
+	Floor  lipgloss.Style
+	Player lipgloss.Style
+	Enemy  lipgloss.Style
+	Item   lipgloss.Style
+	Stairs lipgloss.Style
 }
 
 // NewStyles creates the default styles.
@@ -487,6 +492,18 @@ func (m *Model) SetMultiplayerMode(username string) {
 // This is typically set by the server for multiplayer sessions.
 func (m *Model) SetLeaderboardFetcher(fetcher LeaderboardFetcher) {
 	m.leaderboardFetcher = fetcher
+}
+
+// SetSaveCallback sets the callback function for saving game state.
+// This is typically set by the server for multiplayer sessions.
+func (m *Model) SetSaveCallback(callback SaveCallback) {
+	m.saveCallback = callback
+}
+
+// SetHasValidSave sets whether a valid save exists.
+// This is used by the server for multiplayer sessions where saves are stored in the database.
+func (m *Model) SetHasValidSave(hasValidSave bool) {
+	m.hasValidSave = hasValidSave
 }
 
 // Init implements tea.Model.
@@ -750,9 +767,9 @@ func (m *Model) startNewGame(playerClass entity.PlayerClass) {
 	// Build permanent bonuses from meta progress
 	bonuses := entity.PermanentBonuses{}
 	if m.metaProgress != nil {
-		bonuses.RAM = m.metaProgress.PermanentBonuses.PID  // PID maps to RAM
+		bonuses.RAM = m.metaProgress.PermanentBonuses.PID // PID maps to RAM
 		bonuses.CPU = m.metaProgress.PermanentBonuses.CPU
-		bonuses.FD = m.metaProgress.PermanentBonuses.MEM   // MEM maps to FD
+		bonuses.FD = m.metaProgress.PermanentBonuses.MEM // MEM maps to FD
 		bonuses.NICE = m.metaProgress.PermanentBonuses.NICE
 
 		// Set unlocked items for loot pool (must be set before StartNewGame generates floors)
@@ -820,13 +837,23 @@ func (m *Model) updateGame(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q":
 		// Save and return to main menu
 		if m.engine != nil {
+			// Call save callback BEFORE destroying the engine
+			if m.saveCallback != nil {
+				if err := m.saveCallback(); err != nil {
+					m.statusMsg = "Failed to save game."
+				} else {
+					m.statusMsg = "Game saved."
+					m.hasValidSave = true // Enable Continue option
+				}
+			} else {
+				m.statusMsg = "Returned to menu."
+			}
 			m.engine.Shutdown()
 			m.engine = nil
 		}
 		m.player = nil
 		m.currentView = ViewMainMenu
 		m.gameState = types.StateMainMenu
-		m.statusMsg = "Game saved."
 	case "`":
 		// Open admin console - disabled in multiplayer to prevent cheating
 		if m.isMultiplayer {
@@ -1512,13 +1539,23 @@ func (m *Model) updatePause(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q":
 		// Save before returning to main menu
 		if m.engine != nil {
+			// Call save callback BEFORE destroying the engine
+			if m.saveCallback != nil {
+				if err := m.saveCallback(); err != nil {
+					m.statusMsg = "Failed to save game."
+				} else {
+					m.statusMsg = "Game saved."
+					m.hasValidSave = true // Enable Continue option
+				}
+			} else {
+				m.statusMsg = "Returned to menu."
+			}
 			m.engine.Shutdown()
 			m.engine = nil
 		}
 		m.player = nil
 		m.currentView = ViewMainMenu
 		m.gameState = types.StateMainMenu
-		m.statusMsg = "Game saved."
 	}
 	return m, nil
 }
