@@ -338,3 +338,72 @@ func (c *Client) GetOrCreateDailySeed(ctx context.Context) (int64, error) {
 
 	return seed, nil
 }
+
+// GetUserByNanoID retrieves a user by their public NanoID.
+func (c *Client) GetUserByNanoID(ctx context.Context, nanoid string) (*User, error) {
+	var user User
+	err := c.pool.QueryRow(ctx, `
+		SELECT id, nanoid, username, public_key_fingerprint, created_at, last_login, is_banned
+		FROM users
+		WHERE nanoid = $1
+	`, nanoid).Scan(
+		&user.ID, &user.NanoID, &user.Username, &user.PublicKeyFingerprint,
+		&user.CreatedAt, &user.LastLogin, &user.IsBanned,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+	return &user, nil
+}
+
+// GetLeaderboard retrieves leaderboard entries, optionally filtered by run type.
+func (c *Client) GetLeaderboard(ctx context.Context, runType string, limit int) ([]LeaderboardEntry, error) {
+	var query string
+	var args []interface{}
+
+	if runType == "" {
+		query = `
+			SELECT le.id, le.nanoid, le.user_id, u.username, le.run_type, le.seed,
+			       le.score, le.floors_cleared, le.time_seconds, le.class, le.created_at
+			FROM leaderboard_entries le
+			JOIN users u ON le.user_id = u.id
+			ORDER BY le.score DESC
+			LIMIT $1
+		`
+		args = []interface{}{limit}
+	} else {
+		query = `
+			SELECT le.id, le.nanoid, le.user_id, u.username, le.run_type, le.seed,
+			       le.score, le.floors_cleared, le.time_seconds, le.class, le.created_at
+			FROM leaderboard_entries le
+			JOIN users u ON le.user_id = u.id
+			WHERE le.run_type = $1
+			ORDER BY le.score DESC
+			LIMIT $2
+		`
+		args = []interface{}{runType, limit}
+	}
+
+	rows, err := c.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []LeaderboardEntry
+	for rows.Next() {
+		var e LeaderboardEntry
+		err := rows.Scan(
+			&e.ID, &e.NanoID, &e.UserID, &e.Username, &e.RunType, &e.Seed,
+			&e.Score, &e.FloorsCleared, &e.TimeSeconds, &e.Class, &e.CreatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}

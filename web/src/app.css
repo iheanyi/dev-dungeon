@@ -1,0 +1,202 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base terminal styling */
+:root {
+  --terminal-bg: #0a0a0a;
+  --terminal-green: #00ff00;
+  --terminal-amber: #ffb000;
+  --crt-curve: 2px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--terminal-bg);
+}
+
+body {
+  font-family: 'JetBrains Mono', monospace;
+  background: var(--terminal-bg);
+  color: var(--terminal-green);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* CRT Screen Effect */
+.crt {
+  position: relative;
+  overflow: hidden;
+}
+
+.crt::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0) 50%,
+    rgba(0, 0, 0, 0.1) 50%
+  );
+  background-size: 100% 4px;
+  pointer-events: none;
+  z-index: 1000;
+}
+
+.crt::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 255, 0, 0.03) 0%,
+    rgba(0, 0, 0, 0.2) 100%
+  );
+  pointer-events: none;
+  z-index: 999;
+}
+
+/* Phosphor glow effect */
+.glow {
+  text-shadow: 0 0 5px currentColor, 0 0 10px currentColor;
+}
+
+.glow-strong {
+  text-shadow: 0 0 5px currentColor, 0 0 10px currentColor, 0 0 20px currentColor;
+}
+
+/* Terminal cursor */
+.cursor {
+  display: inline-block;
+  width: 0.6em;
+  height: 1.2em;
+  background: var(--terminal-green);
+  animation: blink 1s step-end infinite;
+  vertical-align: text-bottom;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Terminal box styling */
+.terminal-box {
+  border: 1px solid rgba(0, 255, 0, 0.3);
+  background: rgba(0, 0, 0, 0.5);
+  box-shadow: 0 0 10px rgba(0, 255, 0, 0.1), inset 0 0 20px rgba(0, 0, 0, 0.5);
+}
+
+.terminal-box:hover {
+  border-color: rgba(0, 255, 0, 0.5);
+  box-shadow: 0 0 20px rgba(0, 255, 0, 0.2), inset 0 0 20px rgba(0, 0, 0, 0.5);
+}
+
+/* ASCII art styling */
+.ascii-art {
+  white-space: pre;
+  line-height: 1.2;
+  font-size: 0.7rem;
+}
+
+@media (min-width: 768px) {
+  .ascii-art {
+    font-size: 0.85rem;
+  }
+}
+
+/* Selection styling */
+::selection {
+  background: var(--terminal-green);
+  color: var(--terminal-bg);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #00ff00;
+}
+
+/* Link styling */
+a {
+  color: var(--terminal-green);
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+a:hover {
+  text-shadow: 0 0 10px currentColor;
+}
+
+/* Button styling */
+.btn-terminal {
+  @apply px-4 py-2 border border-terminal-green bg-transparent text-terminal-green font-mono;
+  @apply transition-all duration-200;
+  @apply hover:bg-terminal-green hover:text-terminal-bg hover:shadow-terminal;
+}
+
+.btn-terminal:disabled {
+  @apply opacity-50 cursor-not-allowed;
+  @apply hover:bg-transparent hover:text-terminal-green hover:shadow-none;
+}
+
+/* Input styling */
+.input-terminal {
+  @apply w-full px-3 py-2 bg-transparent border border-terminal-gray text-terminal-green font-mono;
+  @apply focus:outline-none focus:border-terminal-green focus:shadow-terminal;
+  @apply placeholder-terminal-gray-light;
+}
+
+/* Table styling */
+.table-terminal {
+  @apply w-full border-collapse;
+}
+
+.table-terminal th,
+.table-terminal td {
+  @apply px-4 py-2 border border-terminal-gray text-left;
+}
+
+.table-terminal th {
+  @apply bg-terminal-bg-light text-terminal-green-bright;
+}
+
+.table-terminal tr:hover td {
+  @apply bg-terminal-bg-light;
+}
+
+/* Typing animation */
+.typing {
+  overflow: hidden;
+  white-space: nowrap;
+  animation: typing 2s steps(40, end);
+}
+
+@keyframes typing {
+  from { width: 0; }
+  to { width: 100%; }
+}

@@ -2,7 +2,7 @@
   "version": "v4",
   "tasks": {
     "admin-console": {
-      "status": "ready",
+      "status": "done",
       "priority": 3,
       "tags": [
         "feature",
@@ -10,13 +10,13 @@
         "dev-tools"
       ],
       "file": "tasks/admin-console.md",
-      "updated_at": "2026-01-14T01:16:33.199308Z"
+      "updated_at": "2026-01-14T03:14:28.106525Z"
     },
     "class-system": {
       "status": "ready",
       "priority": 3,
       "file": "tasks/class-system.md",
-      "updated_at": "2026-01-14T00:36:11.326932Z"
+      "updated_at": "2026-01-14T03:14:14.175856Z"
     },
     "combat-system": {
       "status": "done",
@@ -93,10 +93,20 @@
       "priority": 1,
       "file": "tasks/ui-system.md",
       "updated_at": "2026-01-14T01:44:29.980762Z"
+    },
+    "unlockables-system": {
+      "status": "ready",
+      "priority": 2,
+      "tags": [
+        "feature",
+        "meta-progression"
+      ],
+      "file": "tasks/unlockables-system.md",
+      "updated_at": "2026-01-14T03:14:28.457554Z"
     }
   },
   "archived_count": 0,
   "learnings_count": 4,
   "decisions_count": 5,
-  "updated_at": "2026-01-14T02:44:34.112149Z"
+  "updated_at": "2026-01-14T03:14:28.457806Z"
 }

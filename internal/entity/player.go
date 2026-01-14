@@ -33,9 +33,33 @@ type Player struct {
 	ActiveBuffs []Buff
 }
 
+// PermanentBonuses represents stat bonuses from meta-progression.
+type PermanentBonuses struct {
+	RAM  int // Bonus to max RAM
+	CPU  int // Bonus to CPU
+	FD   int // Bonus to max FD
+	NICE int // Bonus to NICE (negative is better)
+}
+
 // NewPlayer creates a new player with the given class.
 func NewPlayer(class PlayerClass) *Player {
+	return NewPlayerWithBonuses(class, PermanentBonuses{})
+}
+
+// NewPlayerWithBonuses creates a new player with the given class and permanent bonuses.
+func NewPlayerWithBonuses(class PlayerClass, bonuses PermanentBonuses) *Player {
 	stats, maxStats := getClassStats(class)
+
+	// Apply permanent bonuses
+	stats.RAM += bonuses.RAM
+	maxStats.MaxRAM += bonuses.RAM
+	stats.CPU += bonuses.CPU
+	stats.FD += bonuses.FD
+	maxStats.MaxFD += bonuses.FD
+	stats.NICE -= bonuses.NICE // Lower NICE is better (faster)
+	if stats.NICE < 1 {
+		stats.NICE = 1 // Minimum NICE of 1
+	}
 
 	p := &Player{
 		BaseEntity: NewBaseEntity(

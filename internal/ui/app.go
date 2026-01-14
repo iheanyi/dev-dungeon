@@ -12,6 +12,7 @@ import (
 	"github.com/iheanyi/devdungeon/internal/dungeon"
 	"github.com/iheanyi/devdungeon/internal/entity"
 	"github.com/iheanyi/devdungeon/internal/game"
+	"github.com/iheanyi/devdungeon/internal/save"
 	"github.com/iheanyi/devdungeon/internal/types"
 )
 
@@ -32,6 +33,7 @@ const (
 	ViewMessageHistory
 	ViewIntro
 	ViewShop
+	ViewUnlockShop
 )
 
 // introTickMsg is sent to advance intro animation.
@@ -166,6 +168,18 @@ type Model struct {
 	shopCursor     int
 	shopItems      []ShopItem
 
+	// Meta-progression state
+	metaProgress    *save.MetaProgress
+	saveManager     *save.Manager
+
+	// Unlock shop state
+	unlockCursor    int
+	unlockCategory  int // 0=classes, 1=bonuses, 2=items
+
+	// Exit codes earned this run (calculated on death/victory)
+	runExitCodesEarned int
+	runExitCodesBreakdown []string
+
 	// Styles
 	styles       *Styles
 }
@@ -176,6 +190,36 @@ type ShopItem struct {
 	Name       string
 	Price      int
 	InStock    bool
+}
+
+// UnlockableClass represents a class available for unlock.
+type UnlockableClass struct {
+	Class       entity.PlayerClass
+	Name        string
+	Description string
+	Price       int
+	Unlocked    bool
+}
+
+// UnlockableBonus represents a permanent stat bonus for purchase.
+type UnlockableBonus struct {
+	ID          string
+	Name        string
+	Description string
+	StatType    string // "RAM", "CPU", "MEM", "NICE"
+	BonusAmount int
+	CurrentLevel int
+	MaxLevel    int
+	BasePrice   int
+}
+
+// UnlockableItem represents a loot pool item unlock.
+type UnlockableItem struct {
+	TemplateID  string
+	Name        string
+	Description string
+	Price       int
+	Unlocked    bool
 }
 
 // Styles holds all UI styles.
@@ -312,6 +356,19 @@ func NewWithRenderer(cfg *config.Config, renderer *lipgloss.Renderer) *Model {
 
 // newModel is the internal constructor.
 func newModel(cfg *config.Config, renderer *lipgloss.Renderer) *Model {
+	// Initialize save manager for meta-progress
+	saveMgr, _ := save.NewManager(save.DefaultConfig())
+
+	// Load meta-progress
+	var metaProg *save.MetaProgress
+	if saveMgr != nil {
+		metaProg, _ = saveMgr.LoadMetaProgress()
+	}
+	if metaProg == nil {
+		defaultMeta := save.NewMetaProgress()
+		metaProg = &defaultMeta
+	}
+
 	m := &Model{
 		config:      cfg,
 		currentView: ViewMainMenu,
@@ -319,6 +376,7 @@ func newModel(cfg *config.Config, renderer *lipgloss.Renderer) *Model {
 		menuOptions: []string{
 			"New Game",
 			"Continue",
+			"Unlocks",
 			"Quit",
 		},
 		menuCursor: 0,
@@ -343,6 +401,8 @@ func newModel(cfg *config.Config, renderer *lipgloss.Renderer) *Model {
 		adminCursor:    0,
 		combatLog:      make([]string, 0),
 		messageHistory: make([]string, 0),
+		metaProgress:   metaProg,
+		saveManager:    saveMgr,
 	}
 
 	// Use provided renderer or default styles
@@ -428,6 +488,8 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateIntro(msg)
 	case ViewShop:
 		return m.updateShop(msg)
+	case ViewUnlockShop:
+		return m.updateUnlockShop(msg)
 	}
 
 	return m, nil
@@ -471,6 +533,9 @@ func (m *Model) selectMenuItem() (tea.Model, tea.Cmd) {
 	case "Continue":
 		m.continueGame()
 		return m, nil
+	case "Unlocks":
+		m.openUnlockShop()
+		return m, nil
 	case "Quit":
 		m.shutdown()
 		return m, tea.Quit
@@ -492,8 +557,14 @@ func (m *Model) updateClassSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.classCursor = 0
 		}
 	case "enter", " ":
+		// Check if class is unlocked
+		selectedClass := m.classOptions[m.classCursor]
+		if !m.isClassUnlocked(selectedClass) {
+			m.statusMsg = fmt.Sprintf("Class '%s' is locked. Visit Unlocks from the main menu to purchase it.", selectedClass)
+			return m, nil
+		}
 		// Start intro sequence, then game
-		m.pendingClass = m.classOptions[m.classCursor]
+		m.pendingClass = selectedClass
 		m.introFrame = 0
 		m.introSkipped = false
 		m.currentView = ViewIntro
@@ -543,12 +614,25 @@ func (m *Model) startNewGame(playerClass entity.PlayerClass) {
 	dungeonCfg.Height = m.config.Display.MapHeight
 	m.engine.SetGenerator(dungeon.NewGenerator(dungeonCfg))
 
-	// Start a new game with the selected class
-	if err := m.engine.StartNewGame(playerClass); err != nil {
+	// Build permanent bonuses from meta progress
+	bonuses := entity.PermanentBonuses{}
+	if m.metaProgress != nil {
+		bonuses.RAM = m.metaProgress.PermanentBonuses.PID  // PID maps to RAM
+		bonuses.CPU = m.metaProgress.PermanentBonuses.CPU
+		bonuses.FD = m.metaProgress.PermanentBonuses.MEM   // MEM maps to FD
+		bonuses.NICE = m.metaProgress.PermanentBonuses.NICE
+	}
+
+	// Start a new game with the selected class and bonuses
+	if err := m.engine.StartNewGameWithBonuses(playerClass, bonuses); err != nil {
 		m.statusMsg = fmt.Sprintf("Failed to start game: %v", err)
 		m.currentView = ViewMainMenu
 		return
 	}
+
+	// Reset run exit codes tracking
+	m.runExitCodesEarned = 0
+	m.runExitCodesBreakdown = nil
 
 	// Get the player from the engine
 	m.player = m.engine.Player()
@@ -859,6 +943,7 @@ func (m *Model) executeCombatAction(key string) (tea.Model, tea.Cmd) {
 					m.combatLog = append(m.combatLog, "[GOD MODE] Damage negated!")
 				} else {
 					m.endCombat(false)
+					m.awardRunExitCodes(false) // Award exit codes on death
 					m.currentView = ViewGameOver
 					m.gameState = types.StateGameOver
 					return m, nil
@@ -910,6 +995,7 @@ func (m *Model) executeSkill(skillIdx int) (tea.Model, tea.Cmd) {
 					m.combatLog = append(m.combatLog, "[GOD MODE] Damage negated!")
 				} else {
 					m.endCombat(false)
+					m.awardRunExitCodes(false) // Award exit codes on death
 					m.currentView = ViewGameOver
 					m.gameState = types.StateGameOver
 					return m, nil
@@ -939,6 +1025,7 @@ func (m *Model) endCombat(victory bool) {
 
 	// Check for game victory (boss killed)
 	if bossKilled {
+		m.awardRunExitCodes(true) // Award exit codes on victory
 		m.currentView = ViewVictory
 		m.gameState = types.StateVictory
 		m.statusMsg = "KERNEL PANIC DEFEATED! You saved the system!"
@@ -1606,6 +1693,8 @@ func (m *Model) View() string {
 		return m.viewIntro()
 	case ViewShop:
 		return m.viewShop()
+	case ViewUnlockShop:
+		return m.viewUnlockShop()
 	default:
 		return "Unknown view"
 	}
@@ -1646,18 +1735,35 @@ func (m *Model) viewClassSelect() string {
 	for i, class := range m.classOptions {
 		cursor := "  "
 		style := m.styles.MenuItem
+		isUnlocked := m.isClassUnlocked(class)
+
 		if i == m.classCursor {
 			cursor = "> "
 			style = m.styles.MenuSelected
 		}
-		menu += style.Render(fmt.Sprintf("%s%s", cursor, class)) + "\n"
+
+		classStr := string(class)
+		if !isUnlocked {
+			// Show locked class with price
+			price := m.getClassUnlockPrice(class)
+			classStr = fmt.Sprintf("%s [LOCKED - %d exit codes]", class, price)
+			if i != m.classCursor {
+				style = m.styles.Muted
+			}
+		}
+		menu += style.Render(fmt.Sprintf("%s%s", cursor, classStr)) + "\n"
 	}
 
 	// Show description of selected class
-	desc, stats := m.getClassDescription(m.classOptions[m.classCursor])
+	selectedClass := m.classOptions[m.classCursor]
+	desc, stats := m.getClassDescription(selectedClass)
 	details := "\n" + m.styles.Muted.Render("─── Class Info ───") + "\n"
 	details += m.styles.Normal.Render(desc) + "\n\n"
 	details += m.styles.Highlight.Render(stats) + "\n"
+
+	if !m.isClassUnlocked(selectedClass) {
+		details += "\n" + m.styles.Danger.Render("This class is locked. Visit the Unlocks shop to purchase it.") + "\n"
+	}
 
 	footer := m.styles.Muted.Render("\n[↑/↓] Navigate  [Enter] Select  [Esc] Back")
 
@@ -2314,6 +2420,16 @@ func (m *Model) viewGameOver() string {
 		content += fmt.Sprintf("\nLevel Reached: %d\n", m.player.Level)
 	}
 
+	// Show exit codes earned
+	content += "\n" + m.styles.Highlight.Render("─── Exit Codes Earned ───") + "\n"
+	content += m.styles.Success.Render(fmt.Sprintf("  +%d exit codes", m.runExitCodesEarned)) + "\n"
+	for _, breakdown := range m.runExitCodesBreakdown {
+		content += m.styles.Muted.Render(fmt.Sprintf("    %s", breakdown)) + "\n"
+	}
+	if m.metaProgress != nil {
+		content += m.styles.Normal.Render(fmt.Sprintf("\n  Total saved: %d", m.metaProgress.TotalExitCodes)) + "\n"
+	}
+
 	content += m.styles.Muted.Render("\n[Enter] Continue  [Q] Quit")
 
 	return m.styles.Container.Render(content)
@@ -2345,6 +2461,16 @@ func (m *Model) viewVictory() string {
 
 	if m.player != nil {
 		content += fmt.Sprintf("\nFinal Level: %d\n", m.player.Level)
+	}
+
+	// Show exit codes earned
+	content += "\n" + m.styles.Highlight.Render("─── Exit Codes Earned ───") + "\n"
+	content += m.styles.Success.Render(fmt.Sprintf("  +%d exit codes", m.runExitCodesEarned)) + "\n"
+	for _, breakdown := range m.runExitCodesBreakdown {
+		content += m.styles.Muted.Render(fmt.Sprintf("    %s", breakdown)) + "\n"
+	}
+	if m.metaProgress != nil {
+		content += m.styles.Normal.Render(fmt.Sprintf("\n  Total saved: %d", m.metaProgress.TotalExitCodes)) + "\n"
 	}
 
 	content += m.styles.Muted.Render("\n[Enter] Continue  [Q] Quit")
@@ -2564,4 +2690,531 @@ func (m *Model) viewShop() string {
 	footer := m.styles.Muted.Render("\n[↑/↓] Browse  [Enter] Buy  [$/Esc] Exit")
 
 	return m.styles.Container.Render(title + balance + items + details + footer)
+}
+
+// --- Class Unlock Functions ---
+
+// isClassUnlocked checks if a class is unlocked in meta-progress.
+func (m *Model) isClassUnlocked(class entity.PlayerClass) bool {
+	// init is always unlocked
+	if class == entity.ClassInit {
+		return true
+	}
+	if m.metaProgress == nil {
+		return false
+	}
+	for _, unlocked := range m.metaProgress.UnlockedClasses {
+		if unlocked == string(class) {
+			return true
+		}
+	}
+	return false
+}
+
+// getClassUnlockPrice returns the exit code price to unlock a class.
+func (m *Model) getClassUnlockPrice(class entity.PlayerClass) int {
+	switch class {
+	case entity.ClassCron:
+		return 50
+	case entity.ClassBash:
+		return 75
+	case entity.ClassVim:
+		return 100
+	case entity.ClassSudo:
+		return 150
+	default:
+		return 0
+	}
+}
+
+// --- Unlock Shop Functions ---
+
+// openUnlockShop initializes and opens the unlock shop.
+func (m *Model) openUnlockShop() {
+	m.unlockCursor = 0
+	m.unlockCategory = 0
+	m.prevView = ViewMainMenu
+	m.currentView = ViewUnlockShop
+}
+
+// updateUnlockShop handles unlock shop input.
+func (m *Model) updateUnlockShop(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Get the current list based on category
+	itemCount := m.getUnlockCategoryItemCount()
+
+	switch msg.String() {
+	case "esc", "q":
+		m.currentView = ViewMainMenu
+	case "up", "k", "w":
+		m.unlockCursor--
+		if m.unlockCursor < 0 {
+			m.unlockCursor = itemCount - 1
+			if m.unlockCursor < 0 {
+				m.unlockCursor = 0
+			}
+		}
+	case "down", "j", "s":
+		m.unlockCursor++
+		if m.unlockCursor >= itemCount {
+			m.unlockCursor = 0
+		}
+	case "left", "h":
+		m.unlockCategory--
+		if m.unlockCategory < 0 {
+			m.unlockCategory = 2
+		}
+		m.unlockCursor = 0
+	case "right", "l", "tab":
+		m.unlockCategory++
+		if m.unlockCategory > 2 {
+			m.unlockCategory = 0
+		}
+		m.unlockCursor = 0
+	case "enter", " ":
+		m.purchaseUnlock()
+	}
+	return m, nil
+}
+
+// getUnlockCategoryItemCount returns the number of items in the current unlock category.
+func (m *Model) getUnlockCategoryItemCount() int {
+	switch m.unlockCategory {
+	case 0: // Classes
+		return 4 // cron, bash, vim, sudo (init is always unlocked)
+	case 1: // Bonuses
+		return 4 // RAM, CPU, MEM, NICE
+	case 2: // Items
+		return len(m.getUnlockableItems())
+	default:
+		return 0
+	}
+}
+
+// purchaseUnlock attempts to purchase the selected unlock.
+func (m *Model) purchaseUnlock() {
+	if m.metaProgress == nil {
+		m.statusMsg = "Error: No meta progress available"
+		return
+	}
+
+	switch m.unlockCategory {
+	case 0: // Classes
+		m.purchaseClassUnlock()
+	case 1: // Bonuses
+		m.purchaseBonusUnlock()
+	case 2: // Items
+		m.purchaseItemUnlock()
+	}
+}
+
+// purchaseClassUnlock handles class unlock purchases.
+func (m *Model) purchaseClassUnlock() {
+	classes := []entity.PlayerClass{entity.ClassCron, entity.ClassBash, entity.ClassVim, entity.ClassSudo}
+	if m.unlockCursor >= len(classes) {
+		return
+	}
+
+	class := classes[m.unlockCursor]
+	if m.isClassUnlocked(class) {
+		m.statusMsg = fmt.Sprintf("Class '%s' is already unlocked!", class)
+		return
+	}
+
+	price := m.getClassUnlockPrice(class)
+	if m.metaProgress.TotalExitCodes < price {
+		m.statusMsg = fmt.Sprintf("Not enough exit codes! Need %d, have %d.", price, m.metaProgress.TotalExitCodes)
+		return
+	}
+
+	// Purchase successful
+	m.metaProgress.TotalExitCodes -= price
+	m.metaProgress.UnlockedClasses = append(m.metaProgress.UnlockedClasses, string(class))
+
+	// Save meta progress
+	if m.saveManager != nil {
+		m.saveManager.SaveMetaProgress(m.metaProgress)
+	}
+
+	m.statusMsg = fmt.Sprintf("Unlocked class '%s'!", class)
+}
+
+// purchaseBonusUnlock handles permanent bonus purchases.
+func (m *Model) purchaseBonusUnlock() {
+	bonuses := m.getUnlockableBonuses()
+	if m.unlockCursor >= len(bonuses) {
+		return
+	}
+
+	bonus := bonuses[m.unlockCursor]
+	if bonus.CurrentLevel >= bonus.MaxLevel {
+		m.statusMsg = fmt.Sprintf("%s is already at max level!", bonus.Name)
+		return
+	}
+
+	price := m.getBonusPrice(bonus)
+	if m.metaProgress.TotalExitCodes < price {
+		m.statusMsg = fmt.Sprintf("Not enough exit codes! Need %d, have %d.", price, m.metaProgress.TotalExitCodes)
+		return
+	}
+
+	// Purchase successful
+	m.metaProgress.TotalExitCodes -= price
+
+	// Apply the bonus
+	switch bonus.StatType {
+	case "RAM":
+		m.metaProgress.PermanentBonuses.PID += bonus.BonusAmount
+	case "CPU":
+		m.metaProgress.PermanentBonuses.CPU += bonus.BonusAmount
+	case "MEM":
+		m.metaProgress.PermanentBonuses.MEM += bonus.BonusAmount
+	case "NICE":
+		m.metaProgress.PermanentBonuses.NICE += bonus.BonusAmount
+	}
+
+	// Save meta progress
+	if m.saveManager != nil {
+		m.saveManager.SaveMetaProgress(m.metaProgress)
+	}
+
+	m.statusMsg = fmt.Sprintf("Purchased %s upgrade!", bonus.Name)
+}
+
+// purchaseItemUnlock handles loot pool item unlock purchases.
+func (m *Model) purchaseItemUnlock() {
+	items := m.getUnlockableItems()
+	if m.unlockCursor >= len(items) {
+		return
+	}
+
+	item := items[m.unlockCursor]
+	if item.Unlocked {
+		m.statusMsg = fmt.Sprintf("'%s' is already unlocked!", item.Name)
+		return
+	}
+
+	if m.metaProgress.TotalExitCodes < item.Price {
+		m.statusMsg = fmt.Sprintf("Not enough exit codes! Need %d, have %d.", item.Price, m.metaProgress.TotalExitCodes)
+		return
+	}
+
+	// Purchase successful
+	m.metaProgress.TotalExitCodes -= item.Price
+	m.metaProgress.UnlockedItems = append(m.metaProgress.UnlockedItems, item.TemplateID)
+
+	// Save meta progress
+	if m.saveManager != nil {
+		m.saveManager.SaveMetaProgress(m.metaProgress)
+	}
+
+	m.statusMsg = fmt.Sprintf("Unlocked '%s'!", item.Name)
+}
+
+// getUnlockableBonuses returns the list of permanent stat bonuses available.
+func (m *Model) getUnlockableBonuses() []UnlockableBonus {
+	// Calculate current levels from meta progress
+	ramLevel := m.metaProgress.PermanentBonuses.PID / 5
+	cpuLevel := m.metaProgress.PermanentBonuses.CPU / 2
+	memLevel := m.metaProgress.PermanentBonuses.MEM / 5
+	niceLevel := m.metaProgress.PermanentBonuses.NICE / 1
+
+	return []UnlockableBonus{
+		{ID: "ram", Name: "+5 Base RAM", Description: "Increases starting health", StatType: "RAM", BonusAmount: 5, CurrentLevel: ramLevel, MaxLevel: 10, BasePrice: 25},
+		{ID: "cpu", Name: "+2 Base CPU", Description: "Increases starting attack power", StatType: "CPU", BonusAmount: 2, CurrentLevel: cpuLevel, MaxLevel: 10, BasePrice: 30},
+		{ID: "mem", Name: "+5 Base FD", Description: "Increases starting ability resource", StatType: "MEM", BonusAmount: 5, CurrentLevel: memLevel, MaxLevel: 10, BasePrice: 25},
+		{ID: "nice", Name: "-1 Base NICE", Description: "Faster starting speed", StatType: "NICE", BonusAmount: 1, CurrentLevel: niceLevel, MaxLevel: 5, BasePrice: 40},
+	}
+}
+
+// getBonusPrice calculates the price for the next level of a bonus.
+func (m *Model) getBonusPrice(bonus UnlockableBonus) int {
+	// Price doubles each level
+	multiplier := 1
+	for i := 0; i < bonus.CurrentLevel; i++ {
+		multiplier *= 2
+	}
+	return bonus.BasePrice * multiplier
+}
+
+// getUnlockableItems returns the list of items available to unlock for the loot pool.
+func (m *Model) getUnlockableItems() []UnlockableItem {
+	// Define items that can be unlocked to add to the loot pool
+	allItems := []UnlockableItem{
+		{TemplateID: "rm_rf", Name: "rm -rf", Description: "Legendary weapon - devastating attack", Price: 200},
+		{TemplateID: "sudo_armor", Name: "sudo armor", Description: "Legendary armor - root protection", Price: 200},
+		{TemplateID: "fork_bomb", Name: "fork bomb", Description: "Legendary consumable - massive damage", Price: 150},
+		{TemplateID: "kill_9", Name: "kill -9", Description: "Rare weapon - guaranteed process termination", Price: 100},
+		{TemplateID: "mmap", Name: "mmap()", Description: "Rare consumable - large memory allocation", Price: 75},
+		{TemplateID: "root_shard", Name: "root shard", Description: "Rare item - permanently lower UID", Price: 100},
+	}
+
+	// Mark items as unlocked based on meta progress
+	for i := range allItems {
+		for _, unlocked := range m.metaProgress.UnlockedItems {
+			if unlocked == allItems[i].TemplateID {
+				allItems[i].Unlocked = true
+				break
+			}
+		}
+	}
+
+	return allItems
+}
+
+// viewUnlockShop renders the unlock shop interface.
+func (m *Model) viewUnlockShop() string {
+	title := m.styles.Title.Render(`
+    ╔═══════════════════════════════════════════╗
+    ║             PERMANENT UNLOCKS             ║
+    ╚═══════════════════════════════════════════╝
+	`) + "\n"
+
+	// Show total exit codes
+	balance := m.styles.Muted.Render("Exit Codes: ") + m.styles.Highlight.Render(fmt.Sprintf("%d", m.metaProgress.TotalExitCodes)) + "\n\n"
+
+	// Category tabs
+	categories := []string{"Classes", "Bonuses", "Items"}
+	var tabs string
+	for i, cat := range categories {
+		if i == m.unlockCategory {
+			tabs += m.styles.MenuSelected.Render(fmt.Sprintf(" [%s] ", cat))
+		} else {
+			tabs += m.styles.Muted.Render(fmt.Sprintf("  %s  ", cat))
+		}
+	}
+	tabs += "\n" + m.styles.Muted.Render("─────────────────────────────────────────────") + "\n\n"
+
+	// Category content
+	var content string
+	switch m.unlockCategory {
+	case 0:
+		content = m.renderUnlockClasses()
+	case 1:
+		content = m.renderUnlockBonuses()
+	case 2:
+		content = m.renderUnlockItems()
+	}
+
+	// Run statistics if available
+	stats := ""
+	if m.metaProgress != nil {
+		stats = "\n" + m.styles.Muted.Render("─── Statistics ───") + "\n"
+		stats += fmt.Sprintf("  Runs Completed: %d\n", m.metaProgress.RunsCompleted)
+		stats += fmt.Sprintf("  Deepest Floor:  %d\n", m.metaProgress.DeepestFloor)
+		stats += fmt.Sprintf("  Total Deaths:   %d\n", m.metaProgress.TotalDeaths)
+	}
+
+	footer := m.styles.Muted.Render("\n[←/→] Category  [↑/↓] Navigate  [Enter] Purchase  [Esc] Back")
+
+	if m.statusMsg != "" {
+		footer = "\n" + m.styles.Highlight.Render(m.statusMsg) + footer
+	}
+
+	return m.styles.Container.Render(title + balance + tabs + content + stats + footer)
+}
+
+// renderUnlockClasses renders the classes category in the unlock shop.
+func (m *Model) renderUnlockClasses() string {
+	classes := []struct {
+		class entity.PlayerClass
+		desc  string
+	}{
+		{entity.ClassCron, "Scheduler daemon. Fast and precise."},
+		{entity.ClassBash, "Powerful shell. High attack output."},
+		{entity.ClassVim, "Complex editor. Many abilities."},
+		{entity.ClassSudo, "Root access. High risk, high power."},
+	}
+
+	var content string
+	for i, c := range classes {
+		cursor := "  "
+		style := m.styles.MenuItem
+		if i == m.unlockCursor {
+			cursor = "> "
+			style = m.styles.MenuSelected
+		}
+
+		unlocked := m.isClassUnlocked(c.class)
+		price := m.getClassUnlockPrice(c.class)
+
+		var statusStr string
+		if unlocked {
+			statusStr = m.styles.Success.Render(" [UNLOCKED]")
+		} else if m.metaProgress.TotalExitCodes >= price {
+			statusStr = m.styles.Highlight.Render(fmt.Sprintf(" [%d exit codes]", price))
+		} else {
+			statusStr = m.styles.Danger.Render(fmt.Sprintf(" [%d exit codes]", price))
+		}
+
+		content += style.Render(fmt.Sprintf("%s%s%s", cursor, c.class, statusStr)) + "\n"
+		if i == m.unlockCursor {
+			content += m.styles.Muted.Render(fmt.Sprintf("     %s", c.desc)) + "\n"
+		}
+	}
+
+	return content
+}
+
+// renderUnlockBonuses renders the bonuses category in the unlock shop.
+func (m *Model) renderUnlockBonuses() string {
+	bonuses := m.getUnlockableBonuses()
+
+	var content string
+	for i, bonus := range bonuses {
+		cursor := "  "
+		style := m.styles.MenuItem
+		if i == m.unlockCursor {
+			cursor = "> "
+			style = m.styles.MenuSelected
+		}
+
+		price := m.getBonusPrice(bonus)
+		levelStr := fmt.Sprintf("[%d/%d]", bonus.CurrentLevel, bonus.MaxLevel)
+
+		var statusStr string
+		if bonus.CurrentLevel >= bonus.MaxLevel {
+			statusStr = m.styles.Success.Render(" MAX")
+		} else if m.metaProgress.TotalExitCodes >= price {
+			statusStr = m.styles.Highlight.Render(fmt.Sprintf(" - %d exit codes", price))
+		} else {
+			statusStr = m.styles.Danger.Render(fmt.Sprintf(" - %d exit codes", price))
+		}
+
+		content += style.Render(fmt.Sprintf("%s%s %s%s", cursor, bonus.Name, levelStr, statusStr)) + "\n"
+		if i == m.unlockCursor {
+			content += m.styles.Muted.Render(fmt.Sprintf("     %s", bonus.Description)) + "\n"
+		}
+	}
+
+	return content
+}
+
+// renderUnlockItems renders the items category in the unlock shop.
+func (m *Model) renderUnlockItems() string {
+	items := m.getUnlockableItems()
+
+	var content string
+	for i, item := range items {
+		cursor := "  "
+		style := m.styles.MenuItem
+		if i == m.unlockCursor {
+			cursor = "> "
+			style = m.styles.MenuSelected
+		}
+
+		var statusStr string
+		if item.Unlocked {
+			statusStr = m.styles.Success.Render(" [UNLOCKED]")
+		} else if m.metaProgress.TotalExitCodes >= item.Price {
+			statusStr = m.styles.Highlight.Render(fmt.Sprintf(" [%d exit codes]", item.Price))
+		} else {
+			statusStr = m.styles.Danger.Render(fmt.Sprintf(" [%d exit codes]", item.Price))
+		}
+
+		content += style.Render(fmt.Sprintf("%s%s%s", cursor, item.Name, statusStr)) + "\n"
+		if i == m.unlockCursor {
+			content += m.styles.Muted.Render(fmt.Sprintf("     %s", item.Description)) + "\n"
+		}
+	}
+
+	return content
+}
+
+// --- Exit Code Calculation ---
+
+// calculateRunExitCodes calculates exit codes earned for a run.
+func (m *Model) calculateRunExitCodes(victory bool) (int, []string) {
+	total := 0
+	var breakdown []string
+
+	if m.engine == nil {
+		return 0, breakdown
+	}
+
+	stats := m.engine.GetRunStats()
+	if stats == nil {
+		return 0, breakdown
+	}
+
+	// Floors cleared: 10 per floor
+	floorsBonus := stats.MaxDepthReached * 10
+	total += floorsBonus
+	breakdown = append(breakdown, fmt.Sprintf("Floors cleared (%d): +%d", stats.MaxDepthReached, floorsBonus))
+
+	// Enemies killed: 1-5 per enemy type
+	for enemyType, count := range stats.EnemiesKilled {
+		value := m.getEnemyExitCodeValue(enemyType)
+		killBonus := value * count
+		total += killBonus
+		if killBonus > 0 {
+			breakdown = append(breakdown, fmt.Sprintf("%s x%d: +%d", enemyType, count, killBonus))
+		}
+	}
+
+	// Boss kill bonus (if killed kernel_panic)
+	if _, killed := stats.EnemiesKilled["kernel_panic"]; killed {
+		bossBonus := 50
+		total += bossBonus
+		breakdown = append(breakdown, fmt.Sprintf("Boss defeated: +%d", bossBonus))
+	}
+
+	// Victory bonus
+	if victory {
+		victoryBonus := 200
+		total += victoryBonus
+		breakdown = append(breakdown, fmt.Sprintf("Victory bonus: +%d", victoryBonus))
+	}
+
+	return total, breakdown
+}
+
+// getEnemyExitCodeValue returns the exit code value for killing an enemy type.
+func (m *Model) getEnemyExitCodeValue(enemyType string) int {
+	switch enemyType {
+	case "zombie":
+		return 1
+	case "daemon":
+		return 2
+	case "fork_bomb":
+		return 3
+	case "segfault":
+		return 4
+	case "rootkit":
+		return 5
+	case "kernel_panic":
+		return 10
+	default:
+		return 1
+	}
+}
+
+// awardRunExitCodes awards exit codes at end of run and updates meta progress.
+func (m *Model) awardRunExitCodes(victory bool) {
+	earned, breakdown := m.calculateRunExitCodes(victory)
+	m.runExitCodesEarned = earned
+	m.runExitCodesBreakdown = breakdown
+
+	if m.metaProgress == nil || m.saveManager == nil {
+		return
+	}
+
+	// Update meta progress
+	m.metaProgress.TotalExitCodes += earned
+
+	if victory {
+		m.metaProgress.RunsCompleted++
+	} else {
+		m.metaProgress.TotalDeaths++
+	}
+
+	// Update deepest floor
+	if m.engine != nil {
+		stats := m.engine.GetRunStats()
+		if stats != nil && stats.MaxDepthReached > m.metaProgress.DeepestFloor {
+			m.metaProgress.DeepestFloor = stats.MaxDepthReached
+		}
+	}
+
+	// Save meta progress
+	m.saveManager.SaveMetaProgress(m.metaProgress)
 }

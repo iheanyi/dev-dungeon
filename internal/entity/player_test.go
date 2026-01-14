@@ -330,3 +330,69 @@ func TestPlayerPosition(t *testing.T) {
 		t.Errorf("expected position %v, got %v", pos, player.Position())
 	}
 }
+
+func TestNewPlayerWithBonuses(t *testing.T) {
+	bonuses := PermanentBonuses{
+		RAM:  20,
+		CPU:  5,
+		FD:   10,
+		NICE: 2,
+	}
+
+	player := NewPlayerWithBonuses(ClassInit, bonuses)
+
+	// Base init stats: RAM=100, CPU=10, FD=16, NICE=10
+	if player.Stats.RAM != 120 {
+		t.Errorf("expected RAM 120 (100 + 20 bonus), got %d", player.Stats.RAM)
+	}
+	if player.MaxStats.MaxRAM != 120 {
+		t.Errorf("expected MaxRAM 120 (100 + 20 bonus), got %d", player.MaxStats.MaxRAM)
+	}
+	if player.Stats.CPU != 15 {
+		t.Errorf("expected CPU 15 (10 + 5 bonus), got %d", player.Stats.CPU)
+	}
+	if player.Stats.FD != 26 {
+		t.Errorf("expected FD 26 (16 + 10 bonus), got %d", player.Stats.FD)
+	}
+	if player.MaxStats.MaxFD != 26 {
+		t.Errorf("expected MaxFD 26 (16 + 10 bonus), got %d", player.MaxStats.MaxFD)
+	}
+	if player.Stats.NICE != 8 {
+		t.Errorf("expected NICE 8 (10 - 2 bonus), got %d", player.Stats.NICE)
+	}
+}
+
+func TestNewPlayerWithBonusesNICEMinimum(t *testing.T) {
+	// Test that NICE doesn't go below 1
+	bonuses := PermanentBonuses{
+		NICE: 100, // Should not make NICE go below 1
+	}
+
+	player := NewPlayerWithBonuses(ClassCron, bonuses) // Cron has NICE=5
+
+	if player.Stats.NICE < 1 {
+		t.Errorf("NICE should not go below 1, got %d", player.Stats.NICE)
+	}
+	if player.Stats.NICE != 1 {
+		t.Errorf("expected NICE to be capped at 1, got %d", player.Stats.NICE)
+	}
+}
+
+func TestPermanentBonusesDefaultNoEffect(t *testing.T) {
+	// Zero bonuses should give same result as NewPlayer
+	player1 := NewPlayer(ClassInit)
+	player2 := NewPlayerWithBonuses(ClassInit, PermanentBonuses{})
+
+	if player1.Stats.RAM != player2.Stats.RAM {
+		t.Error("zero bonuses should not affect RAM")
+	}
+	if player1.Stats.CPU != player2.Stats.CPU {
+		t.Error("zero bonuses should not affect CPU")
+	}
+	if player1.Stats.FD != player2.Stats.FD {
+		t.Error("zero bonuses should not affect FD")
+	}
+	if player1.Stats.NICE != player2.Stats.NICE {
+		t.Error("zero bonuses should not affect NICE")
+	}
+}

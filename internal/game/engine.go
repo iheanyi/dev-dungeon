@@ -93,8 +93,13 @@ func (e *Engine) SetGenerator(gen DungeonGenerator) {
 
 // StartNewGame initializes a new game with the given player class.
 func (e *Engine) StartNewGame(playerClass entity.PlayerClass) error {
-	// Create the player
-	e.player = entity.NewPlayer(playerClass)
+	return e.StartNewGameWithBonuses(playerClass, entity.PermanentBonuses{})
+}
+
+// StartNewGameWithBonuses initializes a new game with the given player class and permanent bonuses.
+func (e *Engine) StartNewGameWithBonuses(playerClass entity.PlayerClass, bonuses entity.PermanentBonuses) error {
+	// Create the player with bonuses
+	e.player = entity.NewPlayerWithBonuses(playerClass, bonuses)
 
 	// Initialize run statistics
 	e.stats = NewRunStats()
