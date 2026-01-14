@@ -72,7 +72,7 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/iheanyi/devdungeon.git
+git clone https://github.com/iheanyi/dev-dungeon.git
 cd devdungeon
 
 # Build the game
