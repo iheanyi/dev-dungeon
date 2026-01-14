@@ -95,18 +95,18 @@
       "updated_at": "2026-01-14T01:44:29.980762Z"
     },
     "unlockables-system": {
-      "status": "ready",
+      "status": "done",
       "priority": 2,
       "tags": [
         "feature",
         "meta-progression"
       ],
       "file": "tasks/unlockables-system.md",
-      "updated_at": "2026-01-14T03:14:28.457554Z"
+      "updated_at": "2026-01-14T18:15:02.399045Z"
     }
   },
   "archived_count": 0,
   "learnings_count": 4,
   "decisions_count": 5,
-  "updated_at": "2026-01-14T03:14:28.457806Z"
+  "updated_at": "2026-01-14T18:15:02.399244Z"
 }
