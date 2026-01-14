@@ -1853,6 +1853,12 @@ func (m *Model) viewMainMenu() string {
     ╚═══════════════════════════════════════════╝
 	`)
 
+	// Show greeting for multiplayer users
+	greeting := ""
+	if m.isMultiplayer && m.username != "" {
+		greeting = m.styles.Highlight.Render(fmt.Sprintf("    Welcome back, %s", m.username)) + "\n\n"
+	}
+
 	var menu string
 	for i, option := range m.menuOptions {
 		cursor := "  "
@@ -1881,7 +1887,7 @@ func (m *Model) viewMainMenu() string {
 		footer = m.styles.Danger.Render(m.statusMsg) + "\n" + footer
 	}
 
-	content := m.styles.Container.Render(title + "\n\n" + menu + "\n" + footer)
+	content := m.styles.Container.Render(title + "\n" + greeting + menu + "\n" + footer)
 	return m.centerContent(content)
 }
 
