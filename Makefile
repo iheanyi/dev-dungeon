@@ -1,7 +1,20 @@
-.PHONY: dev dev-server dev-web build test docker-up docker-down play
+.PHONY: dev dev-server dev-web dev-all build test docker-up docker-down play
 
-# Development with live reload
-dev: dev-server
+# Development with live reload (both services)
+dev: dev-all
+
+# Start both server and frontend together
+dev-all:
+	@if command -v overmind >/dev/null 2>&1; then \
+		echo "Starting both services with Overmind..."; \
+		overmind start -f Procfile.dev; \
+	else \
+		echo "Overmind not found. Install with: brew install overmind"; \
+		echo "Or run in separate terminals:"; \
+		echo "  Tab 1: make dev-server"; \
+		echo "  Tab 2: make dev-web"; \
+		exit 1; \
+	fi
 
 dev-server:
 	@echo "Starting Go server with Air (live reload)..."
@@ -44,7 +57,8 @@ server:
 # Help
 help:
 	@echo "Available commands:"
-	@echo "  make dev        - Start Go server with Air live reload"
+	@echo "  make dev        - Start both server + frontend (requires overmind)"
+	@echo "  make dev-server - Start Go server with Air live reload"
 	@echo "  make dev-web    - Start Vite frontend dev server"
 	@echo "  make build      - Build Go binary and web frontend"
 	@echo "  make test       - Run Go tests"
@@ -54,5 +68,9 @@ help:
 	@echo "  make docker-down - Stop Docker containers"
 	@echo ""
 	@echo "Development workflow:"
-	@echo "  Tab 1: make dev      (Go server with live reload)"
-	@echo "  Tab 2: make dev-web  (Vite with HMR)"
+	@echo "  make dev         (both services in one terminal - requires overmind)"
+	@echo "  - OR -"
+	@echo "  Tab 1: make dev-server (Go server with live reload)"
+	@echo "  Tab 2: make dev-web    (Vite with HMR)"
+	@echo ""
+	@echo "Install overmind: brew install overmind"

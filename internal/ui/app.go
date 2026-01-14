@@ -180,6 +180,13 @@ type Model struct {
 	runExitCodesEarned int
 	runExitCodesBreakdown []string
 
+	// Multiplayer session info
+	isMultiplayer bool   // True when connected via SSH (disables cheats)
+	username      string // Authenticated username for display
+
+	// Save state
+	hasValidSave bool // True if a valid save file exists
+
 	// Styles
 	styles       *Styles
 }
@@ -412,12 +419,41 @@ func newModel(cfg *config.Config, renderer *lipgloss.Renderer) *Model {
 		m.styles = NewStyles()
 	}
 
+	// Check if a valid save exists
+	m.hasValidSave = m.checkValidSave()
+
 	return m
+}
+
+// checkValidSave checks if a valid save file exists.
+func (m *Model) checkValidSave() bool {
+	if m.saveManager == nil {
+		return false
+	}
+
+	data, err := m.saveManager.LoadLatest()
+	if err != nil || data == nil {
+		return false
+	}
+
+	// Validate save data has valid player stats (same validation as engine.LoadGame)
+	if data.Player.MaxStats.MaxRAM <= 0 || data.Player.Level <= 0 {
+		return false
+	}
+
+	return true
 }
 
 // GetEngine returns the game engine (for external save/load).
 func (m *Model) GetEngine() *game.Engine {
 	return m.engine
+}
+
+// SetMultiplayerMode configures the model for multiplayer (SSH) sessions.
+// This disables admin console and godmode cheats.
+func (m *Model) SetMultiplayerMode(username string) {
+	m.isMultiplayer = true
+	m.username = username
 }
 
 // Init implements tea.Model.
@@ -510,10 +546,24 @@ func (m *Model) updateMainMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.menuCursor < 0 {
 			m.menuCursor = len(m.menuOptions) - 1
 		}
+		// Skip disabled "Continue" option
+		if m.menuOptions[m.menuCursor] == "Continue" && !m.hasValidSave {
+			m.menuCursor--
+			if m.menuCursor < 0 {
+				m.menuCursor = len(m.menuOptions) - 1
+			}
+		}
 	case "down", "j", "s":
 		m.menuCursor++
 		if m.menuCursor >= len(m.menuOptions) {
 			m.menuCursor = 0
+		}
+		// Skip disabled "Continue" option
+		if m.menuOptions[m.menuCursor] == "Continue" && !m.hasValidSave {
+			m.menuCursor++
+			if m.menuCursor >= len(m.menuOptions) {
+				m.menuCursor = 0
+			}
 		}
 	case "enter", " ":
 		return m.selectMenuItem()
@@ -531,6 +581,11 @@ func (m *Model) selectMenuItem() (tea.Model, tea.Cmd) {
 		m.currentView = ViewClassSelect
 		return m, nil
 	case "Continue":
+		// Prevent selecting if no valid save
+		if !m.hasValidSave {
+			m.statusMsg = "No save file found"
+			return m, nil
+		}
 		m.continueGame()
 		return m, nil
 	case "Unlocks":
@@ -685,7 +740,12 @@ func (m *Model) updateGame(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.gameState = types.StateMainMenu
 		m.statusMsg = "Game saved."
 	case "`":
-		// Open admin console - requires root (UID 0) OR actual sudo
+		// Open admin console - disabled in multiplayer to prevent cheating
+		if m.isMultiplayer {
+			m.statusMsg = "Admin console disabled in multiplayer mode."
+			return m, nil
+		}
+		// Requires root (UID 0) OR actual sudo
 		hasGameRoot := m.player != nil && m.player.Stats.UID == 0
 		hasRealRoot := os.Geteuid() == 0
 		if hasGameRoot || hasRealRoot {
@@ -1591,6 +1651,11 @@ func (m *Model) executeAdminAction() (tea.Model, tea.Cmd) {
 
 	switch m.adminOptions[m.adminCursor] {
 	case "Toggle God Mode":
+		// Extra safeguard: godMode disabled in multiplayer
+		if m.isMultiplayer {
+			m.statusMsg = "[ADMIN] God mode disabled in multiplayer."
+			return m, nil
+		}
 		m.godMode = !m.godMode
 		if m.godMode {
 			m.statusMsg = "[ADMIN] God mode ENABLED - invincible"
@@ -1767,7 +1832,8 @@ func (m *Model) viewClassSelect() string {
 
 	footer := m.styles.Muted.Render("\n[↑/↓] Navigate  [Enter] Select  [Esc] Back")
 
-	return m.styles.Container.Render(title + "\n" + menu + details + footer)
+	content := m.styles.Container.Render(title + "\n" + menu + details + footer)
+	return m.centerContent(content)
 }
 
 // viewMainMenu renders the main menu.
@@ -1783,11 +1849,22 @@ func (m *Model) viewMainMenu() string {
 	for i, option := range m.menuOptions {
 		cursor := "  "
 		style := m.styles.MenuItem
-		if i == m.menuCursor {
+
+		// Gray out "Continue" if no valid save exists
+		isDisabled := option == "Continue" && !m.hasValidSave
+		if isDisabled {
+			style = m.styles.Muted
+		} else if i == m.menuCursor {
 			cursor = "> "
 			style = m.styles.MenuSelected
 		}
-		menu += style.Render(cursor+option) + "\n"
+
+		displayOption := option
+		if isDisabled {
+			displayOption = option + " (no save)"
+		}
+
+		menu += style.Render(cursor+displayOption) + "\n"
 	}
 
 	footer := m.styles.Muted.Render("\n[↑/↓] Navigate  [Enter] Select  [q] Quit")
@@ -1796,7 +1873,8 @@ func (m *Model) viewMainMenu() string {
 		footer = m.styles.Danger.Render(m.statusMsg) + "\n" + footer
 	}
 
-	return m.styles.Container.Render(title + "\n\n" + menu + "\n" + footer)
+	content := m.styles.Container.Render(title + "\n\n" + menu + "\n" + footer)
+	return m.centerContent(content)
 }
 
 // viewGame renders the main game view.
@@ -1835,8 +1913,14 @@ func (m *Model) renderStats() string {
 		floorDepth = m.engine.CurrentDepth()
 	}
 
+	// Show username if in multiplayer mode
+	userLine := ""
+	if m.isMultiplayer && m.username != "" {
+		userLine = m.styles.Highlight.Render("@"+m.username) + "\n"
+	}
+
 	content := fmt.Sprintf(
-		"%s\n%s\n\n"+
+		"%s%s\n%s\n\n"+
 			"RAM: %s/%d\n"+
 			"CPU: %d\n"+
 			"FD:  %s/%d\n"+
@@ -1846,6 +1930,7 @@ func (m *Model) renderStats() string {
 			"XP: %d/%d\n"+
 			"Floor: %s\n"+
 			"Depth: %d",
+		userLine,
 		m.styles.Title.Render(string(p.Class)),
 		m.styles.Muted.Render("Process Status"),
 		m.colorizeRAM(p.Stats.RAM, p.MaxStats.MaxRAM),
@@ -1917,6 +2002,18 @@ func (m *Model) getViewportSize() (width, height int) {
 	}
 
 	return width, height
+}
+
+// centerContent centers content both horizontally and vertically in the terminal.
+func (m *Model) centerContent(content string) string {
+	w, h := m.width, m.height
+	if w == 0 {
+		w = 120
+	}
+	if h == 0 {
+		h = 40
+	}
+	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, content)
 }
 
 // renderMap renders the game map from the engine with a viewport centered on the player.
@@ -2229,7 +2326,8 @@ func (m *Model) viewCombat() string {
 		}
 	}
 
-	return m.styles.Container.Render(title + playerInfo + enemyInfo + menu + log + footer)
+	content := m.styles.Container.Render(title + playerInfo + enemyInfo + menu + log + footer)
+	return m.centerContent(content)
 }
 
 // viewInventory renders the inventory view.
@@ -2301,7 +2399,8 @@ func (m *Model) viewInventory() string {
 
 	footer := m.styles.Muted.Render("\n[↑/↓] Select  [Enter] Use/Equip  [U] Unequip  [D] Drop  [I/Esc] Close")
 
-	return m.styles.Container.Render(title + "\n" + items + equipment + detailsPanel + footer)
+	content := m.styles.Container.Render(title + "\n" + items + equipment + detailsPanel + footer)
+	return m.centerContent(content)
 }
 
 // getItemDetails returns formatted item details.
@@ -2379,11 +2478,12 @@ func (m *Model) equipmentSlot(item *entity.Item) string {
 
 // viewPause renders the pause menu.
 func (m *Model) viewPause() string {
-	content := m.styles.Title.Render("═══ PAUSED ═══\n\n")
-	content += "[P/Esc] Resume\n"
-	content += "[Q] Quit to Menu\n"
+	c := m.styles.Title.Render("═══ PAUSED ═══\n\n")
+	c += "[P/Esc] Resume\n"
+	c += "[Q] Quit to Menu\n"
 
-	return m.styles.Container.Render(content)
+	content := m.styles.Container.Render(c)
+	return m.centerContent(content)
 }
 
 // viewGameOver renders the game over screen.
@@ -2432,7 +2532,8 @@ func (m *Model) viewGameOver() string {
 
 	content += m.styles.Muted.Render("\n[Enter] Continue  [Q] Quit")
 
-	return m.styles.Container.Render(content)
+	result := m.styles.Container.Render(content)
+	return m.centerContent(result)
 }
 
 // viewVictory renders the victory screen.
@@ -2475,7 +2576,8 @@ func (m *Model) viewVictory() string {
 
 	content += m.styles.Muted.Render("\n[Enter] Continue  [Q] Quit")
 
-	return m.styles.Container.Render(content)
+	result := m.styles.Container.Render(content)
+	return m.centerContent(result)
 }
 
 // viewAdmin renders the admin console.
@@ -2510,7 +2612,8 @@ func (m *Model) viewAdmin() string {
 
 	footer := m.styles.Muted.Render("\n[↑/↓] Navigate  [Enter] Execute  [Esc/`] Close")
 
-	return m.styles.Container.Render(title + menu + status + footer)
+	content := m.styles.Container.Render(title + menu + status + footer)
+	return m.centerContent(content)
 }
 
 // viewHelp renders the help/keybindings screen.
@@ -2553,11 +2656,12 @@ func (m *Model) viewHelp() string {
 	tips += "  - Walk into enemies to start combat\n"
 	tips += "  - Items are auto-picked up when walking over them\n"
 	tips += "  - sudo class starts with UID 0 (root access)\n"
-	tips += "  - Find root_shard items to lower your UID\n"
+	tips += "  - Find root_shard items to lower your UID (local play)\n"
 
 	footer := m.styles.Muted.Render("\n[Esc/?/Enter] Close")
 
-	return m.styles.Container.Render(title + movement + actions + combat + inventory + stats + tips + footer)
+	content := m.styles.Container.Render(title + movement + actions + combat + inventory + stats + tips + footer)
+	return m.centerContent(content)
 }
 
 // viewMessageHistory renders the scrollable message history.
@@ -2565,9 +2669,10 @@ func (m *Model) viewMessageHistory() string {
 	title := m.styles.Title.Render("═══ MESSAGE LOG ═══") + "\n\n"
 
 	if len(m.messageHistory) == 0 {
-		content := m.styles.Muted.Render("No messages yet.")
+		c := m.styles.Muted.Render("No messages yet.")
 		footer := m.styles.Muted.Render("\n[Esc/M/Enter] Close")
-		return m.styles.Container.Render(title + content + footer)
+		content := m.styles.Container.Render(title + c + footer)
+		return m.centerContent(content)
 	}
 
 	// Calculate visible range
@@ -2608,7 +2713,8 @@ func (m *Model) viewMessageHistory() string {
 
 	footer := m.styles.Muted.Render("\n\n[↑/↓] Scroll  [PgUp/PgDn] Fast scroll  [Home/End] Jump  [Esc/M] Close")
 
-	return m.styles.Container.Render(title + content + footer)
+	result := m.styles.Container.Render(title + content + footer)
+	return m.centerContent(result)
 }
 
 // viewIntro renders the animated intro sequence.
@@ -2624,7 +2730,8 @@ func (m *Model) viewIntro() string {
 
 	footer := m.styles.Muted.Render("\n\n" + progress + "   [Enter/Space] Skip   [→] Next")
 
-	return m.styles.Container.Render(m.styles.Title.Render(frame) + footer)
+	content := m.styles.Container.Render(m.styles.Title.Render(frame) + footer)
+	return m.centerContent(content)
 }
 
 // viewShop renders the shop interface styled like ls -la output.
@@ -2689,7 +2796,8 @@ func (m *Model) viewShop() string {
 
 	footer := m.styles.Muted.Render("\n[↑/↓] Browse  [Enter] Buy  [$/Esc] Exit")
 
-	return m.styles.Container.Render(title + balance + items + details + footer)
+	content := m.styles.Container.Render(title + balance + items + details + footer)
+	return m.centerContent(content)
 }
 
 // --- Class Unlock Functions ---
@@ -2945,7 +3053,8 @@ func (m *Model) getUnlockableItems() []UnlockableItem {
 		{TemplateID: "fork_bomb", Name: "fork bomb", Description: "Legendary consumable - massive damage", Price: 150},
 		{TemplateID: "kill_9", Name: "kill -9", Description: "Rare weapon - guaranteed process termination", Price: 100},
 		{TemplateID: "mmap", Name: "mmap()", Description: "Rare consumable - large memory allocation", Price: 75},
-		{TemplateID: "root_shard", Name: "root shard", Description: "Rare item - permanently lower UID", Price: 100},
+		// Note: root_shard intentionally excluded from unlock shop for multiplayer fairness
+		// It still spawns naturally in local single-player runs
 	}
 
 	// Mark items as unlocked based on meta progress
@@ -3004,13 +3113,16 @@ func (m *Model) viewUnlockShop() string {
 		stats += fmt.Sprintf("  Total Deaths:   %d\n", m.metaProgress.TotalDeaths)
 	}
 
-	footer := m.styles.Muted.Render("\n[←/→] Category  [↑/↓] Navigate  [Enter] Purchase  [Esc] Back")
-
+	// Always reserve space for status message to prevent layout shift
+	statusLine := "\n"
 	if m.statusMsg != "" {
-		footer = "\n" + m.styles.Highlight.Render(m.statusMsg) + footer
+		statusLine = "\n" + m.styles.Highlight.Render(m.statusMsg)
 	}
 
-	return m.styles.Container.Render(title + balance + tabs + content + stats + footer)
+	footer := statusLine + m.styles.Muted.Render("\n[←/→] Category  [↑/↓] Navigate  [Enter] Purchase  [Esc] Back")
+
+	result := m.styles.Container.Render(title + balance + tabs + content + stats + footer)
+	return m.centerContent(result)
 }
 
 // renderUnlockClasses renders the classes category in the unlock shop.

@@ -780,6 +780,11 @@ func (e *Engine) LoadGame(data *save.SaveData) error {
 		return errors.New("no save data provided")
 	}
 
+	// Validate save data has valid player stats
+	if data.Player.MaxStats.MaxRAM <= 0 || data.Player.Level <= 0 {
+		return errors.New("corrupted save: invalid player stats")
+	}
+
 	// Set the master seed from save
 	e.masterSeed = data.MasterSeed
 	e.rng = rand.New(rand.NewSource(e.masterSeed))

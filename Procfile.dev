@@ -1,0 +1,6 @@
+# Development Procfile - run with Overmind or Foreman
+# Install: brew install overmind (or go install github.com/DarthSim/overmind/v2@latest)
+# Run: overmind start -f Procfile.dev
+
+server: set -a && source .env && set +a && air
+web: cd web && npm run dev
