@@ -1,35 +1,4 @@
 <script lang="ts">
-	import { register } from '$lib/api';
-
-	let username = $state('');
-	let publicKey = $state('');
-	let loading = $state(false);
-	let error = $state('');
-	let success = $state('');
-
-	async function handleSubmit(e: Event) {
-		e.preventDefault();
-		loading = true;
-		error = '';
-		success = '';
-
-		const result = await register(username, publicKey);
-
-		if (result.success && result.data) {
-			success = result.data.message;
-			username = '';
-			publicKey = '';
-		} else {
-			error = result.error || 'Registration failed';
-		}
-
-		loading = false;
-	}
-
-	function isValidUsername(name: string): boolean {
-		// SSH-friendly: lowercase alphanumeric + dashes, no leading dash
-		return name.length >= 3 && name.length <= 20 && /^[a-z0-9][a-z0-9-]*$/.test(name);
-	}
 </script>
 
 <div class="max-w-2xl mx-auto">
@@ -38,72 +7,17 @@
 	</a>
 
 	<div class="terminal-box p-6">
-		<h1 class="text-terminal-amber text-2xl mb-2">$ useradd</h1>
+		<h1 class="text-terminal-amber text-2xl mb-2">$ ssh player@dev-dungeon.com</h1>
 		<p class="text-terminal-green-dim mb-6">
-			Register your SSH key to create an account
+			Registration happens in-terminal when you first connect
 		</p>
 
-		{#if success}
-			<div class="bg-terminal-bg border border-terminal-green p-4 mb-6">
-				<p class="text-terminal-green">{success}</p>
-			</div>
-		{/if}
-
-		{#if error}
-			<div class="bg-terminal-bg border border-terminal-red p-4 mb-6">
-				<p class="text-terminal-red">{error}</p>
-			</div>
-		{/if}
-
-		<form onsubmit={handleSubmit} class="space-y-6">
-			<div>
-				<label for="username" class="block text-terminal-green-bright mb-2">
-					Username
-				</label>
-				<input
-					type="text"
-					id="username"
-					bind:value={username}
-					class="input-terminal"
-					placeholder="your-username"
-					minlength="3"
-					maxlength="20"
-					pattern="[a-z0-9][a-z0-9-]*"
-					required
-				/>
-				<p class="text-terminal-gray text-sm mt-1">
-					3-20 characters, lowercase letters, numbers, and dashes
-				</p>
-			</div>
-
-			<div>
-				<label for="publicKey" class="block text-terminal-green-bright mb-2">
-					SSH Public Key
-				</label>
-				<textarea
-					id="publicKey"
-					bind:value={publicKey}
-					class="input-terminal min-h-[120px] resize-y"
-					placeholder="ssh-ed25519 AAAA... your@email.com"
-					required
-				></textarea>
-				<p class="text-terminal-gray text-sm mt-1">
-					Paste the contents of ~/.ssh/id_ed25519.pub or ~/.ssh/id_rsa.pub
-				</p>
-			</div>
-
-			<button
-				type="submit"
-				class="btn-terminal w-full"
-				disabled={loading || !isValidUsername(username) || !publicKey}
-			>
-				{#if loading}
-					Creating account...
-				{:else}
-					[Enter] Create Account
-				{/if}
-			</button>
-		</form>
+		<div class="bg-terminal-bg border border-terminal-green p-4 mb-6">
+			<p class="text-terminal-green">
+				Connect via SSH and your account will be created automatically.
+				Your SSH key is your identity!
+			</p>
+		</div>
 	</div>
 
 	<!-- Instructions -->
@@ -112,24 +26,32 @@
 
 		<div class="space-y-4 text-sm">
 			<div>
-				<p class="text-terminal-green-bright mb-1">Generate a new key (optional):</p>
+				<p class="text-terminal-green-bright mb-1">1. Generate a key (if you don't have one):</p>
 				<code class="text-terminal-green bg-terminal-bg px-2 py-1 block">
-					ssh-keygen -t ed25519 -f ~/.ssh/id_devdungeon
+					ssh-keygen -t ed25519
 				</code>
 			</div>
 
 			<div>
-				<p class="text-terminal-green-bright mb-1">View your public key:</p>
+				<p class="text-terminal-green-bright mb-1">2. Connect to start playing:</p>
 				<code class="text-terminal-green bg-terminal-bg px-2 py-1 block">
-					cat ~/.ssh/id_ed25519.pub
+					ssh player@dev-dungeon.com
 				</code>
 			</div>
 
 			<div>
-				<p class="text-terminal-green-bright mb-1">After registering, connect:</p>
-				<code class="text-terminal-green bg-terminal-bg px-2 py-1 block">
-					ssh -p 2222 {username || 'username'}@dev-dungeon.com
-				</code>
+				<p class="text-terminal-green-bright mb-1">3. Choose your username when prompted</p>
+				<p class="text-terminal-gray">
+					First connection will guide you through account creation.
+				</p>
+			</div>
+
+			<div>
+				<p class="text-terminal-green-bright mb-1">4. Access your account in browser:</p>
+				<p class="text-terminal-gray">
+					Press <code class="text-terminal-green bg-terminal-bg px-1">Ctrl+L</code> in-game
+					to generate a magic link for browser authentication.
+				</p>
 			</div>
 		</div>
 	</div>

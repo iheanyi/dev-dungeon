@@ -16,8 +16,8 @@ export default {
           red: '#ff3333',
           cyan: '#00ffff',
           purple: '#cc00ff',
-          gray: '#333333',
-          'gray-light': '#666666',
+          gray: '#9a9a9a',
+          'gray-light': '#bbbbbb',
         },
       },
       fontFamily: {

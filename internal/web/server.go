@@ -4,6 +4,7 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -15,6 +16,12 @@ import (
 
 // Request size limits
 const maxRequestBodySize = 4 * 1024 // 4KB max for API requests
+
+// Session cookie configuration
+const (
+	sessionCookieName   = "devdungeon_session"
+	sessionCookieMaxAge = 7 * 24 * 60 * 60 // 7 days in seconds
+)
 
 // Valid run types for leaderboards
 var validRunTypes = map[string]bool{
@@ -85,13 +92,17 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 
 // setupRoutes configures all HTTP routes.
 func (s *Server) setupRoutes() {
-	// API routes
+	// Public API routes
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/leaderboard", s.handleLeaderboard)
 	s.mux.HandleFunc("GET /api/leaderboard/{runType}", s.handleLeaderboardByType)
 	s.mux.HandleFunc("GET /api/players/{nanoid}", s.handlePlayerProfile)
 	s.mux.HandleFunc("GET /api/daily", s.handleDailySeed)
-	s.mux.HandleFunc("POST /api/register", s.handleRegister)
+
+	// Auth routes
+	s.mux.HandleFunc("GET /auth/verify", s.handleAuthVerify) // Magic link verification
+	s.mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
+	s.mux.HandleFunc("GET /api/auth/me", s.handleAuthMe) // Get current user
 
 	// Static files (SvelteKit build output)
 	if s.config.StaticDir != "" {
@@ -227,112 +238,187 @@ func (s *Server) handleDailySeed(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
+// handleAuthVerify handles magic link verification.
+// This endpoint is called when a user clicks the magic link from the terminal.
+func (s *Server) handleAuthVerify(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Validate Content-Type
-	contentType := r.Header.Get("Content-Type")
-	if contentType != "application/json" {
-		s.jsonError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
+	// Get token from query string
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		s.renderAuthError(w, "Missing authentication token")
 		return
 	}
 
-	// Limit request body size
-	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
-
-	var req struct {
-		Username  string `json:"username"`
-		PublicKey string `json:"public_key"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		if err.Error() == "http: request body too large" {
-			s.jsonError(w, http.StatusRequestEntityTooLarge, "Request body too large")
-			return
-		}
-		s.jsonError(w, http.StatusBadRequest, "Invalid request body")
+	// Validate token format (64 hex chars)
+	if len(token) != 64 {
+		s.renderAuthError(w, "Invalid token format")
 		return
 	}
 
-	if len(req.Username) < 3 || len(req.Username) > 20 {
-		s.jsonError(w, http.StatusBadRequest, "Username must be 3-20 characters")
-		return
-	}
-
-	// Validate username format (SSH-friendly: lowercase alphanumeric + dashes)
-	if !isValidUsername(req.Username) {
-		s.jsonError(w, http.StatusBadRequest, "Username must be lowercase letters, numbers, and dashes only (no leading dash)")
-		return
-	}
-
-	if req.PublicKey == "" {
-		s.jsonError(w, http.StatusBadRequest, "Public key is required")
-		return
-	}
-
-	// Parse and get fingerprint from public key
-	fingerprint, err := parsePublicKeyFingerprint(req.PublicKey)
+	// Verify the magic link token
+	user, err := s.db.VerifyAuthToken(ctx, token)
 	if err != nil {
-		s.jsonError(w, http.StatusBadRequest, "Invalid public key format")
+		log.Error("Failed to verify auth token", "error", err)
+		s.renderAuthError(w, "Authentication failed. Please try again.")
+		return
+	}
+	if user == nil {
+		s.renderAuthError(w, "Invalid or expired link. Please generate a new one with Ctrl+L in the game.")
 		return
 	}
 
-	// Check if fingerprint already registered
-	existing, err := s.db.GetUserByFingerprint(ctx, fingerprint)
+	// Create a web session
+	sessionToken, err := s.db.CreateWebSession(ctx, user.ID)
 	if err != nil {
-		log.Error("Database error checking fingerprint", "error", err)
-		s.jsonError(w, http.StatusInternalServerError, "Database error")
-		return
-	}
-	if existing != nil {
-		// Generic error to prevent information disclosure
-		s.jsonError(w, http.StatusConflict, "Registration failed - username or key already in use")
+		log.Error("Failed to create web session", "error", err, "user", user.Username)
+		s.renderAuthError(w, "Failed to create session. Please try again.")
 		return
 	}
 
-	// Create user
-	user, err := s.db.CreateUser(ctx, req.Username, fingerprint)
+	// Set secure session cookie
+	s.setSessionCookie(w, r, sessionToken)
+
+	log.Info("User authenticated via magic link", "user", user.Username)
+
+	// Redirect to profile or home page
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// handleLogout handles user logout.
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get session cookie
+	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil {
-		// Generic error to prevent username enumeration
-		s.jsonError(w, http.StatusConflict, "Registration failed - username or key already in use")
+		s.jsonResponse(w, http.StatusOK, map[string]string{"message": "Already logged out"})
 		return
 	}
 
-	s.jsonResponse(w, http.StatusCreated, map[string]interface{}{
-		"username": user.Username,
-		"nanoid":   user.NanoID,
-		"message":  "Account created! Connect with: ssh " + user.Username + "@dev-dungeon.com",
+	// Delete session from database
+	if err := s.db.DeleteWebSession(ctx, cookie.Value); err != nil {
+		log.Error("Failed to delete session", "error", err)
+	}
+
+	// Clear the cookie
+	s.clearSessionCookie(w, r)
+
+	s.jsonResponse(w, http.StatusOK, map[string]string{"message": "Logged out successfully"})
+}
+
+// handleAuthMe returns the current authenticated user's info.
+func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get session cookie
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil {
+		s.jsonError(w, http.StatusUnauthorized, "Not authenticated")
+		return
+	}
+
+	// Validate session
+	user, err := s.db.GetWebSession(ctx, cookie.Value)
+	if err != nil {
+		log.Error("Failed to validate session", "error", err)
+		s.jsonError(w, http.StatusInternalServerError, "Session validation failed")
+		return
+	}
+	if user == nil {
+		s.clearSessionCookie(w, r)
+		s.jsonError(w, http.StatusUnauthorized, "Session expired")
+		return
+	}
+
+	// Get meta progress for additional info
+	meta, _ := s.db.GetMetaProgress(ctx, user.ID)
+
+	response := map[string]interface{}{
+		"username":   user.Username,
+		"nanoid":     user.NanoID,
+		"created_at": user.CreatedAt,
+	}
+
+	if meta != nil {
+		response["runs_completed"] = meta.RunsCompleted
+		response["deepest_floor"] = meta.DeepestFloor
+		response["total_deaths"] = meta.TotalDeaths
+		response["unlocked_classes"] = meta.UnlockedClasses
+		response["total_exit_codes"] = meta.TotalExitCodes
+	}
+
+	s.jsonResponse(w, http.StatusOK, response)
+}
+
+// setSessionCookie sets a secure session cookie.
+func (s *Server) setSessionCookie(w http.ResponseWriter, r *http.Request, token string) {
+	secure := !strings.Contains(r.Host, "localhost") && !strings.Contains(r.Host, "127.0.0.1")
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    token,
+		Path:     "/",
+		MaxAge:   sessionCookieMaxAge,
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteStrictMode,
 	})
 }
 
-// parsePublicKeyFingerprint extracts SHA256 fingerprint from an SSH public key.
-func parsePublicKeyFingerprint(pubKey string) (string, error) {
-	// Parse the public key
-	key, _, _, _, err := parseAuthorizedKey([]byte(pubKey))
-	if err != nil {
-		return "", err
-	}
+// clearSessionCookie removes the session cookie.
+func (s *Server) clearSessionCookie(w http.ResponseWriter, r *http.Request) {
+	secure := !strings.Contains(r.Host, "localhost") && !strings.Contains(r.Host, "127.0.0.1")
 
-	return fingerprintSHA256(key), nil
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1, // Delete immediately
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteStrictMode,
+	})
 }
 
-// isValidUsername checks if a username is SSH-friendly.
-// Must be lowercase alphanumeric with dashes, no leading dash.
-func isValidUsername(username string) bool {
-	if len(username) == 0 {
-		return false
-	}
-	for i, c := range username {
-		isLower := c >= 'a' && c <= 'z'
-		isDigit := c >= '0' && c <= '9'
-		isDash := c == '-'
-		// First char can't be a dash
-		if i == 0 && isDash {
-			return false
+// renderAuthError renders an HTML error page for auth failures.
+func (s *Server) renderAuthError(w http.ResponseWriter, message string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusBadRequest)
+	fmt.Fprintf(w, `<!DOCTYPE html>
+<html>
+<head>
+	<title>Authentication Failed - /dev/dungeon</title>
+	<style>
+		body {
+			font-family: monospace;
+			background: #1a1a2e;
+			color: #eee;
+			display: flex;
+			justify-content: center;
+			align-items: center;
+			height: 100vh;
+			margin: 0;
 		}
-		if !isLower && !isDigit && !isDash {
-			return false
+		.error-box {
+			background: #16213e;
+			border: 2px solid #e94560;
+			padding: 2rem;
+			border-radius: 8px;
+			max-width: 500px;
+			text-align: center;
 		}
-	}
-	return true
+		h1 { color: #e94560; }
+		p { line-height: 1.6; }
+		code { background: #0f3460; padding: 0.2rem 0.4rem; border-radius: 4px; }
+	</style>
+</head>
+<body>
+	<div class="error-box">
+		<h1>Authentication Failed</h1>
+		<p>%s</p>
+		<p>To authenticate, press <code>Ctrl+L</code> in the game to generate a new link.</p>
+	</div>
+</body>
+</html>`, message)
 }

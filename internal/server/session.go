@@ -168,6 +168,39 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 	// Create UI model
 	model := ui.NewWithRenderer(cfg, renderer)
 	model.SetMultiplayerMode(user.Username) // Disable cheats in multiplayer
+
+	// Set up leaderboard fetcher
+	model.SetLeaderboardFetcher(func(runType string, limit int) ([]ui.LeaderboardEntry, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		// Convert "all" to empty string for the database query
+		dbRunType := runType
+		if runType == "all" {
+			dbRunType = ""
+		}
+
+		dbEntries, err := s.db.GetLeaderboard(ctx, dbRunType, limit)
+		if err != nil {
+			return nil, err
+		}
+
+		// Convert db entries to ui entries
+		entries := make([]ui.LeaderboardEntry, len(dbEntries))
+		for i, e := range dbEntries {
+			entries[i] = ui.LeaderboardEntry{
+				Rank:          i + 1,
+				Username:      e.Username,
+				Score:         e.Score,
+				FloorsCleared: e.FloorsCleared,
+				Class:         e.Class,
+				Seed:          e.Seed,
+				RunType:       e.RunType,
+			}
+		}
+		return entries, nil
+	})
+
 	gameSession.Model = model
 
 	// If we have a save, restore it
@@ -202,10 +235,13 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 
 // sessionWrapper wraps the game UI to handle session lifecycle.
 type sessionWrapper struct {
-	model       *ui.Model
-	server      *Server
-	session     *GameSession
-	fingerprint string
+	model        *ui.Model
+	server       *Server
+	session      *GameSession
+	fingerprint  string
+	showingLink  bool   // Whether the link modal is currently displayed
+	linkURL      string // The generated magic link URL
+	linkError    string // Error message if link generation failed
 }
 
 func (sw *sessionWrapper) Init() tea.Cmd {
@@ -213,10 +249,26 @@ func (sw *sessionWrapper) Init() tea.Cmd {
 }
 
 func (sw *sessionWrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Handle quit to save game
+	// Handle link modal dismissal first
+	if sw.showingLink {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			// Any key dismisses the link modal
+			if msg.String() == "enter" || msg.String() == "esc" || msg.String() == " " {
+				sw.showingLink = false
+				sw.linkURL = ""
+				sw.linkError = ""
+				return sw, nil
+			}
+		}
+		return sw, nil
+	}
+
+	// Handle quit and link commands
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		if msg.String() == "ctrl+c" {
+		switch msg.String() {
+		case "ctrl+c":
 			// Save before quitting
 			ctx := context.Background()
 			if err := saveSessionToDatabase(ctx, sw.server.db, sw.session); err != nil {
@@ -224,6 +276,11 @@ func (sw *sessionWrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			sw.server.sessions.Remove(sw.fingerprint)
 			return sw, tea.Quit
+
+		case "ctrl+l":
+			// Generate magic link for browser authentication
+			sw.generateMagicLink()
+			return sw, nil
 		}
 	}
 
@@ -232,19 +289,96 @@ func (sw *sessionWrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m, ok := newModel.(*ui.Model); ok {
 		sw.model = m
 		sw.session.Model = m
-	}
 
-	// Check if the model returned quit
-	if cmd != nil {
-		// If quitting, save first
-		// Note: We could inspect the command here if needed
+		// Check if the model wants to quit - save before exiting
+		if m.WantsToQuit() {
+			ctx := context.Background()
+			if err := saveSessionToDatabase(ctx, sw.server.db, sw.session); err != nil {
+				log.Error("Failed to save on quit", "error", err)
+			} else {
+				log.Info("Game saved on quit", "user", sw.session.User.Username)
+			}
+			sw.server.sessions.Remove(sw.fingerprint)
+			m.ClearQuitRequest()
+		}
 	}
 
 	return sw, cmd
 }
 
+// generateMagicLink creates a magic link token and displays it to the user.
+func (sw *sessionWrapper) generateMagicLink() {
+	if sw.session.User == nil {
+		sw.showingLink = true
+		sw.linkError = "You must be logged in to generate a link"
+		return
+	}
+
+	if sw.server.config.WebBaseURL == "" {
+		sw.showingLink = true
+		sw.linkError = "Web portal not configured"
+		return
+	}
+
+	// Generate token
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	token, err := sw.server.db.CreateAuthToken(ctx, sw.session.User.ID)
+	if err != nil {
+		log.Error("Failed to generate magic link", "error", err, "user", sw.session.User.Username)
+		sw.showingLink = true
+		sw.linkError = "Failed to generate link. Try again."
+		return
+	}
+
+	// Build URL
+	sw.linkURL = fmt.Sprintf("%s/auth/verify?token=%s", sw.server.config.WebBaseURL, token)
+	sw.showingLink = true
+	sw.linkError = ""
+
+	log.Info("Magic link generated", "user", sw.session.User.Username)
+}
+
 func (sw *sessionWrapper) View() string {
+	// Show link modal overlay if active
+	if sw.showingLink {
+		return sw.viewLinkModal()
+	}
 	return sw.model.View()
+}
+
+// viewLinkModal renders the magic link modal.
+func (sw *sessionWrapper) viewLinkModal() string {
+	s := "\n\n"
+	s += "  ╔════════════════════════════════════════════════════════════════╗\n"
+	s += "  ║                    BROWSER AUTHENTICATION                      ║\n"
+	s += "  ╠════════════════════════════════════════════════════════════════╣\n"
+	s += "  ║                                                                ║\n"
+
+	if sw.linkError != "" {
+		s += fmt.Sprintf("  ║  ERROR: %-54s ║\n", sw.linkError)
+	} else {
+		s += "  ║  Open this link in your browser to authenticate:              ║\n"
+		s += "  ║                                                                ║\n"
+		// Truncate long URLs for display
+		url := sw.linkURL
+		if len(url) > 60 {
+			url = url[:57] + "..."
+		}
+		s += fmt.Sprintf("  ║  %-62s ║\n", url)
+		s += "  ║                                                                ║\n"
+		s += "  ║  This link expires in 5 minutes and can only be used once.    ║\n"
+	}
+
+	s += "  ║                                                                ║\n"
+	s += "  ║  [Enter] or [Esc] to close                                     ║\n"
+	s += "  ║                                                                ║\n"
+	s += "  ╚════════════════════════════════════════════════════════════════╝\n"
+	s += "\n"
+	s += "  Tip: Use Ctrl+L anytime to generate a new browser link.\n"
+
+	return s
 }
 
 // registrationModel handles new player registration.
@@ -361,6 +495,39 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 
 	model := ui.NewWithRenderer(cfg, renderer)
 	model.SetMultiplayerMode(user.Username) // Disable cheats in multiplayer
+
+	// Set up leaderboard fetcher
+	model.SetLeaderboardFetcher(func(runType string, limit int) ([]ui.LeaderboardEntry, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		// Convert "all" to empty string for the database query
+		dbRunType := runType
+		if runType == "all" {
+			dbRunType = ""
+		}
+
+		dbEntries, err := s.db.GetLeaderboard(ctx, dbRunType, limit)
+		if err != nil {
+			return nil, err
+		}
+
+		// Convert db entries to ui entries
+		entries := make([]ui.LeaderboardEntry, len(dbEntries))
+		for i, e := range dbEntries {
+			entries[i] = ui.LeaderboardEntry{
+				Rank:          i + 1,
+				Username:      e.Username,
+				Score:         e.Score,
+				FloorsCleared: e.FloorsCleared,
+				Class:         e.Class,
+				Seed:          e.Seed,
+				RunType:       e.RunType,
+			}
+		}
+		return entries, nil
+	})
+
 	gameSession.Model = model
 
 	s.sessions.Add(fingerprint, gameSession)

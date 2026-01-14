@@ -359,6 +359,197 @@ func (c *Client) GetUserByNanoID(ctx context.Context, nanoid string) (*User, err
 	return &user, nil
 }
 
+// --- Auth Token Operations ---
+
+// CreateAuthToken creates a new magic link token for browser authentication.
+// Tokens expire after 5 minutes and can only be used once.
+func (c *Client) CreateAuthToken(ctx context.Context, userID int) (string, error) {
+	token, err := GenerateAuthToken()
+	if err != nil {
+		return "", fmt.Errorf("failed to generate token: %w", err)
+	}
+
+	expiresAt := time.Now().Add(5 * time.Minute)
+	_, err = c.pool.Exec(ctx, `
+		INSERT INTO auth_tokens (token, user_id, expires_at)
+		VALUES ($1, $2, $3)
+	`, token, userID, expiresAt)
+	if err != nil {
+		return "", fmt.Errorf("failed to create auth token: %w", err)
+	}
+
+	return token, nil
+}
+
+// VerifyAuthToken verifies a token and marks it as used.
+// Returns the user if valid, nil if invalid/expired/used.
+func (c *Client) VerifyAuthToken(ctx context.Context, token string) (*User, error) {
+	tx, err := c.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Get and lock the token row
+	var userID int
+	var expiresAt time.Time
+	var used bool
+	err = tx.QueryRow(ctx, `
+		SELECT user_id, expires_at, used
+		FROM auth_tokens
+		WHERE token = $1
+		FOR UPDATE
+	`, token).Scan(&userID, &expiresAt, &used)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil // Token not found
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get token: %w", err)
+	}
+
+	// Check if token is valid
+	if used || time.Now().After(expiresAt) {
+		return nil, nil // Token already used or expired
+	}
+
+	// Mark token as used
+	_, err = tx.Exec(ctx, `UPDATE auth_tokens SET used = TRUE WHERE token = $1`, token)
+	if err != nil {
+		return nil, fmt.Errorf("failed to mark token as used: %w", err)
+	}
+
+	// Get the user
+	var user User
+	err = tx.QueryRow(ctx, `
+		SELECT id, nanoid, username, public_key_fingerprint, created_at, last_login, is_banned
+		FROM users
+		WHERE id = $1
+	`, userID).Scan(
+		&user.ID, &user.NanoID, &user.Username, &user.PublicKeyFingerprint,
+		&user.CreatedAt, &user.LastLogin, &user.IsBanned,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return &user, nil
+}
+
+// CleanupExpiredTokens removes expired auth tokens.
+func (c *Client) CleanupExpiredTokens(ctx context.Context) (int64, error) {
+	result, err := c.pool.Exec(ctx, `DELETE FROM auth_tokens WHERE expires_at < NOW()`)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+// --- Web Session Operations ---
+
+// CreateWebSession creates a new browser session for a user.
+// Sessions expire after 7 days.
+func (c *Client) CreateWebSession(ctx context.Context, userID int) (string, error) {
+	token, err := GenerateSessionToken()
+	if err != nil {
+		return "", fmt.Errorf("failed to generate session token: %w", err)
+	}
+
+	expiresAt := time.Now().Add(7 * 24 * time.Hour) // 7 days
+	_, err = c.pool.Exec(ctx, `
+		INSERT INTO web_sessions (token, user_id, expires_at)
+		VALUES ($1, $2, $3)
+	`, token, userID, expiresAt)
+	if err != nil {
+		return "", fmt.Errorf("failed to create web session: %w", err)
+	}
+
+	return token, nil
+}
+
+// GetWebSession retrieves and validates a web session.
+// Returns the user if valid, nil if invalid/expired.
+// Also updates last_used_at on successful validation.
+func (c *Client) GetWebSession(ctx context.Context, token string) (*User, error) {
+	tx, err := c.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Get session and check expiry
+	var userID int
+	var expiresAt time.Time
+	err = tx.QueryRow(ctx, `
+		SELECT user_id, expires_at
+		FROM web_sessions
+		WHERE token = $1
+		FOR UPDATE
+	`, token).Scan(&userID, &expiresAt)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil // Session not found
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get session: %w", err)
+	}
+
+	// Check if expired
+	if time.Now().After(expiresAt) {
+		// Delete expired session
+		tx.Exec(ctx, `DELETE FROM web_sessions WHERE token = $1`, token)
+		tx.Commit(ctx)
+		return nil, nil
+	}
+
+	// Update last used time
+	_, err = tx.Exec(ctx, `
+		UPDATE web_sessions SET last_used_at = NOW() WHERE token = $1
+	`, token)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update session: %w", err)
+	}
+
+	// Get the user
+	var user User
+	err = tx.QueryRow(ctx, `
+		SELECT id, nanoid, username, public_key_fingerprint, created_at, last_login, is_banned
+		FROM users
+		WHERE id = $1
+	`, userID).Scan(
+		&user.ID, &user.NanoID, &user.Username, &user.PublicKeyFingerprint,
+		&user.CreatedAt, &user.LastLogin, &user.IsBanned,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return &user, nil
+}
+
+// DeleteWebSession removes a web session (logout).
+func (c *Client) DeleteWebSession(ctx context.Context, token string) error {
+	_, err := c.pool.Exec(ctx, `DELETE FROM web_sessions WHERE token = $1`, token)
+	return err
+}
+
+// CleanupExpiredSessions removes expired web sessions.
+func (c *Client) CleanupExpiredSessions(ctx context.Context) (int64, error) {
+	result, err := c.pool.Exec(ctx, `DELETE FROM web_sessions WHERE expires_at < NOW()`)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 // GetLeaderboard retrieves leaderboard entries, optionally filtered by run type.
 func (c *Client) GetLeaderboard(ctx context.Context, runType string, limit int) ([]LeaderboardEntry, error) {
 	var query string

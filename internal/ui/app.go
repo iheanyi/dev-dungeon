@@ -34,6 +34,7 @@ const (
 	ViewIntro
 	ViewShop
 	ViewUnlockShop
+	ViewLeaderboard
 )
 
 // introTickMsg is sent to advance intro animation.
@@ -183,9 +184,18 @@ type Model struct {
 	// Multiplayer session info
 	isMultiplayer bool   // True when connected via SSH (disables cheats)
 	username      string // Authenticated username for display
+	dailyRunMode  bool   // True when starting a daily run (uses fixed seed)
 
 	// Save state
-	hasValidSave bool // True if a valid save file exists
+	hasValidSave   bool // True if a valid save file exists
+	quitRequested  bool // True when user wants to quit (for sessionWrapper to intercept)
+
+	// Leaderboard state
+	leaderboardEntries   []LeaderboardEntry
+	leaderboardCursor    int
+	leaderboardRunType   string             // "all", "standard", "daily"
+	leaderboardFetcher   LeaderboardFetcher // Callback to fetch data (set by server)
+	leaderboardError     string             // Error message if fetch failed
 
 	// Styles
 	styles       *Styles
@@ -228,6 +238,21 @@ type UnlockableItem struct {
 	Price       int
 	Unlocked    bool
 }
+
+// LeaderboardEntry represents a score entry for display in the leaderboard.
+type LeaderboardEntry struct {
+	Rank          int
+	Username      string
+	Score         int
+	FloorsCleared int
+	Class         string
+	Seed          int64
+	RunType       string // "standard", "daily", "seeded"
+}
+
+// LeaderboardFetcher is a callback function to fetch leaderboard data.
+// Returns entries and any error. Set by server for multiplayer mode.
+type LeaderboardFetcher func(runType string, limit int) ([]LeaderboardEntry, error)
 
 // Styles holds all UI styles.
 type Styles struct {
@@ -382,7 +407,9 @@ func newModel(cfg *config.Config, renderer *lipgloss.Renderer) *Model {
 		gameState:   types.StateMainMenu,
 		menuOptions: []string{
 			"New Game",
+			"Daily Run",
 			"Continue",
+			"Leaderboard",
 			"Unlocks",
 			"Quit",
 		},
@@ -456,6 +483,12 @@ func (m *Model) SetMultiplayerMode(username string) {
 	m.username = username
 }
 
+// SetLeaderboardFetcher sets the callback function for fetching leaderboard data.
+// This is typically set by the server for multiplayer sessions.
+func (m *Model) SetLeaderboardFetcher(fetcher LeaderboardFetcher) {
+	m.leaderboardFetcher = fetcher
+}
+
 // Init implements tea.Model.
 func (m *Model) Init() tea.Cmd {
 	// Request initial window size
@@ -494,8 +527,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Ctrl+C ALWAYS quits - this is the universal escape hatch
 	if msg.String() == "ctrl+c" {
-		m.shutdown()
-		return m, tea.Quit
+		return m, m.requestQuit()
 	}
 
 	// View-specific input
@@ -526,9 +558,18 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateShop(msg)
 	case ViewUnlockShop:
 		return m.updateUnlockShop(msg)
+	case ViewLeaderboard:
+		return m.updateLeaderboard(msg)
 	}
 
 	return m, nil
+}
+
+// getDailySeed returns today's seed for daily runs.
+// Uses UTC date to ensure the same seed worldwide for leaderboard fairness.
+func getDailySeed() int64 {
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	return today.UnixNano()
 }
 
 // shutdown gracefully shuts down the game.
@@ -536,6 +577,24 @@ func (m *Model) shutdown() {
 	if m.engine != nil {
 		m.engine.Shutdown()
 	}
+}
+
+// WantsToQuit returns true if the user has requested to quit.
+// This is checked by the session wrapper to save before quitting.
+func (m *Model) WantsToQuit() bool {
+	return m.quitRequested
+}
+
+// ClearQuitRequest clears the quit request flag.
+func (m *Model) ClearQuitRequest() {
+	m.quitRequested = false
+}
+
+// requestQuit sets the quit flag for the session wrapper to handle.
+func (m *Model) requestQuit() tea.Cmd {
+	m.quitRequested = true
+	m.shutdown()
+	return tea.Quit
 }
 
 // updateMainMenu handles main menu input.
@@ -568,7 +627,7 @@ func (m *Model) updateMainMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter", " ":
 		return m.selectMenuItem()
 	case "q":
-		return m, tea.Quit
+		return m, m.requestQuit()
 	}
 	return m, nil
 }
@@ -580,6 +639,11 @@ func (m *Model) selectMenuItem() (tea.Model, tea.Cmd) {
 		m.classCursor = 0
 		m.currentView = ViewClassSelect
 		return m, nil
+	case "Daily Run":
+		m.classCursor = 0
+		m.dailyRunMode = true
+		m.currentView = ViewClassSelect
+		return m, nil
 	case "Continue":
 		// Prevent selecting if no valid save
 		if !m.hasValidSave {
@@ -588,12 +652,14 @@ func (m *Model) selectMenuItem() (tea.Model, tea.Cmd) {
 		}
 		m.continueGame()
 		return m, nil
+	case "Leaderboard":
+		m.openLeaderboard()
+		return m, nil
 	case "Unlocks":
 		m.openUnlockShop()
 		return m, nil
 	case "Quit":
-		m.shutdown()
-		return m, tea.Quit
+		return m, m.requestQuit()
 	}
 	return m, nil
 }
@@ -665,8 +731,15 @@ func (m *Model) continueGame() {
 
 // startNewGame initializes a new game with the selected class.
 func (m *Model) startNewGame(playerClass entity.PlayerClass) {
-	// Create the game engine with seed 0 (random)
-	m.engine = game.NewEngine(m.config, 0)
+	// Determine the seed: use daily seed if in daily run mode, otherwise random (0)
+	var seed int64
+	if m.dailyRunMode {
+		seed = getDailySeed()
+		m.dailyRunMode = false // Reset for next game
+	}
+
+	// Create the game engine
+	m.engine = game.NewEngine(m.config, seed)
 
 	// Set up the dungeon generator
 	dungeonCfg := dungeon.DefaultConfig()
@@ -701,7 +774,14 @@ func (m *Model) startNewGame(playerClass entity.PlayerClass) {
 	m.player = m.engine.Player()
 	m.currentView = ViewGame
 	m.gameState = types.StateExploring
-	m.statusMsg = fmt.Sprintf("Spawned as %s. Welcome to %s.", playerClass, m.engine.CurrentFloorType().FloorName())
+
+	// Set status message - indicate if this is a daily run
+	if seed != 0 {
+		dateStr := time.Now().UTC().Format("2006-01-02")
+		m.statusMsg = fmt.Sprintf("DAILY RUN (%s) - Spawned as %s. Welcome to %s.", dateStr, playerClass, m.engine.CurrentFloorType().FloorName())
+	} else {
+		m.statusMsg = fmt.Sprintf("Spawned as %s. Welcome to %s.", playerClass, m.engine.CurrentFloorType().FloorName())
+	}
 }
 
 // updateGame handles game view input.
@@ -797,8 +877,8 @@ func (m *Model) movePlayer(dir types.Direction) {
 	}
 
 	// Check for combat initiation
-	if result.Combat != nil {
-		m.startCombat([]*entity.Enemy{result.Combat})
+	if len(result.Combat) > 0 {
+		m.startCombat(result.Combat)
 	}
 }
 
@@ -1450,7 +1530,7 @@ func (m *Model) updateGameOver(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.currentView = ViewMainMenu
 		m.gameState = types.StateMainMenu
 	case "q":
-		return m, tea.Quit
+		return m, m.requestQuit()
 	}
 	return m, nil
 }
@@ -1768,6 +1848,8 @@ func (m *Model) View() string {
 		return m.viewShop()
 	case ViewUnlockShop:
 		return m.viewUnlockShop()
+	case ViewLeaderboard:
+		return m.viewLeaderboard()
 	default:
 		return "Unknown view"
 	}
@@ -1798,11 +1880,22 @@ func (m *Model) getClassDescription(class entity.PlayerClass) (string, string) {
 
 // viewClassSelect renders the class selection screen.
 func (m *Model) viewClassSelect() string {
-	title := m.styles.Title.Render(`
+	var title string
+	if m.dailyRunMode {
+		dateStr := time.Now().UTC().Format("January 2, 2006")
+		title = m.styles.Title.Render(fmt.Sprintf(`
+    ╔═══════════════════════════════════════════╗
+    ║          DAILY RUN - %s          ║
+    ║           SELECT YOUR PROCESS             ║
+    ╚═══════════════════════════════════════════╝
+	`, dateStr))
+	} else {
+		title = m.styles.Title.Render(`
     ╔═══════════════════════════════════════════╗
     ║           SELECT YOUR PROCESS             ║
     ╚═══════════════════════════════════════════╝
 	`)
+	}
 
 	var menu string
 	for i, class := range m.classOptions {
@@ -1861,6 +1954,13 @@ func (m *Model) viewMainMenu() string {
 		greeting = lipgloss.NewStyle().Width(47).Align(lipgloss.Center).Foreground(m.styles.Highlight.GetForeground()).Render(greetingText) + "\n\n"
 	}
 
+	// Get daily seed for display
+	dailySeed := getDailySeed()
+	dailySeedStr := fmt.Sprintf("%d", dailySeed)
+	if len(dailySeedStr) > 8 {
+		dailySeedStr = dailySeedStr[:8] + "..."
+	}
+
 	var menu string
 	for i, option := range m.menuOptions {
 		cursor := "  "
@@ -1878,6 +1978,8 @@ func (m *Model) viewMainMenu() string {
 		displayOption := option
 		if isDisabled {
 			displayOption = option + " (no save)"
+		} else if option == "Daily Run" {
+			displayOption = fmt.Sprintf("Daily Run (%s)", dailySeedStr)
 		}
 
 		menu += style.Render(cursor+displayOption) + "\n"
@@ -1924,15 +2026,23 @@ func (m *Model) renderStats() string {
 	// Get floor info from engine
 	floorName := "/home"
 	floorDepth := 1
+	var seed int64
 	if m.engine != nil {
 		floorName = m.engine.CurrentFloorType().FloorName()
 		floorDepth = m.engine.CurrentDepth()
+		seed = m.engine.MasterSeed()
 	}
 
 	// Show username if in multiplayer mode
 	userLine := ""
 	if m.isMultiplayer && m.username != "" {
 		userLine = m.styles.Highlight.Render("@"+m.username) + "\n"
+	}
+
+	// Format seed display (truncate for readability)
+	seedStr := fmt.Sprintf("%d", seed)
+	if len(seedStr) > 10 {
+		seedStr = seedStr[:10] + "..."
 	}
 
 	content := fmt.Sprintf(
@@ -1945,7 +2055,8 @@ func (m *Model) renderStats() string {
 			"Level: %d\n"+
 			"XP: %d/%d\n"+
 			"Floor: %s\n"+
-			"Depth: %d",
+			"Depth: %d\n\n"+
+			"Seed: %s",
 		userLine,
 		m.styles.Title.Render(string(p.Class)),
 		m.styles.Muted.Render("Process Status"),
@@ -1961,6 +2072,7 @@ func (m *Model) renderStats() string {
 		p.XPToLevel,
 		floorName,
 		floorDepth,
+		seedStr,
 	)
 
 	return m.styles.StatPanel.Width(20).Render(content)
@@ -3345,4 +3457,170 @@ func (m *Model) awardRunExitCodes(victory bool) {
 
 	// Save meta progress
 	m.saveManager.SaveMetaProgress(m.metaProgress)
+}
+
+// --- Leaderboard Functions ---
+
+// openLeaderboard initializes and opens the leaderboard view.
+func (m *Model) openLeaderboard() {
+	m.leaderboardCursor = 0
+	m.leaderboardRunType = "all"
+	m.leaderboardError = ""
+	m.leaderboardEntries = nil
+
+	// Fetch leaderboard data if we have a fetcher
+	if m.leaderboardFetcher != nil {
+		entries, err := m.leaderboardFetcher(m.leaderboardRunType, 20)
+		if err != nil {
+			m.leaderboardError = "Failed to load leaderboard"
+		} else {
+			m.leaderboardEntries = entries
+		}
+	}
+
+	m.currentView = ViewLeaderboard
+}
+
+// updateLeaderboard handles leaderboard view input.
+func (m *Model) updateLeaderboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		m.currentView = ViewMainMenu
+	case "up", "k", "w":
+		if len(m.leaderboardEntries) > 0 {
+			m.leaderboardCursor--
+			if m.leaderboardCursor < 0 {
+				m.leaderboardCursor = len(m.leaderboardEntries) - 1
+			}
+		}
+	case "down", "j", "s":
+		if len(m.leaderboardEntries) > 0 {
+			m.leaderboardCursor++
+			if m.leaderboardCursor >= len(m.leaderboardEntries) {
+				m.leaderboardCursor = 0
+			}
+		}
+	case "left", "h", "a":
+		// Cycle through run types: all -> standard -> daily -> all
+		switch m.leaderboardRunType {
+		case "all":
+			m.leaderboardRunType = "daily"
+		case "daily":
+			m.leaderboardRunType = "standard"
+		case "standard":
+			m.leaderboardRunType = "all"
+		}
+		m.refreshLeaderboard()
+	case "right", "l", "d":
+		// Cycle through run types: all -> daily -> standard -> all
+		switch m.leaderboardRunType {
+		case "all":
+			m.leaderboardRunType = "standard"
+		case "standard":
+			m.leaderboardRunType = "daily"
+		case "daily":
+			m.leaderboardRunType = "all"
+		}
+		m.refreshLeaderboard()
+	case "r":
+		// Refresh leaderboard
+		m.refreshLeaderboard()
+	}
+	return m, nil
+}
+
+// refreshLeaderboard reloads the leaderboard data.
+func (m *Model) refreshLeaderboard() {
+	m.leaderboardCursor = 0
+	m.leaderboardError = ""
+
+	if m.leaderboardFetcher != nil {
+		entries, err := m.leaderboardFetcher(m.leaderboardRunType, 20)
+		if err != nil {
+			m.leaderboardError = "Failed to load leaderboard"
+		} else {
+			m.leaderboardEntries = entries
+		}
+	}
+}
+
+// viewLeaderboard renders the leaderboard interface.
+func (m *Model) viewLeaderboard() string {
+	title := m.styles.Title.Render(`
+    ╔═══════════════════════════════════════════╗
+    ║              LEADERBOARD                  ║
+    ╚═══════════════════════════════════════════╝
+	`) + "\n"
+
+	// Run type tabs
+	runTypes := []struct {
+		id    string
+		label string
+	}{
+		{"all", "All Runs"},
+		{"standard", "Standard"},
+		{"daily", "Daily"},
+	}
+	var tabs string
+	for _, rt := range runTypes {
+		if rt.id == m.leaderboardRunType {
+			tabs += m.styles.MenuSelected.Render(fmt.Sprintf(" [%s] ", rt.label))
+		} else {
+			tabs += m.styles.Muted.Render(fmt.Sprintf("  %s  ", rt.label))
+		}
+	}
+	tabs += "\n" + m.styles.Muted.Render("─────────────────────────────────────────────") + "\n\n"
+
+	// Content
+	var content string
+	if !m.isMultiplayer {
+		// Local mode - no leaderboard access
+		content = m.styles.Muted.Render("  Leaderboards are only available via SSH.\n\n")
+		content += m.styles.Normal.Render("  Connect with:\n")
+		content += m.styles.Highlight.Render("  ssh player@dev-dungeon.com\n\n")
+	} else if m.leaderboardError != "" {
+		content = m.styles.Danger.Render("  " + m.leaderboardError + "\n\n")
+		content += m.styles.Muted.Render("  Press [R] to retry\n")
+	} else if len(m.leaderboardEntries) == 0 {
+		content = m.styles.Muted.Render("  No entries yet. Be the first to make the board!\n")
+	} else {
+		// Header
+		content = m.styles.Muted.Render(fmt.Sprintf("  %-4s %-12s %-8s %-7s %-8s\n", "RANK", "PLAYER", "SCORE", "FLOORS", "CLASS"))
+		content += m.styles.Muted.Render("  ────────────────────────────────────────────\n")
+
+		// Entries
+		for i, entry := range m.leaderboardEntries {
+			cursor := "  "
+			style := m.styles.MenuItem
+			if i == m.leaderboardCursor {
+				cursor = "> "
+				style = m.styles.MenuSelected
+			}
+
+			// Highlight current user
+			if m.username != "" && entry.Username == m.username {
+				style = m.styles.Highlight
+			}
+
+			// Truncate username if too long
+			username := entry.Username
+			if len(username) > 10 {
+				username = username[:9] + "…"
+			}
+
+			line := fmt.Sprintf("%-4d %-12s %-8d %-7d %-8s",
+				entry.Rank,
+				username,
+				entry.Score,
+				entry.FloorsCleared,
+				entry.Class,
+			)
+			content += style.Render(cursor+line) + "\n"
+		}
+	}
+
+	footer := "\n" + m.styles.Muted.Render("[←/→] Filter  [↑/↓] Navigate  [R] Refresh  [Esc] Back")
+
+	result := m.styles.Container.Render(title + tabs + content + footer)
+	return m.centerContent(result)
 }

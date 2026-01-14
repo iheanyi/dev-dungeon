@@ -212,6 +212,14 @@ ssh -v player@dev-dungeon.com
 | `HTTP_PORT` | HTTP server port | `8080` |
 | `SSH_HOST_KEY_PATH` | Path to SSH host key | `/data/host_key` (on Fly.io) |
 
+### Web Portal / Browser Auth
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `WEB_BASE_URL` | Base URL for magic links (e.g., `https://dev-dungeon.com`) | Auto-detected |
+
+For browser authentication, users press `Ctrl+L` in the SSH session to generate a magic link.
+
 ### Error Tracking (Sentry)
 
 | Variable | Description | Default |

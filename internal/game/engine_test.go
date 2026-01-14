@@ -410,12 +410,12 @@ func TestEnemyBumpCombat(t *testing.T) {
 		t.Error("player should not move into enemy")
 	}
 
-	if result.Combat == nil {
+	if len(result.Combat) == 0 {
 		t.Error("expected combat encounter")
 	}
 
-	if result.Combat != nil && result.Combat.ID() != enemy.ID() {
-		t.Errorf("combat enemy mismatch: expected %s, got %s", enemy.ID(), result.Combat.ID())
+	if len(result.Combat) > 0 && result.Combat[0].ID() != enemy.ID() {
+		t.Errorf("combat enemy mismatch: expected %s, got %s", enemy.ID(), result.Combat[0].ID())
 	}
 }
 

@@ -14,11 +14,11 @@ import (
 
 // MoveResult represents the outcome of a player movement action.
 type MoveResult struct {
-	Moved      bool           // Whether the player actually moved
-	Combat     *entity.Enemy  // Non-nil if bumped into an enemy
-	PickedUp   *entity.Item   // Non-nil if picked up an item
-	UsedStairs bool           // Whether stairs were used
-	Message    string         // Status message to display
+	Moved      bool             // Whether the player actually moved
+	Combat     []*entity.Enemy  // Non-nil if bumped into enemies (includes nearby group members)
+	PickedUp   *entity.Item     // Non-nil if picked up an item
+	UsedStairs bool             // Whether stairs were used
+	Message    string           // Status message to display
 }
 
 // Engine is the core game engine that manages game state and logic.
@@ -489,10 +489,16 @@ func (e *Engine) MovePlayer(dir types.Direction) MoveResult {
 
 	// Check for enemy at position (bump attack)
 	if enemy := e.world.GetEnemyAt(newPos); enemy != nil {
+		// Gather nearby enemies (within 2 tiles) for group combat
+		enemies := e.gatherNearbyEnemies(enemy, 2)
+		msg := fmt.Sprintf("You bump into a %s!", enemy.Name())
+		if len(enemies) > 1 {
+			msg = fmt.Sprintf("You bump into a group of %d enemies!", len(enemies))
+		}
 		return MoveResult{
 			Moved:   false,
-			Combat:  enemy,
-			Message: fmt.Sprintf("You bump into a %s!", enemy.Name()),
+			Combat:  enemies,
+			Message: msg,
 		}
 	}
 
@@ -557,6 +563,38 @@ func (e *Engine) getNewPosition(pos types.Position, dir types.Direction) types.P
 	default:
 		return pos
 	}
+}
+
+// gatherNearbyEnemies finds all enemies within the given radius of the target enemy.
+// This is used to initiate group combat when bumping into one member of a group.
+func (e *Engine) gatherNearbyEnemies(target *entity.Enemy, radius int) []*entity.Enemy {
+	if e.world == nil {
+		return []*entity.Enemy{target}
+	}
+
+	targetPos := target.Position()
+	enemies := []*entity.Enemy{target}
+	seen := make(map[string]bool)
+	seen[target.ID()] = true
+
+	// Check all enemies on the current floor
+	for _, enemy := range e.world.Enemies {
+		if seen[enemy.ID()] || !enemy.IsAlive() {
+			continue // Skip already added or dead enemies
+		}
+
+		pos := enemy.Position()
+		dx := pos.X - targetPos.X
+		dy := pos.Y - targetPos.Y
+
+		// Check if within radius (using Chebyshev distance for square area)
+		if dx >= -radius && dx <= radius && dy >= -radius && dy <= radius {
+			enemies = append(enemies, enemy)
+			seen[enemy.ID()] = true
+		}
+	}
+
+	return enemies
 }
 
 // DescendStairs attempts to go down stairs.

@@ -117,6 +117,7 @@ type Config struct {
 	Port        string
 	HostKeyPath string
 	DatabaseURL string
+	WebBaseURL  string // Base URL for magic links (e.g., "https://dev-dungeon.com")
 }
 
 // Server is the SSH game server.

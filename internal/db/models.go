@@ -2,6 +2,8 @@
 package db
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"time"
 
 	gonanoid "github.com/matoous/go-nanoid/v2"
@@ -88,4 +90,38 @@ type DailySeed struct {
 	Date      time.Time `db:"date"`
 	Seed      int64     `db:"seed"`
 	CreatedAt time.Time `db:"created_at"`
+}
+
+// AuthToken represents a magic link token for browser authentication.
+type AuthToken struct {
+	Token     string    `db:"token"`     // 256-bit hex string (64 chars)
+	UserID    int       `db:"user_id"`
+	CreatedAt time.Time `db:"created_at"`
+	ExpiresAt time.Time `db:"expires_at"`
+	Used      bool      `db:"used"`
+}
+
+// GenerateAuthToken creates a cryptographically secure 256-bit token.
+// Returns a 64-character hex string.
+func GenerateAuthToken() (string, error) {
+	bytes := make([]byte, 32) // 256 bits
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
+// WebSession represents an authenticated browser session.
+type WebSession struct {
+	Token      string    `db:"token"`      // 256-bit hex string (64 chars)
+	UserID     int       `db:"user_id"`
+	CreatedAt  time.Time `db:"created_at"`
+	ExpiresAt  time.Time `db:"expires_at"`
+	LastUsedAt time.Time `db:"last_used_at"`
+}
+
+// GenerateSessionToken creates a cryptographically secure session token.
+// Returns a 64-character hex string.
+func GenerateSessionToken() (string, error) {
+	return GenerateAuthToken() // Same format
 }
