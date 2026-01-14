@@ -9,3 +9,6 @@ For Linux-themed games: RAM as health (OOM = death), FD as mana (limited resourc
 ## 1940fc - 2026-01-14T02:44:34Z
 When setting a flag on a struct that was appended to a slice, the flag must be set BEFORE the append, not after. Structs are copied by value on append, so mutations after append don't affect the slice copy.
 
+## ae99d3 - 2026-01-14T03:01:32Z
+Equipment slots with the same EquipSlot enum value need auto-fill logic to find the next available slot. Without this, equipping two items of the same slot type will overwrite the first one instead of filling the second slot.
+
