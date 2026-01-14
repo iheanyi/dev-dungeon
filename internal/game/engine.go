@@ -237,6 +237,33 @@ func (e *Engine) createDefaultFloor(floorType types.FloorType, depth int, seed i
 func (e *Engine) populateFloor(depth int, floorSeed int64) {
 	floorRng := rand.New(rand.NewSource(floorSeed))
 
+	// Final floor (depth 8 = /dev/null) is the boss floor
+	isBossFloor := depth >= 8
+
+	if isBossFloor {
+		// Spawn the KERNEL PANIC boss
+		pos := e.findEmptyPosition(floorRng)
+		if pos != nil {
+			boss := entity.NewEnemy(entity.EnemyKernelPanic, "boss_kernel_panic", *pos, depth)
+			boss.IsBoss = true
+			e.world.AddEnemy(boss)
+			e.addMessage("WARNING: KERNEL PANIC detected in sector. Approach with extreme caution.")
+		}
+
+		// Spawn a few minions
+		for i := 0; i < 3; i++ {
+			pos := e.findEmptyPosition(floorRng)
+			if pos == nil {
+				continue
+			}
+			enemyType := e.selectEnemyType(depth, floorRng)
+			enemy := entity.NewEnemy(enemyType, fmt.Sprintf("minion_%d", i), *pos, depth)
+			e.world.AddEnemy(enemy)
+		}
+		return
+	}
+
+	// Normal floor population
 	// Number of enemies scales with depth
 	numEnemies := 2 + depth
 	if numEnemies > 10 {
@@ -343,9 +370,10 @@ func (e *Engine) selectEnemyType(depth int, rng *rand.Rand) entity.EnemyType {
 // selectItemTemplate selects an appropriate item template for the given depth.
 func (e *Engine) selectItemTemplate(depth int, rng *rand.Rand) string {
 	// Common items available on all floors
-	common := []string{"pid_restore", "mem_restore", "memory_fragment"}
-	uncommon := []string{"grep_scroll", "service_token", "basic_script", "basic_shell"}
-	rare := []string{"sudo_potion", "kill_9", "chmod_x", "core_dump"}
+	common := []string{"malloc", "fd_restore", "memory_fragment", "env_vars", "alias_file", "grep_glaive"}
+	uncommon := []string{"grep_scroll", "service_token", "basic_script", "basic_shell", "pipe_wrench", "sed_saber", "awk_axe", "firewall", "sandbox", "ssh_key", "cron_tab", "config_file", "realloc", "nice_boost", "cpu_boost"}
+	rare := []string{"sudo_potion", "kill_9", "chmod_x", "core_dump", "vim_blade", "selinux_shield", "container", "gpg_ring", "tmux_session", "mmap", "segfault_bomb", "cron_claw"}
+	legendary := []string{"fork_bomb", "rm_rf", "sudo_armor"}
 
 	roll := rng.Float64()
 	var pool []string
@@ -365,12 +393,15 @@ func (e *Engine) selectItemTemplate(depth int, rng *rand.Rand) string {
 			pool = rare
 		}
 	} else {
-		if roll < 0.3 {
+		// Deep floors: better loot including legendary
+		if roll < 0.2 {
 			pool = common
-		} else if roll < 0.7 {
+		} else if roll < 0.5 {
 			pool = uncommon
-		} else {
+		} else if roll < 0.9 {
 			pool = rare
+		} else {
+			pool = legendary
 		}
 	}
 
@@ -744,6 +775,13 @@ func (e *Engine) LoadGame(data *save.SaveData) error {
 	e.player.XPToLevel = data.Player.XPToLevel
 	e.player.ExitCodes = data.Player.ExitCodes
 
+	// Clear starting gear before loading saved inventory/equipment
+	e.player.Inventory.Clear()
+	e.player.Equipment.Weapon = nil
+	e.player.Equipment.Armor = nil
+	e.player.Equipment.Utility1 = nil
+	e.player.Equipment.Utility2 = nil
+
 	// Load inventory
 	for _, itemData := range data.Player.Inventory {
 		item := entity.NewItem(itemData.TemplateID, itemData.TemplateID, types.Position{})
@@ -764,6 +802,18 @@ func (e *Engine) LoadGame(data *save.SaveData) error {
 		armor := entity.NewItem(data.Player.Equipment.Armor, "armor", types.Position{})
 		if armor != nil {
 			e.player.Equipment.Equip(armor)
+		}
+	}
+	if data.Player.Equipment.Utility1 != "" {
+		util := entity.NewItem(data.Player.Equipment.Utility1, "utility1", types.Position{})
+		if util != nil {
+			e.player.Equipment.Equip(util)
+		}
+	}
+	if data.Player.Equipment.Utility2 != "" {
+		util := entity.NewItem(data.Player.Equipment.Utility2, "utility2", types.Position{})
+		if util != nil {
+			e.player.Equipment.Equip(util)
 		}
 	}
 

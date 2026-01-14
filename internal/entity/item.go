@@ -24,9 +24,28 @@ const (
 	RarityLegendary
 )
 
+// String returns the string representation of a rarity.
+func (r ItemRarity) String() string {
+	switch r {
+	case RarityCommon:
+		return "Common"
+	case RarityUncommon:
+		return "Uncommon"
+	case RarityRare:
+		return "Rare"
+	case RarityEpic:
+		return "Epic"
+	case RarityLegendary:
+		return "Legendary"
+	default:
+		return "Unknown"
+	}
+}
+
 // Item represents an item in the game.
 type Item struct {
 	*BaseEntity
+	TemplateID  string // ID of the template this item was created from
 	ItemType    ItemType
 	Rarity      ItemRarity
 	Description string
@@ -262,6 +281,302 @@ var ItemTemplates = map[string]ItemTemplate{
 			{Type: EffectBuff, Value: -100, Target: TargetSelf}, // Lower UID = more power
 		},
 	},
+
+	// === MORE WEAPONS ===
+	"pipe_wrench": {
+		ID:          "pipe_wrench",
+		Name:        "pipe |",
+		Glyph:       ')',
+		ItemType:    ItemTypeWeapon,
+		Rarity:      RarityUncommon,
+		Description: "Chain your attacks together",
+		Stackable:   false,
+		EquipSlot:   SlotWeapon,
+		StatBonus:   types.Stats{CPU: 5, NICE: -1}, // Faster attacks
+	},
+	"vim_blade": {
+		ID:          "vim_blade",
+		Name:        ":wq!",
+		Glyph:       ')',
+		ItemType:    ItemTypeWeapon,
+		Rarity:      RarityRare,
+		Description: "Force write and quit - devastating",
+		Stackable:   false,
+		EquipSlot:   SlotWeapon,
+		StatBonus:   types.Stats{CPU: 12, FD: 4},
+	},
+	"sed_saber": {
+		ID:          "sed_saber",
+		Name:        "sed s/.*/dead/",
+		Glyph:       ')',
+		ItemType:    ItemTypeWeapon,
+		Rarity:      RarityUncommon,
+		Description: "Stream edit your enemies",
+		Stackable:   false,
+		EquipSlot:   SlotWeapon,
+		StatBonus:   types.Stats{CPU: 7},
+	},
+	"awk_axe": {
+		ID:          "awk_axe",
+		Name:        "awk '{kill}'",
+		Glyph:       ')',
+		ItemType:    ItemTypeWeapon,
+		Rarity:      RarityUncommon,
+		Description: "Pattern match and destroy",
+		Stackable:   false,
+		EquipSlot:   SlotWeapon,
+		StatBonus:   types.Stats{CPU: 6, FD: 2},
+	},
+	"grep_glaive": {
+		ID:          "grep_glaive",
+		Name:        "grep -r pain",
+		Glyph:       ')',
+		ItemType:    ItemTypeWeapon,
+		Rarity:      RarityCommon,
+		Description: "Recursively search and destroy",
+		Stackable:   false,
+		EquipSlot:   SlotWeapon,
+		StatBonus:   types.Stats{CPU: 4},
+	},
+	"fork_bomb": {
+		ID:          "fork_bomb",
+		Name:        ":(){:|:&};:",
+		Glyph:       ')',
+		ItemType:    ItemTypeWeapon,
+		Rarity:      RarityLegendary,
+		Description: "The forbidden weapon",
+		Stackable:   false,
+		EquipSlot:   SlotWeapon,
+		StatBonus:   types.Stats{CPU: 15, NICE: -3},
+	},
+	"rm_rf": {
+		ID:          "rm_rf",
+		Name:        "rm -rf /",
+		Glyph:       ')',
+		ItemType:    ItemTypeWeapon,
+		Rarity:      RarityLegendary,
+		Description: "Delete everything in your path",
+		Stackable:   false,
+		EquipSlot:   SlotWeapon,
+		StatBonus:   types.Stats{CPU: 20},
+		Effects: []ItemEffect{
+			{Type: EffectInstantKill, Value: 30, Target: TargetEnemy},
+		},
+	},
+	"cron_claw": {
+		ID:          "cron_claw",
+		Name:        "* * * * *",
+		Glyph:       ')',
+		ItemType:    ItemTypeWeapon,
+		Rarity:      RarityUncommon,
+		Description: "Scheduled strikes every turn",
+		Stackable:   false,
+		EquipSlot:   SlotWeapon,
+		StatBonus:   types.Stats{CPU: 4, NICE: -2},
+	},
+
+	// === MORE ARMOR ===
+	"firewall": {
+		ID:          "firewall",
+		Name:        "iptables",
+		Glyph:       '[',
+		ItemType:    ItemTypeArmor,
+		Rarity:      RarityUncommon,
+		Description: "Blocks incoming attacks",
+		Stackable:   false,
+		EquipSlot:   SlotArmor,
+		StatBonus:   types.Stats{RAM: 25},
+	},
+	"selinux_shield": {
+		ID:          "selinux_shield",
+		Name:        "SELinux",
+		Glyph:       '[',
+		ItemType:    ItemTypeArmor,
+		Rarity:      RarityRare,
+		Description: "Mandatory access control",
+		Stackable:   false,
+		EquipSlot:   SlotArmor,
+		StatBonus:   types.Stats{RAM: 30, UID: -200},
+	},
+	"sudo_armor": {
+		ID:          "sudo_armor",
+		Name:        "sudoers.d/",
+		Glyph:       '[',
+		ItemType:    ItemTypeArmor,
+		Rarity:      RarityLegendary,
+		Description: "Root-level protection",
+		Stackable:   false,
+		EquipSlot:   SlotArmor,
+		StatBonus:   types.Stats{RAM: 50, UID: -500},
+	},
+	"container": {
+		ID:          "container",
+		Name:        "docker run",
+		Glyph:       '[',
+		ItemType:    ItemTypeArmor,
+		Rarity:      RarityRare,
+		Description: "Isolated namespace protection",
+		Stackable:   false,
+		EquipSlot:   SlotArmor,
+		StatBonus:   types.Stats{RAM: 35, FD: 4},
+	},
+	"sandbox": {
+		ID:          "sandbox",
+		Name:        "chroot jail",
+		Glyph:       '[',
+		ItemType:    ItemTypeArmor,
+		Rarity:      RarityUncommon,
+		Description: "Restricted environment",
+		Stackable:   false,
+		EquipSlot:   SlotArmor,
+		StatBonus:   types.Stats{RAM: 15, FD: 2},
+	},
+
+	// === UTILITY ITEMS ===
+	"ssh_key": {
+		ID:          "ssh_key",
+		Name:        "id_rsa",
+		Glyph:       '~',
+		ItemType:    ItemTypeUtility,
+		Rarity:      RarityUncommon,
+		Description: "SSH private key - grants access",
+		Stackable:   false,
+		EquipSlot:   SlotUtility1,
+		StatBonus:   types.Stats{UID: -200, FD: 2},
+	},
+	"gpg_ring": {
+		ID:          "gpg_ring",
+		Name:        "GPG keyring",
+		Glyph:       '~',
+		ItemType:    ItemTypeUtility,
+		Rarity:      RarityRare,
+		Description: "Cryptographic identity",
+		Stackable:   false,
+		EquipSlot:   SlotUtility1,
+		StatBonus:   types.Stats{UID: -300, RAM: 10},
+	},
+	"env_vars": {
+		ID:          "env_vars",
+		Name:        "$PATH",
+		Glyph:       '~',
+		ItemType:    ItemTypeUtility,
+		Rarity:      RarityCommon,
+		Description: "Environment variables for efficiency",
+		Stackable:   false,
+		EquipSlot:   SlotUtility1,
+		StatBonus:   types.Stats{NICE: -2, CPU: 2},
+	},
+	"cron_tab": {
+		ID:          "cron_tab",
+		Name:        "crontab",
+		Glyph:       '~',
+		ItemType:    ItemTypeUtility,
+		Rarity:      RarityUncommon,
+		Description: "Scheduled task automation",
+		Stackable:   false,
+		EquipSlot:   SlotUtility2,
+		StatBonus:   types.Stats{NICE: -3, FD: 3},
+	},
+	"alias_file": {
+		ID:          "alias_file",
+		Name:        ".bashrc",
+		Glyph:       '~',
+		ItemType:    ItemTypeUtility,
+		Rarity:      RarityCommon,
+		Description: "Shell aliases for quick commands",
+		Stackable:   false,
+		EquipSlot:   SlotUtility2,
+		StatBonus:   types.Stats{CPU: 3, NICE: -1},
+	},
+	"config_file": {
+		ID:          "config_file",
+		Name:        ".vimrc",
+		Glyph:       '~',
+		ItemType:    ItemTypeUtility,
+		Rarity:      RarityUncommon,
+		Description: "Optimized editor configuration",
+		Stackable:   false,
+		EquipSlot:   SlotUtility2,
+		StatBonus:   types.Stats{FD: 4, CPU: 2},
+	},
+	"tmux_session": {
+		ID:          "tmux_session",
+		Name:        "tmux attach",
+		Glyph:       '~',
+		ItemType:    ItemTypeUtility,
+		Rarity:      RarityRare,
+		Description: "Persistent terminal multiplexer",
+		Stackable:   false,
+		EquipSlot:   SlotUtility1,
+		StatBonus:   types.Stats{FD: 6, RAM: 15, NICE: -1},
+	},
+
+	// === MORE CONSUMABLES ===
+	"realloc": {
+		ID:          "realloc",
+		Name:        "realloc()",
+		Glyph:       '+',
+		ItemType:    ItemTypeConsumable,
+		Rarity:      RarityUncommon,
+		Description: "Allocates 50 RAM",
+		Stackable:   true,
+		MaxStack:    5,
+		Effects: []ItemEffect{
+			{Type: EffectHeal, Value: 50, Target: TargetSelf},
+		},
+	},
+	"mmap": {
+		ID:          "mmap",
+		Name:        "mmap()",
+		Glyph:       '+',
+		ItemType:    ItemTypeConsumable,
+		Rarity:      RarityRare,
+		Description: "Memory map: full heal!",
+		Stackable:   true,
+		MaxStack:    3,
+		Effects: []ItemEffect{
+			{Type: EffectHeal, Value: 999, Target: TargetSelf},
+		},
+	},
+	"nice_boost": {
+		ID:          "nice_boost",
+		Name:        "nice -n -20",
+		Glyph:       '>',
+		ItemType:    ItemTypeConsumable,
+		Rarity:      RarityUncommon,
+		Description: "Highest priority: +5 speed for 5 turns",
+		Stackable:   true,
+		MaxStack:    5,
+		Effects: []ItemEffect{
+			{Type: EffectBuff, Value: 5, Target: TargetSelf},
+		},
+	},
+	"cpu_boost": {
+		ID:          "cpu_boost",
+		Name:        "turbo boost",
+		Glyph:       '>',
+		ItemType:    ItemTypeConsumable,
+		Rarity:      RarityUncommon,
+		Description: "+10 CPU for 5 turns",
+		Stackable:   true,
+		MaxStack:    5,
+		Effects: []ItemEffect{
+			{Type: EffectBuff, Value: 10, Target: TargetSelf},
+		},
+	},
+	"segfault_bomb": {
+		ID:          "segfault_bomb",
+		Name:        "SIGSEGV",
+		Glyph:       '#',
+		ItemType:    ItemTypeConsumable,
+		Rarity:      RarityRare,
+		Description: "Throws 80 damage at an enemy",
+		Stackable:   true,
+		MaxStack:    3,
+		Effects: []ItemEffect{
+			{Type: EffectDamage, Value: 80, Target: TargetEnemy},
+		},
+	},
 }
 
 // NewItem creates a new item from a template.
@@ -279,6 +594,7 @@ func NewItem(templateID string, id string, pos types.Position) *Item {
 			template.Glyph,
 			false,
 		),
+		TemplateID:  templateID,
 		ItemType:    template.ItemType,
 		Rarity:      template.Rarity,
 		Description: template.Description,
@@ -351,6 +667,11 @@ func (inv *Inventory) GetItem(id string) *Item {
 		}
 	}
 	return nil
+}
+
+// Clear removes all items from inventory.
+func (inv *Inventory) Clear() {
+	inv.Items = make([]*Item, 0, inv.MaxSlots)
 }
 
 // Equipment manages equipped items.

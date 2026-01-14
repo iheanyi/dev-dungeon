@@ -3,6 +3,8 @@ package ui
 
 import (
 	"fmt"
+	"os"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -27,7 +29,88 @@ const (
 	ViewVictory
 	ViewAdmin
 	ViewHelp
+	ViewMessageHistory
+	ViewIntro
+	ViewShop
 )
+
+// introTickMsg is sent to advance intro animation.
+type introTickMsg struct{}
+
+// introFrames contains the animated intro sequence.
+var introFrames = []string{
+	`
+      ╔══════════════════════════════════════════════════════════════╗
+      ║                                                              ║
+      ║    ██████╗ ███████╗██╗   ██╗   ██████╗ ██╗   ██╗███╗   ██╗   ║
+      ║    ██╔══██╗██╔════╝██║   ██║   ██╔══██╗██║   ██║████╗  ██║   ║
+      ║    ██║  ██║█████╗  ██║   ██║   ██║  ██║██║   ██║██╔██╗ ██║   ║
+      ║    ██║  ██║██╔══╝  ╚██╗ ██╔╝   ██║  ██║██║   ██║██║╚██╗██║   ║
+      ║    ██████╔╝███████╗ ╚████╔╝    ██████╔╝╚██████╔╝██║ ╚████║   ║
+      ║    ╚═════╝ ╚══════╝  ╚═══╝     ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝   ║
+      ║                                                              ║
+      ╚══════════════════════════════════════════════════════════════╝
+`,
+	`
+      ╔══════════════════════════════════════════════════════════════╗
+      ║                                                              ║
+      ║                    >>> SYSTEM ALERT <<<                      ║
+      ║                                                              ║
+      ║                    ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓                        ║
+      ║                    ▓  KERNEL PANIC  ▓                        ║
+      ║                    ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓                        ║
+      ║                                                              ║
+      ║           The system has been compromised.                   ║
+      ║                                                              ║
+      ╚══════════════════════════════════════════════════════════════╝
+`,
+	`
+      ╔══════════════════════════════════════════════════════════════╗
+      ║                                                              ║
+      ║  Something has gone wrong deep in /dev/null.                 ║
+      ║                                                              ║
+      ║  Rogue processes have escaped.                               ║
+      ║  Zombie processes walk the directories.                      ║
+      ║  Daemons have turned hostile.                                ║
+      ║  Fork bombs multiply unchecked.                              ║
+      ║                                                              ║
+      ║  And at the heart of it all...                               ║
+      ║  The KERNEL PANIC awaits.                                    ║
+      ║                                                              ║
+      ╚══════════════════════════════════════════════════════════════╝
+`,
+	`
+      ╔══════════════════════════════════════════════════════════════╗
+      ║                                                              ║
+      ║  You are a newly spawned process.                            ║
+      ║                                                              ║
+      ║  Your mission: Navigate from /home through the filesystem,   ║
+      ║  descending ever deeper into the system.                     ║
+      ║                                                              ║
+      ║  /home → /tmp → /var → /etc → /usr → /bin → /sys → /dev/null ║
+      ║                                                              ║
+      ║  Fight. Survive. Find the KERNEL PANIC.                      ║
+      ║  And end this madness.                                       ║
+      ║                                                              ║
+      ╚══════════════════════════════════════════════════════════════╝
+`,
+	`
+      ╔══════════════════════════════════════════════════════════════╗
+      ║                                                              ║
+      ║               YOUR STATS EXPLAINED:                          ║
+      ║                                                              ║
+      ║    RAM   - Health. Reach 0 = OOM killed.                     ║
+      ║    CPU   - Attack power. Kill processes faster.              ║
+      ║    FD    - File descriptors. Fuel your abilities.            ║
+      ║    NICE  - Priority. Lower = faster + more crits.            ║
+      ║    UID   - User ID. 0 = root = ultimate power.               ║
+      ║                                                              ║
+      ║               Good luck, process.                            ║
+      ║               The system depends on you.                     ║
+      ║                                                              ║
+      ╚══════════════════════════════════════════════════════════════╝
+`,
+}
 
 // Model is the main Bubble Tea model for the game.
 type Model struct {
@@ -53,6 +136,7 @@ type Model struct {
 	combat          *game.CombatState
 	selectingSkill  bool
 	skillCursor     int
+	targetCursor    int // Which enemy is targeted
 
 	// Inventory state
 	invCursor    int
@@ -68,10 +152,30 @@ type Model struct {
 	prevView     ViewType // View to return to after admin
 
 	// Messages
-	statusMsg    string
+	statusMsg         string
+	messageHistory    []string // Full message history
+	messageScrollIdx  int      // Current scroll position (0 = most recent)
+	showingHistory    bool     // Whether message history view is active
+
+	// Intro animation state
+	introFrame     int  // Current frame of intro
+	introSkipped   bool // User skipped intro
+	pendingClass   entity.PlayerClass // Class to use after intro
+
+	// Shop state
+	shopCursor     int
+	shopItems      []ShopItem
 
 	// Styles
 	styles       *Styles
+}
+
+// ShopItem represents an item for sale.
+type ShopItem struct {
+	TemplateID string
+	Name       string
+	Price      int
+	InStock    bool
 }
 
 // Styles holds all UI styles.
@@ -209,9 +313,10 @@ func New(cfg *config.Config) *Model {
 			"Show Debug Info",
 			"Close",
 		},
-		adminCursor: 0,
-		combatLog:   make([]string, 0),
-		styles:      NewStyles(),
+		adminCursor:     0,
+		combatLog:       make([]string, 0),
+		messageHistory:  make([]string, 0),
+		styles:          NewStyles(),
 	}
 }
 
@@ -229,6 +334,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		return m, nil
+	case introTickMsg:
+		// Handle intro animation tick
+		if m.currentView == ViewIntro && !m.introSkipped {
+			m.introFrame++
+			if m.introFrame >= len(introFrames) {
+				// Intro complete, start the game
+				m.startNewGame(m.pendingClass)
+				return m, nil
+			}
+			// Continue to next frame
+			return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+				return introTickMsg{}
+			})
+		}
 		return m, nil
 	}
 	return m, nil
@@ -262,6 +382,12 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateAdmin(msg)
 	case ViewHelp:
 		return m.updateHelp(msg)
+	case ViewMessageHistory:
+		return m.updateMessageHistory(msg)
+	case ViewIntro:
+		return m.updateIntro(msg)
+	case ViewShop:
+		return m.updateShop(msg)
 	}
 
 	return m, nil
@@ -330,8 +456,14 @@ func (m *Model) updateClassSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.classCursor = 0
 		}
 	case "enter", " ":
-		m.startNewGame(m.classOptions[m.classCursor])
-		return m, nil
+		// Start intro sequence, then game
+		m.pendingClass = m.classOptions[m.classCursor]
+		m.introFrame = 0
+		m.introSkipped = false
+		m.currentView = ViewIntro
+		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+			return introTickMsg{}
+		})
 	case "esc", "q":
 		m.currentView = ViewMainMenu
 	}
@@ -433,17 +565,29 @@ func (m *Model) updateGame(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.gameState = types.StateMainMenu
 		m.statusMsg = "Game saved."
 	case "`":
-		// Open admin console - requires root (UID 0)
-		if m.player != nil && m.player.Stats.UID == 0 {
+		// Open admin console - requires root (UID 0) OR actual sudo
+		hasGameRoot := m.player != nil && m.player.Stats.UID == 0
+		hasRealRoot := os.Geteuid() == 0
+		if hasGameRoot || hasRealRoot {
 			m.prevView = ViewGame
 			m.adminCursor = 0
 			m.currentView = ViewAdmin
+			if hasRealRoot && !hasGameRoot {
+				m.statusMsg = "[REAL SUDO DETECTED] Admin access granted."
+			}
 		} else {
-			m.statusMsg = "Permission denied: requires root (UID 0). Try sudo class or find a root shard."
+			m.statusMsg = "Permission denied: requires root. Try 'sudo' class, find root_shard, or run with actual sudo."
 		}
 	case "?":
 		m.prevView = ViewGame
 		m.currentView = ViewHelp
+	case "m":
+		m.prevView = ViewGame
+		m.messageScrollIdx = 0
+		m.currentView = ViewMessageHistory
+	case "$":
+		// Open shop
+		m.openShop()
 	}
 	return m, nil
 }
@@ -456,9 +600,12 @@ func (m *Model) movePlayer(dir types.Direction) {
 
 	result := m.engine.MovePlayer(dir)
 
+	// Sync any messages from engine
+	m.syncEngineMessages()
+
 	// Update status message
 	if result.Message != "" {
-		m.statusMsg = result.Message
+		m.addToHistory(result.Message)
 	}
 
 	// Check for combat initiation
@@ -474,6 +621,8 @@ func (m *Model) startCombat(enemies []*entity.Enemy) {
 	m.currentView = ViewCombat
 	m.gameState = types.StateCombat
 	m.combatCursor = 0
+	m.targetCursor = 0 // Target first enemy
+	m.selectingSkill = false
 	m.combatLog = []string{}
 	for _, enemy := range enemies {
 		m.combatLog = append(m.combatLog, fmt.Sprintf("A wild %s appears!", enemy.Name()))
@@ -498,6 +647,9 @@ func (m *Model) updateCombat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.combatCursor > 3 {
 			m.combatCursor = 0
 		}
+	case "left", "h", "right", "l", "tab":
+		// Cycle through targets
+		m.cycleTarget(msg.String() == "left" || msg.String() == "h")
 	case "enter", " ", "1", "2", "3", "4":
 		return m.executeCombatAction(msg.String())
 	case "esc":
@@ -506,6 +658,68 @@ func (m *Model) updateCombat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.statusMsg = "[DEBUG] Escaped combat"
 	}
 	return m, nil
+}
+
+// getValidTargetIndex returns the actual enemy index for the current target.
+// It maps the targetCursor (index into alive enemies) to the full enemy list.
+func (m *Model) getValidTargetIndex() int {
+	if m.combat == nil {
+		return 0
+	}
+
+	aliveEnemies := m.combat.GetAliveEnemies()
+	if len(aliveEnemies) == 0 {
+		return 0
+	}
+
+	// Clamp target cursor
+	if m.targetCursor >= len(aliveEnemies) {
+		m.targetCursor = 0
+	}
+
+	// Find the actual index in the full enemies list
+	targetEnemy := aliveEnemies[m.targetCursor]
+	for i, enemy := range m.combat.Enemies {
+		if enemy == targetEnemy {
+			return i
+		}
+	}
+
+	return 0
+}
+
+// cycleTarget cycles through alive enemies.
+func (m *Model) cycleTarget(backward bool) {
+	if m.combat == nil {
+		return
+	}
+
+	aliveEnemies := m.combat.GetAliveEnemies()
+	if len(aliveEnemies) <= 1 {
+		return
+	}
+
+	// Find current target's index in alive list
+	currentIdx := m.targetCursor
+	if currentIdx >= len(aliveEnemies) {
+		currentIdx = 0
+	}
+
+	// Cycle
+	if backward {
+		currentIdx--
+		if currentIdx < 0 {
+			currentIdx = len(aliveEnemies) - 1
+		}
+	} else {
+		currentIdx++
+		if currentIdx >= len(aliveEnemies) {
+			currentIdx = 0
+		}
+	}
+
+	// Find the actual index in the full enemies list
+	m.targetCursor = currentIdx
 }
 
 // updateSkillSelect handles skill selection within combat.
@@ -576,14 +790,8 @@ func (m *Model) executeCombatAction(key string) (tea.Model, tea.Cmd) {
 		action = types.ActionFlee
 	}
 
-	// Execute player action (target first alive enemy)
-	targetIdx := 0
-	for i, enemy := range m.combat.Enemies {
-		if enemy.IsAlive() {
-			targetIdx = i
-			break
-		}
-	}
+	// Execute player action on selected target
+	targetIdx := m.getValidTargetIndex()
 
 	result := m.combat.ExecutePlayerAction(action, targetIdx, 0)
 	m.combatLog = append(m.combatLog, result.Message)
@@ -640,14 +848,8 @@ func (m *Model) executeSkill(skillIdx int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Find first alive enemy as target
-	targetIdx := 0
-	for i, enemy := range m.combat.Enemies {
-		if enemy.IsAlive() {
-			targetIdx = i
-			break
-		}
-	}
+	// Use selected target
+	targetIdx := m.getValidTargetIndex()
 
 	// Execute skill
 	result := m.combat.ExecutePlayerAction(types.ActionHack, targetIdx, skillIdx)
@@ -690,22 +892,44 @@ func (m *Model) executeSkill(skillIdx int) (tea.Model, tea.Cmd) {
 
 // endCombat handles combat ending.
 func (m *Model) endCombat(victory bool) {
+	bossKilled := false
 	if m.combat != nil && m.engine != nil {
-		m.engine.EndCombat(m.combat)
+		bossKilled = m.engine.EndCombat(m.combat)
+	}
+
+	m.combat = nil
+	m.enemies = nil
+	m.selectingSkill = false
+
+	// Check for game victory (boss killed)
+	if bossKilled {
+		m.currentView = ViewVictory
+		m.gameState = types.StateVictory
+		m.statusMsg = "KERNEL PANIC DEFEATED! You saved the system!"
+		return
 	}
 
 	if victory {
 		m.statusMsg = "Victory! Enemies defeated."
 	}
 
-	m.combat = nil
-	m.enemies = nil
 	m.currentView = ViewGame
 	m.gameState = types.StateExploring
 }
 
 // updateInventory handles inventory view input.
 func (m *Model) updateInventory(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.player == nil {
+		return m, nil
+	}
+
+	// Total items = inventory + 4 equipment slots
+	invLen := len(m.player.Inventory.Items)
+	totalItems := invLen + 4 // weapon, armor, util1, util2
+	if totalItems == 4 {
+		totalItems = 4 // At minimum, show equipment slots
+	}
+
 	switch msg.String() {
 	case "esc", "i":
 		if m.gameState == types.StateCombat {
@@ -716,14 +940,11 @@ func (m *Model) updateInventory(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "up", "k", "w":
 		m.invCursor--
 		if m.invCursor < 0 {
-			m.invCursor = len(m.player.Inventory.Items) - 1
-			if m.invCursor < 0 {
-				m.invCursor = 0
-			}
+			m.invCursor = totalItems - 1
 		}
 	case "down", "j", "s":
 		m.invCursor++
-		if m.invCursor >= len(m.player.Inventory.Items) {
+		if m.invCursor >= totalItems {
 			m.invCursor = 0
 		}
 	case "enter", " ":
@@ -732,6 +953,10 @@ func (m *Model) updateInventory(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.equipItem()
 	case "d":
 		m.dropItem()
+	case "u":
+		m.unequipItem()
+	case "?":
+		m.showItemDetails()
 	}
 	return m, nil
 }
@@ -794,8 +1019,40 @@ func (m *Model) useConsumable(item *entity.Item) {
 			}
 
 		case entity.EffectBuff:
-			effectMsg = fmt.Sprintf("Gained buff: %s", item.Name())
-			// TODO: Implement buff system
+			// Determine buff type based on item
+			var buffType entity.BuffType
+			var buffValue int
+			var duration int
+
+			switch item.TemplateID {
+			case "sudo_potion":
+				buffType = entity.BuffInvincible
+				buffValue = 0
+				duration = 3 // 3 turns of invincibility
+				effectMsg = "ROOT ACCESS GRANTED! Immune to damage for 3 turns."
+			case "nice_boost":
+				buffType = entity.BuffHaste
+				buffValue = 5 // -5 NICE
+				duration = 5
+				effectMsg = "NICE reduced! Acting faster for 5 turns."
+			case "cpu_boost":
+				buffType = entity.BuffStrength
+				buffValue = 10 // +10 CPU
+				duration = 5
+				effectMsg = "CPU boosted! +10 attack for 5 turns."
+			default:
+				effectMsg = fmt.Sprintf("Gained buff from %s.", item.Name())
+				buffType = entity.BuffStrength
+				buffValue = 5
+				duration = 3
+			}
+
+			m.player.AddBuff(entity.Buff{
+				Type:     buffType,
+				Name:     item.Name(),
+				Duration: duration,
+				Value:    buffValue,
+			})
 
 		case entity.EffectReveal:
 			effectMsg = "Revealed floor contents."
@@ -817,12 +1074,36 @@ func (m *Model) useConsumable(item *entity.Item) {
 		}
 	}
 
-	m.statusMsg = effectMsg
+	m.addToHistory(effectMsg)
 
 	// If in combat, add to combat log
 	if m.combat != nil {
 		m.combatLog = append(m.combatLog, effectMsg)
 	}
+}
+
+// addToHistory adds a message to the status and history.
+func (m *Model) addToHistory(msg string) {
+	m.statusMsg = msg
+	if msg != "" {
+		m.messageHistory = append(m.messageHistory, msg)
+		// Cap history at 500 messages
+		if len(m.messageHistory) > 500 {
+			m.messageHistory = m.messageHistory[1:]
+		}
+	}
+}
+
+// syncEngineMessages syncs messages from the engine into history.
+func (m *Model) syncEngineMessages() {
+	if m.engine == nil {
+		return
+	}
+	messages := m.engine.Messages()
+	for _, msg := range messages {
+		m.addToHistory(msg)
+	}
+	m.engine.ClearMessages()
 }
 
 // equipItem equips the selected item.
@@ -881,6 +1162,146 @@ func (m *Model) dropItem() {
 	m.statusMsg = fmt.Sprintf("Dropped %s.", item.Name())
 }
 
+// unequipItem removes equipped item and puts it back in inventory.
+func (m *Model) unequipItem() {
+	if m.player == nil {
+		return
+	}
+
+	// Check if cursor is in equipment section (after inventory items)
+	invLen := len(m.player.Inventory.Items)
+
+	// Equipment slots: 0=weapon, 1=armor, 2=utility1, 3=utility2 (relative to after inventory)
+	equipIdx := m.invCursor - invLen
+	if equipIdx < 0 {
+		m.statusMsg = "Select an equipped item to unequip."
+		return
+	}
+
+	var item *entity.Item
+	var slotName string
+
+	switch equipIdx {
+	case 0:
+		item = m.player.Equipment.Weapon
+		slotName = "weapon"
+		if item != nil {
+			m.player.Equipment.Weapon = nil
+		}
+	case 1:
+		item = m.player.Equipment.Armor
+		slotName = "armor"
+		if item != nil {
+			m.player.Equipment.Armor = nil
+		}
+	case 2:
+		item = m.player.Equipment.Utility1
+		slotName = "utility 1"
+		if item != nil {
+			m.player.Equipment.Utility1 = nil
+		}
+	case 3:
+		item = m.player.Equipment.Utility2
+		slotName = "utility 2"
+		if item != nil {
+			m.player.Equipment.Utility2 = nil
+		}
+	default:
+		m.statusMsg = "Invalid equipment slot."
+		return
+	}
+
+	if item == nil {
+		m.statusMsg = fmt.Sprintf("No %s equipped.", slotName)
+		return
+	}
+
+	// Add back to inventory
+	if m.player.Inventory.AddItem(item) {
+		m.statusMsg = fmt.Sprintf("Unequipped %s.", item.Name())
+	} else {
+		// Inventory full, re-equip
+		switch equipIdx {
+		case 0:
+			m.player.Equipment.Weapon = item
+		case 1:
+			m.player.Equipment.Armor = item
+		case 2:
+			m.player.Equipment.Utility1 = item
+		case 3:
+			m.player.Equipment.Utility2 = item
+		}
+		m.statusMsg = "Inventory full, cannot unequip."
+	}
+}
+
+// showItemDetails shows detailed info about the selected item.
+func (m *Model) showItemDetails() {
+	if m.player == nil {
+		return
+	}
+
+	var item *entity.Item
+	invLen := len(m.player.Inventory.Items)
+
+	if m.invCursor < invLen {
+		// Inventory item
+		item = m.player.Inventory.Items[m.invCursor]
+	} else {
+		// Equipment slot
+		equipIdx := m.invCursor - invLen
+		switch equipIdx {
+		case 0:
+			item = m.player.Equipment.Weapon
+		case 1:
+			item = m.player.Equipment.Armor
+		case 2:
+			item = m.player.Equipment.Utility1
+		case 3:
+			item = m.player.Equipment.Utility2
+		}
+	}
+
+	if item == nil {
+		m.statusMsg = "Empty slot - nothing equipped."
+		return
+	}
+
+	// Build detailed description
+	details := fmt.Sprintf("=== %s ===\n", item.Name())
+	details += fmt.Sprintf("Type: %s | Rarity: %s\n", string(item.ItemType), item.Rarity.String())
+	details += fmt.Sprintf("%s\n", item.Description)
+
+	// Show stat bonuses
+	if item.StatBonus.CPU != 0 || item.StatBonus.RAM != 0 || item.StatBonus.FD != 0 || item.StatBonus.NICE != 0 || item.StatBonus.UID != 0 {
+		details += "Stats: "
+		bonuses := []string{}
+		if item.StatBonus.CPU != 0 {
+			bonuses = append(bonuses, fmt.Sprintf("CPU %+d", item.StatBonus.CPU))
+		}
+		if item.StatBonus.RAM != 0 {
+			bonuses = append(bonuses, fmt.Sprintf("RAM %+d", item.StatBonus.RAM))
+		}
+		if item.StatBonus.FD != 0 {
+			bonuses = append(bonuses, fmt.Sprintf("FD %+d", item.StatBonus.FD))
+		}
+		if item.StatBonus.NICE != 0 {
+			bonuses = append(bonuses, fmt.Sprintf("NICE %+d", item.StatBonus.NICE))
+		}
+		if item.StatBonus.UID != 0 {
+			bonuses = append(bonuses, fmt.Sprintf("UID %+d", item.StatBonus.UID))
+		}
+		for i, b := range bonuses {
+			if i > 0 {
+				details += ", "
+			}
+			details += b
+		}
+	}
+
+	m.statusMsg = details
+}
+
 // updatePause handles pause menu input.
 func (m *Model) updatePause(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -919,6 +1340,170 @@ func (m *Model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.currentView = m.prevView
 	}
 	return m, nil
+}
+
+// updateMessageHistory handles message history view input.
+func (m *Model) updateMessageHistory(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	historyLen := len(m.messageHistory)
+	maxScroll := historyLen - 20
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+
+	switch msg.String() {
+	case "esc", "m", "q", "enter", " ":
+		m.currentView = m.prevView
+	case "up", "k":
+		m.messageScrollIdx++
+		if m.messageScrollIdx > maxScroll {
+			m.messageScrollIdx = maxScroll
+		}
+	case "down", "j":
+		m.messageScrollIdx--
+		if m.messageScrollIdx < 0 {
+			m.messageScrollIdx = 0
+		}
+	case "pgup":
+		m.messageScrollIdx += 10
+		if m.messageScrollIdx > maxScroll {
+			m.messageScrollIdx = maxScroll
+		}
+	case "pgdown":
+		m.messageScrollIdx -= 10
+		if m.messageScrollIdx < 0 {
+			m.messageScrollIdx = 0
+		}
+	case "home":
+		m.messageScrollIdx = maxScroll
+	case "end":
+		m.messageScrollIdx = 0
+	}
+	return m, nil
+}
+
+// updateIntro handles intro sequence input.
+func (m *Model) updateIntro(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter", " ", "esc", "q":
+		// Skip intro, start game immediately
+		m.introSkipped = true
+		m.startNewGame(m.pendingClass)
+		return m, nil
+	case "right", "d", "l":
+		// Advance to next frame manually
+		m.introFrame++
+		if m.introFrame >= len(introFrames) {
+			m.startNewGame(m.pendingClass)
+			return m, nil
+		}
+		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+			return introTickMsg{}
+		})
+	}
+	return m, nil
+}
+
+// openShop initializes and opens the shop.
+func (m *Model) openShop() {
+	m.shopCursor = 0
+	m.shopItems = m.generateShopInventory()
+	m.prevView = ViewGame
+	m.currentView = ViewShop
+}
+
+// generateShopInventory creates the shop's item list based on current depth.
+func (m *Model) generateShopInventory() []ShopItem {
+	depth := 1
+	if m.engine != nil {
+		depth = m.engine.CurrentDepth()
+	}
+
+	// Base items always available
+	items := []ShopItem{
+		{TemplateID: "malloc", Name: "malloc()", Price: 10, InStock: true},
+		{TemplateID: "fd_restore", Name: "close()", Price: 10, InStock: true},
+		{TemplateID: "realloc", Name: "realloc()", Price: 25, InStock: true},
+	}
+
+	// Add gear based on depth
+	if depth >= 2 {
+		items = append(items, ShopItem{TemplateID: "basic_script", Name: "bash script", Price: 30, InStock: true})
+		items = append(items, ShopItem{TemplateID: "basic_shell", Name: "/bin/sh", Price: 30, InStock: true})
+		items = append(items, ShopItem{TemplateID: "env_vars", Name: "$PATH", Price: 20, InStock: true})
+	}
+	if depth >= 3 {
+		items = append(items, ShopItem{TemplateID: "pipe_wrench", Name: "pipe |", Price: 50, InStock: true})
+		items = append(items, ShopItem{TemplateID: "firewall", Name: "iptables", Price: 60, InStock: true})
+		items = append(items, ShopItem{TemplateID: "ssh_key", Name: "id_rsa", Price: 40, InStock: true})
+	}
+	if depth >= 5 {
+		items = append(items, ShopItem{TemplateID: "vim_blade", Name: ":wq!", Price: 100, InStock: true})
+		items = append(items, ShopItem{TemplateID: "selinux_shield", Name: "SELinux", Price: 120, InStock: true})
+		items = append(items, ShopItem{TemplateID: "sudo_potion", Name: "sudo potion", Price: 80, InStock: true})
+	}
+	if depth >= 7 {
+		items = append(items, ShopItem{TemplateID: "kill_9", Name: "kill -9", Price: 150, InStock: true})
+		items = append(items, ShopItem{TemplateID: "mmap", Name: "mmap()", Price: 100, InStock: true})
+	}
+
+	return items
+}
+
+// updateShop handles shop input.
+func (m *Model) updateShop(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "$", "q":
+		m.currentView = m.prevView
+	case "up", "k", "w":
+		m.shopCursor--
+		if m.shopCursor < 0 {
+			m.shopCursor = len(m.shopItems) - 1
+		}
+	case "down", "j", "s":
+		m.shopCursor++
+		if m.shopCursor >= len(m.shopItems) {
+			m.shopCursor = 0
+		}
+	case "enter", " ":
+		m.buyItem()
+	}
+	return m, nil
+}
+
+// buyItem attempts to purchase the selected shop item.
+func (m *Model) buyItem() {
+	if m.player == nil || m.shopCursor >= len(m.shopItems) {
+		return
+	}
+
+	item := &m.shopItems[m.shopCursor]
+	if !item.InStock {
+		m.statusMsg = "Item out of stock!"
+		return
+	}
+
+	if m.player.ExitCodes < item.Price {
+		m.statusMsg = fmt.Sprintf("Not enough exit codes! Need %d, have %d.", item.Price, m.player.ExitCodes)
+		return
+	}
+
+	// Create the item
+	newItem := entity.NewItem(item.TemplateID, fmt.Sprintf("shop_%s_%d", item.TemplateID, m.player.ExitCodes), types.Position{})
+	if newItem == nil {
+		m.statusMsg = "Error creating item."
+		return
+	}
+
+	// Try to add to inventory
+	if !m.player.Inventory.AddItem(newItem) {
+		m.statusMsg = "Inventory full!"
+		return
+	}
+
+	// Deduct cost
+	m.player.ExitCodes -= item.Price
+	item.InStock = false // Sold out
+	m.statusMsg = fmt.Sprintf("Purchased %s for %d exit codes!", item.Name, item.Price)
 }
 
 // updateAdmin handles admin console input.
@@ -1048,6 +1633,12 @@ func (m *Model) View() string {
 		return m.viewAdmin()
 	case ViewHelp:
 		return m.viewHelp()
+	case ViewMessageHistory:
+		return m.viewMessageHistory()
+	case ViewIntro:
+		return m.viewIntro()
+	case ViewShop:
+		return m.viewShop()
 	default:
 		return "Unknown view"
 	}
@@ -1417,7 +2008,7 @@ func (m *Model) renderLog(width int) string {
 		content = "Ready."
 	}
 
-	footer := m.styles.Muted.Render("[WASD/hjkl] Move  [</>] Stairs  [I] Inventory  [P] Pause  [Q] Quit")
+	footer := m.styles.Muted.Render("[WASD/hjkl] Move  [</>] Stairs  [I] Inv  [M] Log  [P] Pause  [?] Help")
 
 	// Add 2 for border padding
 	logWidth := width + 2
@@ -1438,26 +2029,70 @@ func (m *Model) viewCombat() string {
 		playerInfo = fmt.Sprintf("%s %s\n",
 			m.styles.Player.Render("@"),
 			m.styles.Title.Render(string(m.player.Class)))
-		playerInfo += fmt.Sprintf("RAM: %s/%d  FD: %d/%d\n\n",
+		playerInfo += fmt.Sprintf("RAM: %s/%d  FD: %d/%d\n",
 			m.colorizeRAM(m.player.Stats.RAM, m.player.MaxStats.MaxRAM),
 			m.player.MaxStats.MaxRAM,
 			m.player.Stats.FD,
 			m.player.MaxStats.MaxFD)
+
+		// Show active buffs
+		if len(m.player.ActiveBuffs) > 0 {
+			buffStr := "Buffs: "
+			for i, buff := range m.player.ActiveBuffs {
+				if i > 0 {
+					buffStr += ", "
+				}
+				var buffColor string
+				switch buff.Type {
+				case entity.BuffInvincible:
+					buffColor = m.styles.Highlight.Render(fmt.Sprintf("★%s(%d)", buff.Name, buff.Duration))
+				case entity.BuffStrength:
+					buffColor = m.styles.Danger.Render(fmt.Sprintf("⚔%s(%d)", buff.Name, buff.Duration))
+				case entity.BuffHaste:
+					buffColor = m.styles.Muted.Render(fmt.Sprintf("»%s(%d)", buff.Name, buff.Duration))
+				default:
+					buffColor = fmt.Sprintf("%s(%d)", buff.Name, buff.Duration)
+				}
+				buffStr += buffColor
+			}
+			playerInfo += buffStr + "\n"
+		}
+		playerInfo += "\n"
 	}
 
-	// Show enemy info
+	// Show enemy info with target indicator
 	var enemyInfo string
 	if m.combat != nil {
-		for _, enemy := range m.combat.GetAliveEnemies() {
-			enemyInfo += fmt.Sprintf("  %s %-16s RAM: %d/%d  CPU: %d\n",
+		aliveEnemies := m.combat.GetAliveEnemies()
+		for i, enemy := range aliveEnemies {
+			// Show target indicator
+			targetIndicator := "  "
+			if i == m.targetCursor {
+				targetIndicator = m.styles.Highlight.Render("► ")
+			}
+
+			// Show boss indicator
+			bossTag := ""
+			if enemy.IsBoss {
+				bossTag = m.styles.Danger.Render(" [BOSS]")
+			}
+
+			enemyInfo += fmt.Sprintf("%s%s %-14s RAM: %d/%d  CPU: %d%s\n",
+				targetIndicator,
 				m.styles.Enemy.Render(string(enemy.Glyph())),
 				enemy.Name(),
 				enemy.Stats.RAM,
 				enemy.MaxStats.MaxRAM,
-				enemy.Stats.CPU)
+				enemy.Stats.CPU,
+				bossTag)
 		}
 		if enemyInfo != "" {
-			enemyInfo = m.styles.Muted.Render("─── Enemies ───") + "\n" + enemyInfo + "\n"
+			header := "─── Enemies "
+			if len(aliveEnemies) > 1 {
+				header += "(←/→ to target) "
+			}
+			header += "───"
+			enemyInfo = m.styles.Muted.Render(header) + "\n" + enemyInfo + "\n"
 		}
 	}
 
@@ -1531,11 +2166,13 @@ func (m *Model) viewInventory() string {
 	}
 
 	title := m.styles.Title.Render("═══ INVENTORY ═══")
+	invLen := len(m.player.Inventory.Items)
 
 	var items string
 	var selectedDesc string
-	if len(m.player.Inventory.Items) == 0 {
-		items = m.styles.Muted.Render("  (empty)")
+
+	if invLen == 0 {
+		items = m.styles.Muted.Render("  (empty)\n")
 	} else {
 		for i, item := range m.player.Inventory.Items {
 			cursor := "  "
@@ -1543,12 +2180,7 @@ func (m *Model) viewInventory() string {
 			if i == m.invCursor {
 				cursor = "> "
 				style = m.styles.MenuSelected
-				// Show description of selected item
-				selectedDesc = "\n" + m.styles.Muted.Render("─── Details ───\n")
-				selectedDesc += m.styles.Normal.Render(item.Description) + "\n"
-				if item.ItemType == entity.ItemTypeWeapon || item.ItemType == entity.ItemTypeArmor {
-					selectedDesc += m.styles.Highlight.Render(m.formatStatBonus(item)) + "\n"
-				}
+				selectedDesc = m.getItemDetails(item)
 			}
 			itemStr := fmt.Sprintf("%s%c %s", cursor, item.Glyph(), item.Name())
 			if item.Stackable && item.Quantity > 1 {
@@ -1560,17 +2192,64 @@ func (m *Model) viewInventory() string {
 		}
 	}
 
-	// Equipment
-	equipment := m.styles.Title.Render("\n═══ EQUIPMENT ═══\n")
+	// Equipment (selectable)
+	equipment := m.styles.Title.Render("\n═══ EQUIPPED ═══\n")
 	eq := m.player.Equipment
-	equipment += fmt.Sprintf("Weapon: %s\n", m.equipmentSlot(eq.Weapon))
-	equipment += fmt.Sprintf("Armor:  %s\n", m.equipmentSlot(eq.Armor))
-	equipment += fmt.Sprintf("Util 1: %s\n", m.equipmentSlot(eq.Utility1))
-	equipment += fmt.Sprintf("Util 2: %s\n", m.equipmentSlot(eq.Utility2))
 
-	footer := m.styles.Muted.Render("\n[↑/↓] Navigate  [Enter] Use/Equip  [E] Equip  [D] Drop  [I/Esc] Close")
+	equipSlots := []struct {
+		name string
+		item *entity.Item
+	}{
+		{"Weapon", eq.Weapon},
+		{"Armor", eq.Armor},
+		{"Util 1", eq.Utility1},
+		{"Util 2", eq.Utility2},
+	}
 
-	return m.styles.Container.Render(title + "\n" + items + selectedDesc + equipment + footer)
+	for i, slot := range equipSlots {
+		slotIdx := invLen + i
+		cursor := "  "
+		style := m.styles.MenuItem
+		if slotIdx == m.invCursor {
+			cursor = "> "
+			style = m.styles.MenuSelected
+			if slot.item != nil {
+				selectedDesc = m.getItemDetails(slot.item)
+			}
+		}
+		equipment += style.Render(fmt.Sprintf("%s%-7s %s", cursor, slot.name+":", m.equipmentSlotDisplay(slot.item))) + "\n"
+	}
+
+	// Details panel
+	detailsPanel := ""
+	if selectedDesc != "" {
+		detailsPanel = "\n" + m.styles.Muted.Render("─── Details [?] ───\n") + selectedDesc
+	}
+
+	footer := m.styles.Muted.Render("\n[↑/↓] Select  [Enter] Use/Equip  [U] Unequip  [D] Drop  [?] Info  [I/Esc] Close")
+
+	return m.styles.Container.Render(title + "\n" + items + equipment + detailsPanel + footer)
+}
+
+// getItemDetails returns formatted item details.
+func (m *Model) getItemDetails(item *entity.Item) string {
+	if item == nil {
+		return ""
+	}
+	details := m.styles.Normal.Render(item.Description) + "\n"
+	statStr := m.formatStatBonus(item)
+	if statStr != "" {
+		details += m.styles.Highlight.Render(statStr) + "\n"
+	}
+	return details
+}
+
+// equipmentSlotDisplay formats an equipment slot for display.
+func (m *Model) equipmentSlotDisplay(item *entity.Item) string {
+	if item == nil {
+		return m.styles.Muted.Render("(empty)")
+	}
+	return fmt.Sprintf("%c %s", item.Glyph(), item.Name())
 }
 
 // formatStatBonus formats stat bonuses for display.
@@ -1760,4 +2439,136 @@ func (m *Model) viewHelp() string {
 	footer := m.styles.Muted.Render("\n[Esc/?/Enter] Close")
 
 	return m.styles.Container.Render(title + movement + actions + combat + inventory + stats + tips + footer)
+}
+
+// viewMessageHistory renders the scrollable message history.
+func (m *Model) viewMessageHistory() string {
+	title := m.styles.Title.Render("═══ MESSAGE LOG ═══") + "\n\n"
+
+	if len(m.messageHistory) == 0 {
+		content := m.styles.Muted.Render("No messages yet.")
+		footer := m.styles.Muted.Render("\n[Esc/M/Enter] Close")
+		return m.styles.Container.Render(title + content + footer)
+	}
+
+	// Calculate visible range
+	visibleLines := 20
+	historyLen := len(m.messageHistory)
+
+	// scrollIdx 0 = show most recent, higher = scroll back in time
+	endIdx := historyLen - m.messageScrollIdx
+	startIdx := endIdx - visibleLines
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	if endIdx < 0 {
+		endIdx = 0
+	}
+	if endIdx > historyLen {
+		endIdx = historyLen
+	}
+
+	var content string
+	for i := startIdx; i < endIdx; i++ {
+		// Show line numbers relative to total history
+		lineNum := i + 1
+		msg := m.messageHistory[i]
+		content += m.styles.Muted.Render(fmt.Sprintf("%3d ", lineNum)) + msg + "\n"
+	}
+
+	// Show scroll position
+	scrollInfo := fmt.Sprintf("\n─── Showing %d-%d of %d messages ───",
+		startIdx+1, endIdx, historyLen)
+	if m.messageScrollIdx > 0 {
+		scrollInfo += m.styles.Muted.Render(" [↑ for older]")
+	}
+	if m.messageScrollIdx < historyLen-visibleLines {
+		scrollInfo += m.styles.Muted.Render(" [↓ for newer]")
+	}
+	content += m.styles.Muted.Render(scrollInfo)
+
+	footer := m.styles.Muted.Render("\n\n[↑/↓] Scroll  [PgUp/PgDn] Fast scroll  [Home/End] Jump  [Esc/M] Close")
+
+	return m.styles.Container.Render(title + content + footer)
+}
+
+// viewIntro renders the animated intro sequence.
+func (m *Model) viewIntro() string {
+	if m.introFrame < 0 || m.introFrame >= len(introFrames) {
+		return ""
+	}
+
+	frame := introFrames[m.introFrame]
+
+	// Progress indicator
+	progress := fmt.Sprintf("[%d/%d]", m.introFrame+1, len(introFrames))
+
+	footer := m.styles.Muted.Render("\n\n" + progress + "   [Enter/Space] Skip   [→] Next")
+
+	return m.styles.Container.Render(m.styles.Title.Render(frame) + footer)
+}
+
+// viewShop renders the shop interface styled like ls -la output.
+func (m *Model) viewShop() string {
+	title := m.styles.Title.Render("$ ls -la /dev/store") + "\n"
+	title += m.styles.Muted.Render("total 42\n")
+	title += m.styles.Muted.Render("drwxr-xr-x  2 root  shop  4096 Jan 13 04:20 .\n")
+	title += m.styles.Muted.Render("drwxr-xr-x 10 root  root  4096 Jan 13 04:20 ..\n\n")
+
+	// Show player's exit codes like a shell variable
+	balance := m.styles.Muted.Render("$ echo $EXIT_CODES\n")
+	balance += m.styles.Highlight.Render(fmt.Sprintf("%d", m.player.ExitCodes)) + "\n\n"
+
+	var items string
+	for i, item := range m.shopItems {
+		cursor := " "
+		style := m.styles.MenuItem
+		if i == m.shopCursor {
+			cursor = ">"
+			style = m.styles.MenuSelected
+		}
+
+		// Format like ls -la output: permissions, owner, size (price), name
+		perms := "-rw-r--r--"
+		if !item.InStock {
+			perms = "----------"
+		}
+
+		priceStr := fmt.Sprintf("%4d", item.Price)
+		if !item.InStock {
+			priceStr = m.styles.Muted.Render(priceStr)
+		} else if m.player.ExitCodes < item.Price {
+			priceStr = m.styles.Danger.Render(priceStr)
+		} else {
+			priceStr = m.styles.Success.Render(priceStr)
+		}
+
+		nameStr := item.Name
+		if !item.InStock {
+			nameStr = m.styles.Muted.Render(item.Name + " (SOLD)")
+		}
+
+		// ls -la format: perms links owner group size date name
+		itemLine := fmt.Sprintf("%s %s 1 shop shop %s Jan 13 %s", cursor, perms, priceStr, nameStr)
+		items += style.Render(itemLine) + "\n"
+	}
+
+	// Show selected item details
+	details := ""
+	if m.shopCursor < len(m.shopItems) {
+		item := m.shopItems[m.shopCursor]
+		template := entity.NewItem(item.TemplateID, "preview", types.Position{})
+		if template != nil {
+			details = "\n" + m.styles.Muted.Render("$ cat README."+item.TemplateID+"\n")
+			details += m.styles.Normal.Render(template.Description) + "\n"
+			statStr := m.formatStatBonus(template)
+			if statStr != "" {
+				details += m.styles.Highlight.Render(statStr) + "\n"
+			}
+		}
+	}
+
+	footer := m.styles.Muted.Render("\n[↑/↓] Browse  [Enter] Buy  [$/Esc] Exit")
+
+	return m.styles.Container.Render(title + balance + items + details + footer)
 }

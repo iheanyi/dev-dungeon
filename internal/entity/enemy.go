@@ -23,6 +23,7 @@ type Enemy struct {
 	XPReward  int
 	Behavior  EnemyBehavior
 	LootTable []string // Item IDs that can drop
+	IsBoss    bool     // True for boss enemies
 }
 
 // EnemyBehavior defines how an enemy acts in combat.

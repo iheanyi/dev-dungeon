@@ -98,7 +98,6 @@ func (cs *CombatState) ExecuteEnemyTurns() []CombatResult {
 		}
 
 		result := cs.enemyTurn(i)
-		results = append(results, result)
 		cs.Log = append(cs.Log, result.Message)
 
 		// Check for player defeat
@@ -106,8 +105,18 @@ func (cs *CombatState) ExecuteEnemyTurns() []CombatResult {
 			cs.IsOver = true
 			cs.Victory = false
 			result.Defeat = true
+			results = append(results, result)
 			break
 		}
+
+		results = append(results, result)
+	}
+
+	// Tick player buffs at end of round
+	buffMessages := cs.Player.TickBuffs()
+	for _, msg := range buffMessages {
+		cs.Log = append(cs.Log, msg)
+		results = append(results, CombatResult{Message: msg})
 	}
 
 	// Back to player turn
@@ -128,8 +137,8 @@ func (cs *CombatState) playerAttack(targetIdx int) CombatResult {
 		return CombatResult{Message: fmt.Sprintf("%s is already dead.", enemy.Name())}
 	}
 
-	// Calculate damage
-	baseDamage := cs.Player.Stats.CPU
+	// Calculate damage using effective CPU (includes buffs)
+	baseDamage := cs.Player.GetEffectiveCPU()
 
 	// Add weapon bonus
 	if cs.Player.Equipment.Weapon != nil {
@@ -140,8 +149,9 @@ func (cs *CombatState) playerAttack(targetIdx int) CombatResult {
 	variance := 0.8 + cs.rng.Float64()*0.4
 	damage := int(float64(baseDamage) * variance)
 
-	// Critical hit chance based on NICE (lower = faster = more crits)
-	critChance := 0.05 + float64(20-cs.Player.Stats.NICE)/100.0
+	// Critical hit chance based on effective NICE (lower = faster = more crits)
+	effectiveNice := cs.Player.GetEffectiveNICE()
+	critChance := 0.05 + float64(20-effectiveNice)/100.0
 	isCritical := cs.rng.Float64() < critChance
 	if isCritical {
 		damage = int(float64(damage) * 1.5)
@@ -216,8 +226,42 @@ func (cs *CombatState) playerUseSkill(targetIdx int, skillIdx int) CombatResult 
 
 // playerFlee attempts to flee from combat.
 func (cs *CombatState) playerFlee() CombatResult {
-	// Flee chance affected by NICE (lower = faster = easier flee)
-	fleeChance := cs.FleeChance + float64(10-cs.Player.Stats.NICE)/100.0
+	// Base flee chance
+	fleeChance := cs.FleeChance
+
+	// Bonus from player NICE (lower = faster = easier flee)
+	effectiveNice := cs.Player.GetEffectiveNICE()
+	fleeChance += float64(10-effectiveNice) / 100.0
+
+	// Penalty for low health (harder to flee when injured)
+	healthPct := float64(cs.Player.Stats.RAM) / float64(cs.Player.MaxStats.MaxRAM)
+	if healthPct < 0.3 {
+		fleeChance -= 0.15 // Harder when critical
+	} else if healthPct < 0.5 {
+		fleeChance -= 0.05 // Slightly harder when hurt
+	}
+
+	// Penalty for number of enemies
+	aliveCount := len(cs.GetAliveEnemies())
+	if aliveCount > 2 {
+		fleeChance -= 0.1 * float64(aliveCount-2) // Harder with more enemies
+	}
+
+	// Bonus for high level difference (easier to flee from weak enemies)
+	// Penalty for fighting bosses
+	for _, enemy := range cs.GetAliveEnemies() {
+		if enemy.IsBoss {
+			fleeChance -= 0.3 // Very hard to flee from boss
+		}
+	}
+
+	// Clamp flee chance
+	if fleeChance < 0.1 {
+		fleeChance = 0.1
+	}
+	if fleeChance > 0.9 {
+		fleeChance = 0.9
+	}
 
 	if cs.rng.Float64() < fleeChance {
 		cs.IsOver = true
@@ -437,11 +481,13 @@ func (cs *CombatState) TickCooldowns() {
 	}
 }
 
-// CalculateRewards calculates XP and loot from defeated enemies.
-func (cs *CombatState) CalculateRewards() (xp int, loot []*entity.Item) {
+// CalculateRewards calculates XP, exit codes, and loot from defeated enemies.
+func (cs *CombatState) CalculateRewards() (xp int, exitCodes int, loot []*entity.Item) {
 	for _, enemy := range cs.Enemies {
 		if !enemy.IsAlive() {
 			xp += enemy.XPReward
+			// Exit codes based on XP reward
+			exitCodes += enemy.XPReward / 2
 
 			// Roll for loot drops
 			for _, itemID := range enemy.LootTable {
@@ -455,7 +501,7 @@ func (cs *CombatState) CalculateRewards() (xp int, loot []*entity.Item) {
 			}
 		}
 	}
-	return xp, loot
+	return xp, exitCodes, loot
 }
 
 // --- Engine integration ---
@@ -467,16 +513,25 @@ func (e *Engine) StartCombat(enemies []*entity.Enemy) *CombatState {
 }
 
 // EndCombat handles combat conclusion.
-func (e *Engine) EndCombat(combat *CombatState) {
+// EndCombat handles combat conclusion. Returns true if the final boss was defeated (game won).
+func (e *Engine) EndCombat(combat *CombatState) bool {
+	bossKilled := false
+
 	if combat.Victory {
 		// Calculate rewards
-		xp, loot := combat.CalculateRewards()
+		xp, exitCodes, loot := combat.CalculateRewards()
 
 		// Grant XP
 		if e.player.GainXP(xp) {
 			e.addMessage("LEVEL UP! You are now level %d!", e.player.Level)
 		} else {
 			e.addMessage("Gained %d XP.", xp)
+		}
+
+		// Grant exit codes
+		if exitCodes > 0 {
+			e.player.ExitCodes += exitCodes
+			e.addMessage("Collected $%d exit codes.", exitCodes)
 		}
 
 		// Add loot to inventory
@@ -497,6 +552,11 @@ func (e *Engine) EndCombat(combat *CombatState) {
 					e.stats.TotalKills++
 					e.stats.EnemiesKilled[string(enemy.Type)]++
 				}
+				// Check for boss kill
+				if enemy.IsBoss {
+					bossKilled = true
+					e.addMessage("KERNEL PANIC DEFEATED! The system is saved!")
+				}
 			}
 		}
 
@@ -505,4 +565,5 @@ func (e *Engine) EndCombat(combat *CombatState) {
 	}
 
 	e.state = types.StateExploring
+	return bossKilled
 }
