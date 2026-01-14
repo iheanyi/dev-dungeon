@@ -526,9 +526,158 @@ func (m *Model) updateInventory(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.invCursor = 0
 		}
 	case "enter", " ":
-		// TODO: Use/equip item
+		m.useOrEquipItem()
+	case "e":
+		m.equipItem()
+	case "d":
+		m.dropItem()
 	}
 	return m, nil
+}
+
+// useOrEquipItem uses consumables or equips equipment.
+func (m *Model) useOrEquipItem() {
+	if m.player == nil || m.invCursor >= len(m.player.Inventory.Items) {
+		return
+	}
+
+	item := m.player.Inventory.Items[m.invCursor]
+
+	switch item.ItemType {
+	case entity.ItemTypeConsumable:
+		m.useConsumable(item)
+	case entity.ItemTypeWeapon, entity.ItemTypeArmor, entity.ItemTypeUtility:
+		m.equipItem()
+	default:
+		m.statusMsg = fmt.Sprintf("Cannot use %s.", item.Name())
+	}
+}
+
+// useConsumable applies a consumable item's effects.
+func (m *Model) useConsumable(item *entity.Item) {
+	if item == nil {
+		return
+	}
+
+	var effectMsg string
+	for _, effect := range item.Effects {
+		switch effect.Type {
+		case entity.EffectHeal:
+			oldRAM := m.player.Stats.RAM
+			m.player.Heal(effect.Value)
+			healed := m.player.Stats.RAM - oldRAM
+			effectMsg = fmt.Sprintf("Allocated %d RAM.", healed)
+
+		case entity.EffectRestoreFD:
+			oldFD := m.player.Stats.FD
+			m.player.RestoreFD(effect.Value)
+			restored := m.player.Stats.FD - oldFD
+			effectMsg = fmt.Sprintf("Restored %d FD.", restored)
+
+		case entity.EffectDamage:
+			// In combat, damage first enemy
+			if m.combat != nil && len(m.combat.Enemies) > 0 {
+				for _, enemy := range m.combat.Enemies {
+					if enemy.IsAlive() {
+						killed := enemy.TakeDamage(effect.Value)
+						effectMsg = fmt.Sprintf("Dealt %d damage to %s!", effect.Value, enemy.Name())
+						if killed {
+							effectMsg += " OOM killed!"
+						}
+						break
+					}
+				}
+			} else {
+				effectMsg = "No target for damage item."
+				return // Don't consume
+			}
+
+		case entity.EffectBuff:
+			effectMsg = fmt.Sprintf("Gained buff: %s", item.Name())
+			// TODO: Implement buff system
+
+		case entity.EffectReveal:
+			effectMsg = "Revealed floor contents."
+			// TODO: Implement reveal
+
+		default:
+			effectMsg = fmt.Sprintf("Used %s.", item.Name())
+		}
+	}
+
+	// Consume the item
+	if item.Stackable && item.Quantity > 1 {
+		item.Quantity--
+	} else {
+		m.player.Inventory.RemoveItem(item.ID())
+		// Adjust cursor if needed
+		if m.invCursor >= len(m.player.Inventory.Items) && m.invCursor > 0 {
+			m.invCursor--
+		}
+	}
+
+	m.statusMsg = effectMsg
+
+	// If in combat, add to combat log
+	if m.combat != nil {
+		m.combatLog = append(m.combatLog, effectMsg)
+	}
+}
+
+// equipItem equips the selected item.
+func (m *Model) equipItem() {
+	if m.player == nil || m.invCursor >= len(m.player.Inventory.Items) {
+		return
+	}
+
+	item := m.player.Inventory.Items[m.invCursor]
+
+	// Only equip weapons, armor, utility
+	if item.EquipSlot == entity.SlotNone {
+		m.statusMsg = fmt.Sprintf("Cannot equip %s.", item.Name())
+		return
+	}
+
+	// Remove from inventory
+	m.player.Inventory.RemoveItem(item.ID())
+
+	// Equip (returns old item if any)
+	oldItem := m.player.Equipment.Equip(item)
+
+	// Put old item back in inventory
+	if oldItem != nil {
+		m.player.Inventory.AddItem(oldItem)
+	}
+
+	// Adjust cursor
+	if m.invCursor >= len(m.player.Inventory.Items) && m.invCursor > 0 {
+		m.invCursor--
+	}
+
+	m.statusMsg = fmt.Sprintf("Equipped %s.", item.Name())
+}
+
+// dropItem drops the selected item.
+func (m *Model) dropItem() {
+	if m.player == nil || m.invCursor >= len(m.player.Inventory.Items) {
+		return
+	}
+
+	item := m.player.Inventory.Items[m.invCursor]
+	m.player.Inventory.RemoveItem(item.ID())
+
+	// Place item at player's position in the world
+	if m.engine != nil {
+		item.SetPosition(m.player.Position())
+		m.engine.GetWorld().AddItem(item)
+	}
+
+	// Adjust cursor
+	if m.invCursor >= len(m.player.Inventory.Items) && m.invCursor > 0 {
+		m.invCursor--
+	}
+
+	m.statusMsg = fmt.Sprintf("Dropped %s.", item.Name())
 }
 
 // updatePause handles pause menu input.
@@ -983,6 +1132,7 @@ func (m *Model) viewInventory() string {
 	title := m.styles.Title.Render("═══ INVENTORY ═══")
 
 	var items string
+	var selectedDesc string
 	if len(m.player.Inventory.Items) == 0 {
 		items = m.styles.Muted.Render("  (empty)")
 	} else {
@@ -992,11 +1142,19 @@ func (m *Model) viewInventory() string {
 			if i == m.invCursor {
 				cursor = "> "
 				style = m.styles.MenuSelected
+				// Show description of selected item
+				selectedDesc = "\n" + m.styles.Muted.Render("─── Details ───\n")
+				selectedDesc += m.styles.Normal.Render(item.Description) + "\n"
+				if item.ItemType == entity.ItemTypeWeapon || item.ItemType == entity.ItemTypeArmor {
+					selectedDesc += m.styles.Highlight.Render(m.formatStatBonus(item)) + "\n"
+				}
 			}
 			itemStr := fmt.Sprintf("%s%c %s", cursor, item.Glyph(), item.Name())
 			if item.Stackable && item.Quantity > 1 {
 				itemStr += fmt.Sprintf(" x%d", item.Quantity)
 			}
+			// Show item type tag
+			itemStr += m.styles.Muted.Render(fmt.Sprintf(" [%s]", item.ItemType))
 			items += style.Render(itemStr) + "\n"
 		}
 	}
@@ -1009,9 +1167,30 @@ func (m *Model) viewInventory() string {
 	equipment += fmt.Sprintf("Util 1: %s\n", m.equipmentSlot(eq.Utility1))
 	equipment += fmt.Sprintf("Util 2: %s\n", m.equipmentSlot(eq.Utility2))
 
-	footer := m.styles.Muted.Render("\n[↑/↓] Navigate  [Enter] Use/Equip  [I/Esc] Close")
+	footer := m.styles.Muted.Render("\n[↑/↓] Navigate  [Enter] Use/Equip  [E] Equip  [D] Drop  [I/Esc] Close")
 
-	return m.styles.Container.Render(title + "\n" + items + equipment + footer)
+	return m.styles.Container.Render(title + "\n" + items + selectedDesc + equipment + footer)
+}
+
+// formatStatBonus formats stat bonuses for display.
+func (m *Model) formatStatBonus(item *entity.Item) string {
+	var bonuses []string
+	if item.StatBonus.CPU != 0 {
+		bonuses = append(bonuses, fmt.Sprintf("CPU %+d", item.StatBonus.CPU))
+	}
+	if item.StatBonus.RAM != 0 {
+		bonuses = append(bonuses, fmt.Sprintf("RAM %+d", item.StatBonus.RAM))
+	}
+	if item.StatBonus.FD != 0 {
+		bonuses = append(bonuses, fmt.Sprintf("FD %+d", item.StatBonus.FD))
+	}
+	if item.StatBonus.UID != 0 {
+		bonuses = append(bonuses, fmt.Sprintf("UID %+d", item.StatBonus.UID))
+	}
+	if len(bonuses) == 0 {
+		return ""
+	}
+	return "Stats: " + fmt.Sprintf("%v", bonuses)
 }
 
 // equipmentSlot formats an equipment slot.
