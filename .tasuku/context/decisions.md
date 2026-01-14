@@ -25,3 +25,8 @@
 **Over**: WebSocket server + web client, P2P networking, REST API with polling
 **Because**: Wish is Charm's SSH library - players SSH into the server and get a terminal session. Fits the Unix theme perfectly (ssh user@devdungeon.io), handles auth via SSH keys, and Bubble Tea works natively. Storage: PostgreSQL for accounts/leaderboards, Redis for real-time state. Co-op could be async (leave items/messages) or sync (shared dungeon, turn order by NICE stat). Seed sharing for competitive runs is easy - same seed = same dungeon.
 
+## group-spawn-design - 2026-01-14T20:32:53Z
+**Chose**: Template-based MinSpawn/MaxSpawn fields on EnemyTemplate
+**Over**: Combat-time spawning (fork bomb style), Floor generation weighted spawning, Separate GroupedEnemy entity type
+**Because**: Keeps spawning logic deterministic with seeded RNG, requires minimal code changes, each enemy type can have unique group behavior, and data-driven design makes balance tuning easy. Breaking change is acceptable since game isn't live yet.
+
