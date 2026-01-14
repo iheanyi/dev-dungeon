@@ -19,7 +19,7 @@ services:
     command: ["--server"]
     restart: unless-stopped
 
-  # PostgreSQL database
+  # PostgreSQL database (internal only - use OrbStack for local dev)
   postgres:
     image: postgres:18
     container_name: devdungeon-db
@@ -27,10 +27,10 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: dev
       POSTGRES_DB: devdungeon
-    ports:
-      - "5432:5432"
+    # No external ports - only accessible within Docker network
     volumes:
-      - devdungeon-postgres:/var/lib/postgresql/data
+      # Postgres 18+ uses /var/lib/postgresql (not /data subdirectory)
+      - devdungeon-postgres:/var/lib/postgresql
       - ./migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -38,12 +38,11 @@ services:
       timeout: 5s
       retries: 5
 
-  # Redis for leaderboards and real-time state
+  # Redis for leaderboards (internal only)
   redis:
     image: redis:7-alpine
     container_name: devdungeon-redis
-    ports:
-      - "6379:6379"
+    # No external ports - only accessible within Docker network
     volumes:
       - devdungeon-redis:/data
     healthcheck:
