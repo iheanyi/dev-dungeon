@@ -10,6 +10,7 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/iheanyi/devdungeon/internal/db"
+	"github.com/iheanyi/devdungeon/internal/monitoring"
 )
 
 // Request size limits
@@ -48,8 +49,8 @@ func New(cfg Config, dbClient *db.Client) (*Server, error) {
 
 	s.setupRoutes()
 
-	// Wrap mux with security headers middleware
-	handler := s.securityHeaders(s.mux)
+	// Wrap mux with middleware chain: recovery -> security headers
+	handler := monitoring.HTTPRecoveryMiddleware(s.securityHeaders(s.mux))
 
 	s.srv = &http.Server{
 		Addr:           cfg.Host + ":" + cfg.Port,

@@ -347,6 +347,8 @@ ssh -v player@dev-dungeon.com
 | `SSH_PORT` | SSH server port | `2222` |
 | `HTTP_PORT` | HTTP server port | `8080` |
 | `SSH_HOST_KEY_PATH` | Path to SSH host key | `.ssh/host_key` |
+| `SENTRY_DSN` | Sentry DSN for error tracking | (optional) |
+| `SENTRY_ENVIRONMENT` | Sentry environment name | `development` |
 
 ### Architecture
 

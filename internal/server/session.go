@@ -14,6 +14,7 @@ import (
 
 	"github.com/iheanyi/devdungeon/internal/config"
 	"github.com/iheanyi/devdungeon/internal/db"
+	"github.com/iheanyi/devdungeon/internal/monitoring"
 	"github.com/iheanyi/devdungeon/internal/save"
 	"github.com/iheanyi/devdungeon/internal/ui"
 )
@@ -77,6 +78,10 @@ func (sm *SessionManager) SaveAll(ctx context.Context, dbClient *db.Client) {
 			// Get save data from the model's engine
 			if err := saveSessionToDatabase(ctx, dbClient, session); err != nil {
 				log.Error("Failed to save session", "fingerprint", fp, "error", err)
+				monitoring.CaptureException(err, map[string]string{
+					"operation":   "save_all_sessions",
+					"fingerprint": fp,
+				})
 			}
 		}
 	}

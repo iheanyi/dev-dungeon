@@ -212,6 +212,19 @@ ssh -v player@dev-dungeon.com
 | `HTTP_PORT` | HTTP server port | `8080` |
 | `SSH_HOST_KEY_PATH` | Path to SSH host key | `/data/host_key` (on Fly.io) |
 
+### Error Tracking (Sentry)
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SENTRY_DSN` | Sentry DSN for error tracking | (disabled if not set) |
+| `SENTRY_ENVIRONMENT` | Environment name (production, staging) | `development` |
+
+To enable Sentry error tracking:
+
+```bash
+fly secrets set SENTRY_DSN="https://xxx@xxx.ingest.sentry.io/xxx" SENTRY_ENVIRONMENT="production"
+```
+
 ### Setting Environment Variables
 
 **For secrets (sensitive data like DATABASE_URL):**

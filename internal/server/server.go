@@ -23,6 +23,7 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 
 	"github.com/iheanyi/devdungeon/internal/db"
+	"github.com/iheanyi/devdungeon/internal/monitoring"
 )
 
 // rateLimiter tracks authentication attempts per IP.
@@ -261,6 +262,11 @@ func (s *Server) publicKeyAuth(ctx ssh.Context, key ssh.PublicKey) bool {
 	user, err := s.db.GetUserByFingerprint(dbCtx, fingerprint)
 	if err != nil {
 		log.Error("Database error during auth", "error", err)
+		monitoring.CaptureException(err, map[string]string{
+			"operation":   "auth_lookup",
+			"fingerprint": fingerprint,
+			"ip":          ip,
+		})
 		return false
 	}
 
@@ -288,6 +294,9 @@ func (s *Server) publicKeyAuth(ctx ssh.Context, key ssh.PublicKey) bool {
 	if err := s.db.UpdateLastLogin(updateCtx, user.ID); err != nil {
 		log.Error("Failed to update last login", "error", err)
 	}
+
+	// Set Sentry user context for error tracking
+	monitoring.SetUser(user.NanoID, user.Username, fingerprint)
 
 	log.Info("User authenticated", "user", user.Username, "ip", ip)
 	return true
