@@ -955,8 +955,6 @@ func (m *Model) updateInventory(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.dropItem()
 	case "u":
 		m.unequipItem()
-	case "?":
-		m.showItemDetails()
 	}
 	return m, nil
 }
@@ -1233,73 +1231,6 @@ func (m *Model) unequipItem() {
 		}
 		m.statusMsg = "Inventory full, cannot unequip."
 	}
-}
-
-// showItemDetails shows detailed info about the selected item.
-func (m *Model) showItemDetails() {
-	if m.player == nil {
-		return
-	}
-
-	var item *entity.Item
-	invLen := len(m.player.Inventory.Items)
-
-	if m.invCursor < invLen {
-		// Inventory item
-		item = m.player.Inventory.Items[m.invCursor]
-	} else {
-		// Equipment slot
-		equipIdx := m.invCursor - invLen
-		switch equipIdx {
-		case 0:
-			item = m.player.Equipment.Weapon
-		case 1:
-			item = m.player.Equipment.Armor
-		case 2:
-			item = m.player.Equipment.Utility1
-		case 3:
-			item = m.player.Equipment.Utility2
-		}
-	}
-
-	if item == nil {
-		m.statusMsg = "Empty slot - nothing equipped."
-		return
-	}
-
-	// Build detailed description
-	details := fmt.Sprintf("=== %s ===\n", item.Name())
-	details += fmt.Sprintf("Type: %s | Rarity: %s\n", string(item.ItemType), item.Rarity.String())
-	details += fmt.Sprintf("%s\n", item.Description)
-
-	// Show stat bonuses
-	if item.StatBonus.CPU != 0 || item.StatBonus.RAM != 0 || item.StatBonus.FD != 0 || item.StatBonus.NICE != 0 || item.StatBonus.UID != 0 {
-		details += "Stats: "
-		bonuses := []string{}
-		if item.StatBonus.CPU != 0 {
-			bonuses = append(bonuses, fmt.Sprintf("CPU %+d", item.StatBonus.CPU))
-		}
-		if item.StatBonus.RAM != 0 {
-			bonuses = append(bonuses, fmt.Sprintf("RAM %+d", item.StatBonus.RAM))
-		}
-		if item.StatBonus.FD != 0 {
-			bonuses = append(bonuses, fmt.Sprintf("FD %+d", item.StatBonus.FD))
-		}
-		if item.StatBonus.NICE != 0 {
-			bonuses = append(bonuses, fmt.Sprintf("NICE %+d", item.StatBonus.NICE))
-		}
-		if item.StatBonus.UID != 0 {
-			bonuses = append(bonuses, fmt.Sprintf("UID %+d", item.StatBonus.UID))
-		}
-		for i, b := range bonuses {
-			if i > 0 {
-				details += ", "
-			}
-			details += b
-		}
-	}
-
-	m.statusMsg = details
 }
 
 // updatePause handles pause menu input.
@@ -2223,10 +2154,10 @@ func (m *Model) viewInventory() string {
 	// Details panel
 	detailsPanel := ""
 	if selectedDesc != "" {
-		detailsPanel = "\n" + m.styles.Muted.Render("─── Details [?] ───\n") + selectedDesc
+		detailsPanel = "\n" + m.styles.Muted.Render("─── Details ───\n") + selectedDesc
 	}
 
-	footer := m.styles.Muted.Render("\n[↑/↓] Select  [Enter] Use/Equip  [U] Unequip  [D] Drop  [?] Info  [I/Esc] Close")
+	footer := m.styles.Muted.Render("\n[↑/↓] Select  [Enter] Use/Equip  [U] Unequip  [D] Drop  [I/Esc] Close")
 
 	return m.styles.Container.Render(title + "\n" + items + equipment + detailsPanel + footer)
 }
@@ -2236,12 +2167,35 @@ func (m *Model) getItemDetails(item *entity.Item) string {
 	if item == nil {
 		return ""
 	}
-	details := m.styles.Normal.Render(item.Description) + "\n"
+	// Type and rarity
+	typeRarity := m.styles.Muted.Render(fmt.Sprintf("[%s] ", item.ItemType))
+	typeRarity += m.formatRarity(item.Rarity) + "\n"
+	details := typeRarity
+	details += m.styles.Normal.Render(item.Description) + "\n"
 	statStr := m.formatStatBonus(item)
 	if statStr != "" {
 		details += m.styles.Highlight.Render(statStr) + "\n"
 	}
 	return details
+}
+
+// formatRarity returns a styled rarity string.
+func (m *Model) formatRarity(rarity entity.ItemRarity) string {
+	name := rarity.String()
+	switch rarity {
+	case entity.RarityCommon:
+		return m.styles.Muted.Render(name)
+	case entity.RarityUncommon:
+		return m.styles.Normal.Render(name)
+	case entity.RarityRare:
+		return m.styles.Highlight.Render(name)
+	case entity.RarityEpic:
+		return m.styles.Title.Render(name)
+	case entity.RarityLegendary:
+		return m.styles.Danger.Render(name)
+	default:
+		return name
+	}
 }
 
 // equipmentSlotDisplay formats an equipment slot for display.
