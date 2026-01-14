@@ -237,8 +237,8 @@ func TestFleeHarderAgainstBoss(t *testing.T) {
 	// Regular enemy
 	normalEnemy := entity.NewEnemy(entity.EnemyZombie, "zombie", types.Position{}, 1)
 
-	// Boss enemy
-	bossEnemy := entity.NewEnemy(entity.EnemyKernelPanic, "boss", types.Position{}, 1)
+	// Boss enemy (NOT Kernel Panic - that's completely unfleeable)
+	bossEnemy := entity.NewEnemy(entity.EnemyDaemon, "boss", types.Position{}, 1)
 	bossEnemy.IsBoss = true
 
 	normalFlees := 0
@@ -263,6 +263,54 @@ func TestFleeHarderAgainstBoss(t *testing.T) {
 	if bossFlees >= normalFlees {
 		t.Logf("normal flees: %d, boss flees: %d", normalFlees, bossFlees)
 		t.Error("expected easier flee from normal enemies than bosses")
+	}
+}
+
+func TestCannotFleeFromKernelPanic(t *testing.T) {
+	player := entity.NewPlayer(entity.ClassSudo) // Strong class
+	player.Stats.RAM = player.MaxStats.MaxRAM
+
+	// Kernel Panic is completely unfleeable
+	kernelPanic := entity.NewEnemy(entity.EnemyKernelPanic, "kernel_panic", types.Position{}, 8)
+	kernelPanic.IsBoss = true
+
+	// Try to flee many times - should NEVER succeed
+	for i := 0; i < 100; i++ {
+		combat := NewCombatState(player, []*entity.Enemy{kernelPanic}, int64(i))
+		result := combat.ExecutePlayerAction(types.ActionFlee, 0, 0)
+
+		if result.Fled {
+			t.Fatal("should never be able to flee from Kernel Panic")
+		}
+
+		// Verify the message explains why
+		if result.Message == "" {
+			t.Error("failed flee should have a message")
+		}
+	}
+}
+
+func TestCanFleeFromOtherBosses(t *testing.T) {
+	player := entity.NewPlayer(entity.ClassCron) // Fast class
+	player.Stats.RAM = player.MaxStats.MaxRAM
+
+	// Non-Kernel Panic boss should still be fleeable (just hard)
+	otherBoss := entity.NewEnemy(entity.EnemyRootkit, "rootkit_boss", types.Position{}, 5)
+	otherBoss.IsBoss = true
+
+	flees := 0
+	trials := 200
+
+	for i := 0; i < trials; i++ {
+		combat := NewCombatState(player, []*entity.Enemy{otherBoss}, int64(i))
+		if result := combat.ExecutePlayerAction(types.ActionFlee, 0, 0); result.Fled {
+			flees++
+		}
+	}
+
+	// Should be able to flee at least sometimes (even if hard)
+	if flees == 0 {
+		t.Error("should be able to flee from non-Kernel Panic bosses at least sometimes")
 	}
 }
 

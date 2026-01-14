@@ -226,6 +226,15 @@ func (cs *CombatState) playerUseSkill(targetIdx int, skillIdx int) CombatResult 
 
 // playerFlee attempts to flee from combat.
 func (cs *CombatState) playerFlee() CombatResult {
+	// Cannot flee from Kernel Panic - the final boss must be faced
+	for _, enemy := range cs.GetAliveEnemies() {
+		if enemy.Type == entity.EnemyKernelPanic {
+			msg := "You cannot flee from the Kernel Panic! Face your fate!"
+			cs.Log = append(cs.Log, msg)
+			return CombatResult{Message: msg, Fled: false}
+		}
+	}
+
 	// Base flee chance
 	fleeChance := cs.FleeChance
 

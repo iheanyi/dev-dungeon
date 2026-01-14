@@ -822,27 +822,38 @@ func (e *Engine) LoadGame(data *save.SaveData) error {
 		}
 	}
 
+	// Cap depth at max floor (8 = boss floor)
+	loadDepth := data.CurrentDepth
+	if loadDepth > 8 {
+		loadDepth = 8
+		e.addMessage("Save was beyond final floor - resetting to /dev/null.")
+	}
+
 	// Regenerate the current floor
-	if err := e.generateFloor(data.CurrentDepth); err != nil {
+	if err := e.generateFloor(loadDepth); err != nil {
 		return fmt.Errorf("failed to regenerate floor: %w", err)
 	}
 
 	// Apply floor state deltas (dead enemies, looted items, explored tiles)
 	for _, floorState := range data.FloorStates {
-		if floorState.Depth == data.CurrentDepth {
+		if floorState.Depth == loadDepth {
 			e.applyFloorState(&floorState)
 			break
 		}
 	}
 
-	// Set player position
-	e.player.SetPosition(data.Player.Position)
+	// Set player position (reset to stairs if we capped depth)
+	if loadDepth != data.CurrentDepth {
+		e.player.SetPosition(e.world.CurrentFloor.StairsUp)
+	} else {
+		e.player.SetPosition(data.Player.Position)
+	}
 
 	// Update visibility
 	e.world.UpdateVisibility(e.player.Position(), e.getViewRadius())
 
 	e.state = types.StateExploring
-	e.addMessage("Game loaded. You are in %s (depth %d).", e.world.CurrentFloor.Type.FloorName(), data.CurrentDepth)
+	e.addMessage("Game loaded. You are in %s (depth %d).", e.world.CurrentFloor.Type.FloorName(), loadDepth)
 
 	return nil
 }
