@@ -49,3 +49,7 @@ debug.log
 
 # SSH host keys (server mode)
 .ssh/
+
+# Air live reload
+tmp/
+air.log

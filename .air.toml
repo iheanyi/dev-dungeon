@@ -1,0 +1,53 @@
+# Air - Live reload for Go apps
+# https://github.com/air-verse/air
+
+root = "."
+tmp_dir = "tmp"
+
+[build]
+# Build command
+cmd = "go build -o ./tmp/devdungeon ./cmd/devdungeon"
+# Binary to run
+bin = "./tmp/devdungeon"
+# Arguments to pass
+args_bin = ["--server"]
+
+# Watch these extensions
+include_ext = ["go", "tpl", "tmpl", "html"]
+# Ignore these directories
+exclude_dir = ["assets", "tmp", "vendor", "web", "node_modules", ".git", "docs"]
+# Ignore these files
+exclude_file = []
+# Ignore files with these regexes
+exclude_regex = ["_test.go"]
+# Ignore unchanged files
+exclude_unchanged = true
+
+# Delay before rebuild (ms)
+delay = 500
+
+# Stop old binary before building
+stop_on_error = true
+# Send interrupt signal before kill
+send_interrupt = true
+# Delay before sending kill signal (ms)
+kill_delay = 500
+
+# Log build output
+log = "air.log"
+
+[log]
+# Show log time
+time = true
+# Log verbosity: debug, info, warn, error
+main_only = false
+
+[color]
+main = "magenta"
+watcher = "cyan"
+build = "yellow"
+runner = "green"
+
+[misc]
+# Delete tmp dir on exit
+clean_on_exit = true
