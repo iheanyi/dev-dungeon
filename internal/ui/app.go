@@ -47,6 +47,7 @@ type Model struct {
 	combatCursor int
 	combatLog    []string
 	enemies      []*entity.Enemy
+	combat       *game.CombatState
 
 	// Inventory state
 	invCursor    int
@@ -377,11 +378,20 @@ func (m *Model) movePlayer(dir types.Direction) {
 
 	// Check for combat initiation
 	if result.Combat != nil {
-		m.enemies = []*entity.Enemy{result.Combat}
-		m.currentView = ViewCombat
-		m.gameState = types.StateCombat
-		m.combatCursor = 0
-		m.combatLog = []string{fmt.Sprintf("A wild %s appears!", result.Combat.Name())}
+		m.startCombat([]*entity.Enemy{result.Combat})
+	}
+}
+
+// startCombat initializes combat with the given enemies.
+func (m *Model) startCombat(enemies []*entity.Enemy) {
+	m.enemies = enemies
+	m.combat = m.engine.StartCombat(enemies)
+	m.currentView = ViewCombat
+	m.gameState = types.StateCombat
+	m.combatCursor = 0
+	m.combatLog = []string{}
+	for _, enemy := range enemies {
+		m.combatLog = append(m.combatLog, fmt.Sprintf("A wild %s appears!", enemy.Name()))
 	}
 }
 
@@ -400,36 +410,97 @@ func (m *Model) updateCombat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter", " ", "1", "2", "3", "4":
 		return m.executeCombatAction(msg.String())
-	case "esc", "q":
-		// Temporary: flee from combat (TODO: implement proper flee mechanic)
-		m.currentView = ViewGame
-		m.gameState = types.StateExploring
-		m.statusMsg = "You fled from combat! (DEBUG: combat not yet implemented)"
+	case "esc":
+		// Debug: instant flee
+		m.endCombat(false)
+		m.statusMsg = "[DEBUG] Escaped combat"
 	}
 	return m, nil
 }
 
 // executeCombatAction executes the selected combat action.
 func (m *Model) executeCombatAction(key string) (tea.Model, tea.Cmd) {
+	if m.combat == nil {
+		return m, nil
+	}
+
 	// Map keys to actions
 	actionIndex := m.combatCursor
 	if key >= "1" && key <= "4" {
 		actionIndex = int(key[0] - '1')
 	}
 
+	var action types.ActionType
 	switch actionIndex {
 	case 0: // Attack
-		m.combatLog = append(m.combatLog, "You attack!")
-	case 1: // Hack
-		m.combatLog = append(m.combatLog, "You attempt to hack...")
+		action = types.ActionAttack
+	case 1: // Hack (skill)
+		action = types.ActionHack
 	case 2: // Use Item
 		m.currentView = ViewInventory
+		return m, nil
 	case 3: // Flee
-		m.combatLog = append(m.combatLog, "You attempt to flee...")
-		// TODO: Flee logic
+		action = types.ActionFlee
 	}
 
+	// Execute player action (target first alive enemy)
+	targetIdx := 0
+	for i, enemy := range m.combat.Enemies {
+		if enemy.IsAlive() {
+			targetIdx = i
+			break
+		}
+	}
+
+	result := m.combat.ExecutePlayerAction(action, targetIdx, 0)
+	m.combatLog = append(m.combatLog, result.Message)
+
+	// Check for combat end conditions
+	if result.Fled {
+		m.endCombat(false)
+		m.statusMsg = "You fled from combat!"
+		return m, nil
+	}
+
+	if result.Victory {
+		m.endCombat(true)
+		return m, nil
+	}
+
+	// Enemy turns
+	if !m.combat.IsOver {
+		enemyResults := m.combat.ExecuteEnemyTurns()
+		for _, er := range enemyResults {
+			m.combatLog = append(m.combatLog, er.Message)
+			if er.Defeat {
+				m.endCombat(false)
+				m.currentView = ViewGameOver
+				m.gameState = types.StateGameOver
+				return m, nil
+			}
+		}
+	}
+
+	// Tick cooldowns at start of new turn
+	m.combat.TickCooldowns()
+
 	return m, nil
+}
+
+// endCombat handles combat ending.
+func (m *Model) endCombat(victory bool) {
+	if m.combat != nil && m.engine != nil {
+		m.engine.EndCombat(m.combat)
+	}
+
+	if victory {
+		m.statusMsg = "Victory! Enemies defeated."
+	}
+
+	m.combat = nil
+	m.enemies = nil
+	m.currentView = ViewGame
+	m.gameState = types.StateExploring
 }
 
 // updateInventory handles inventory view input.
@@ -839,20 +910,44 @@ func (m *Model) renderLog(width int) string {
 func (m *Model) viewCombat() string {
 	title := m.styles.Danger.Render("═══ COMBAT ═══\n")
 
+	// Show player stats
+	playerInfo := ""
+	if m.player != nil {
+		playerInfo = fmt.Sprintf("%s  %s\n",
+			m.styles.Player.Render("@"),
+			m.styles.Title.Render(string(m.player.Class)))
+		playerInfo += fmt.Sprintf("RAM: %s/%d  FD: %d/%d\n\n",
+			m.colorizeRAM(m.player.Stats.RAM, m.player.MaxStats.MaxRAM),
+			m.player.MaxStats.MaxRAM,
+			m.player.Stats.FD,
+			m.player.MaxStats.MaxFD)
+	}
+
 	// Show enemy info
 	var enemyInfo string
-	if len(m.enemies) > 0 {
-		enemy := m.enemies[0]
-		enemyInfo = fmt.Sprintf("\n%s  %s\n",
-			m.styles.Enemy.Render(string(enemy.Glyph())),
-			m.styles.Title.Render(enemy.Name()))
-		enemyInfo += fmt.Sprintf("RAM: %d/%d\n", enemy.Stats.RAM, enemy.MaxStats.MaxRAM)
-		enemyInfo += fmt.Sprintf("CPU: %d\n\n", enemy.Stats.CPU)
+	if m.combat != nil {
+		for _, enemy := range m.combat.GetAliveEnemies() {
+			enemyInfo += fmt.Sprintf("%s  %s  RAM: %d/%d  CPU: %d\n",
+				m.styles.Enemy.Render(string(enemy.Glyph())),
+				enemy.Name(),
+				enemy.Stats.RAM,
+				enemy.MaxStats.MaxRAM,
+				enemy.Stats.CPU)
+		}
+		if enemyInfo != "" {
+			enemyInfo = m.styles.Muted.Render("─── Enemies ───\n") + enemyInfo + "\n"
+		}
 	}
 
 	// Combat options
-	options := []string{"[1] Attack (kill -TERM)", "[2] Hack", "[3] Use Item", "[4] Flee"}
+	options := []string{
+		"[1] Attack (kill -TERM)",
+		"[2] Hack (use skill)",
+		"[3] Use Item",
+		"[4] Flee",
+	}
 	var menu string
+	menu = m.styles.Muted.Render("─── Actions ───\n")
 	for i, opt := range options {
 		if i == m.combatCursor {
 			menu += m.styles.MenuSelected.Render("> "+opt) + "\n"
@@ -864,20 +959,19 @@ func (m *Model) viewCombat() string {
 	// Combat log
 	var log string
 	if len(m.combatLog) > 0 {
-		log = "\n" + m.styles.Muted.Render("─── Log ───") + "\n"
+		log = "\n" + m.styles.Muted.Render("─── Combat Log ───") + "\n"
 		start := 0
-		if len(m.combatLog) > 5 {
-			start = len(m.combatLog) - 5
+		if len(m.combatLog) > 6 {
+			start = len(m.combatLog) - 6
 		}
 		for _, entry := range m.combatLog[start:] {
 			log += m.styles.Normal.Render("  "+entry) + "\n"
 		}
 	}
 
-	footer := m.styles.Muted.Render("\n[↑/↓] Select  [Enter/1-4] Act  [Esc] Flee (debug)")
-	footer += m.styles.Danger.Render("\n\n⚠ Combat system not yet implemented - press Esc to flee")
+	footer := m.styles.Muted.Render("\n[↑/↓] Select  [Enter/1-4] Act")
 
-	return m.styles.Container.Render(title + enemyInfo + menu + log + footer)
+	return m.styles.Container.Render(title + playerInfo + enemyInfo + menu + log + footer)
 }
 
 // viewInventory renders the inventory view.
