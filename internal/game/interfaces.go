@@ -19,15 +19,15 @@ type Combatant interface {
 	IsAlive() bool
 }
 
-// Engine is the core game engine interface.
+// EngineInterface is the core game engine interface.
 // This interface allows for testing and swapping implementations.
-type Engine interface {
+type EngineInterface interface {
 	// State management
 	CurrentState() GameState
 	SetState(state GameState)
 
 	// Game world
-	World() World
+	World() WorldInterface
 	Player() Combatant
 
 	// Game loop
@@ -39,8 +39,8 @@ type Engine interface {
 	InCombat() bool
 }
 
-// World manages the game world and dungeon floors.
-type World interface {
+// WorldInterface manages the game world and dungeon floors.
+type WorldInterface interface {
 	// Floor management
 	CurrentFloor() *Floor
 	CurrentFloorType() FloorType
@@ -115,7 +115,7 @@ type DungeonGenerator interface {
 // Renderer renders the game state to a string.
 // This interface allows for testing without a real terminal.
 type Renderer interface {
-	RenderWorld(world World, player Combatant) string
+	RenderWorld(world WorldInterface, player Combatant) string
 	RenderCombat(combat *Combat) string
 	RenderInventory(player Combatant) string
 	RenderStats(player Combatant) string
@@ -123,8 +123,8 @@ type Renderer interface {
 
 // SaveSystem handles saving and loading game state.
 type SaveSystem interface {
-	SaveRun(engine Engine) error
-	LoadRun() (Engine, error)
+	SaveRun(engine EngineInterface) error
+	LoadRun() (EngineInterface, error)
 	SaveMeta(meta *MetaProgress) error
 	LoadMeta() (*MetaProgress, error)
 }
