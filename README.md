@@ -219,7 +219,6 @@ Your SSH key is your identity. First connection prompts for username registratio
 - Go 1.25+
 - Node.js 22+
 - PostgreSQL 18+ (or Docker)
-- Redis 7+ (or Docker)
 
 ### Quick Start
 
@@ -234,13 +233,12 @@ cd dev-dungeon
 go mod download
 cd web && npm install && cd ..
 
-# Start databases with Docker
-docker compose up -d postgres redis
+# Start database with Docker
+docker compose up -d postgres
 
 # Create .env file
 cat > .env << 'EOF'
 DATABASE_URL=postgres://postgres:dev@localhost:5432/devdungeon?sslmode=disable
-REDIS_URL=redis://localhost:6379
 SSH_PORT=2222
 HTTP_PORT=8080
 EOF
@@ -295,13 +293,9 @@ fly apps create devdungeon
 fly postgres create --name devdungeon-db
 fly postgres attach devdungeon-db
 
-# Create Redis (Upstash)
-fly redis create --name devdungeon-redis
-
 # Set secrets
 fly secrets set \
-  DATABASE_URL="postgres://..." \
-  REDIS_URL="redis://..."
+  DATABASE_URL="postgres://..."
 
 # Deploy
 fly deploy
@@ -315,7 +309,6 @@ ssh -p 22 player@devdungeon.fly.dev
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `DATABASE_URL` | PostgreSQL connection string | Required |
-| `REDIS_URL` | Redis connection string | Required |
 | `SSH_PORT` | SSH server port | `2222` |
 | `HTTP_PORT` | HTTP server port | `8080` |
 | `SSH_HOST_KEY_PATH` | Path to SSH host key | `.ssh/host_key` |
@@ -337,13 +330,13 @@ ssh -p 22 player@devdungeon.fly.dev
       │                           │
       └─────────────┬─────────────┘
                     │
-      ┌─────────────┴─────────────┐
-      │                           │
-┌─────────────┐           ┌─────────────┐
-│ PostgreSQL  │           │    Redis    │
-│ (accounts,  │           │ (leaderboard│
-│  saves)     │           │  sessions)  │
-└─────────────┘           └─────────────┘
+          ┌─────────────────┐
+          │   PostgreSQL    │
+          │  (accounts,     │
+          │   saves,        │
+          │   leaderboards, │
+          │   sessions)     │
+          └─────────────────┘
 ```
 
 ## Built With

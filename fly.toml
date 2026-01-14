@@ -1,0 +1,75 @@
+# Fly.io configuration for /dev/dungeon
+# See https://fly.io/docs/reference/configuration/ for more information
+
+app = "devdungeon"
+primary_region = "ord"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # SSH host key will be stored on persistent volume
+  SSH_HOST_KEY_PATH = "/data/host_key"
+  SSH_HOST = "0.0.0.0"
+  SSH_PORT = "2222"
+  HTTP_HOST = "0.0.0.0"
+  HTTP_PORT = "8080"
+
+# Mount persistent volume for SSH host key
+# This prevents "HOST IDENTIFICATION HAS CHANGED" warnings
+# Create the volume first: fly volumes create devdungeon_data --region ord --size 1
+[mounts]
+  source = "devdungeon_data"
+  destination = "/data"
+
+# SSH server (primary)
+[[services]]
+  protocol = "tcp"
+  internal_port = 2222
+
+  [[services.ports]]
+    port = 22
+    handlers = []
+
+  [[services.ports]]
+    port = 2222
+    handlers = []
+
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 100
+    soft_limit = 50
+
+# HTTP server for web UI and API
+[[services]]
+  protocol = "tcp"
+  internal_port = 8080
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [services.concurrency]
+    type = "requests"
+    hard_limit = 250
+    soft_limit = 200
+
+  [[services.http_checks]]
+    interval = 10000
+    grace_period = "5s"
+    method = "GET"
+    path = "/health"
+    protocol = "http"
+    timeout = 2000
+
+[checks]
+  [checks.ssh]
+    port = 2222
+    type = "tcp"
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "10s"

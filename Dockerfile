@@ -31,7 +31,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /devdungeon ./cmd/devd
 # Runtime stage
 FROM alpine:3.20
 
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates openssh-keygen
 
 WORKDIR /app
 
@@ -41,12 +41,17 @@ COPY --from=backend /devdungeon /app/devdungeon
 # Copy web frontend from frontend builder
 COPY --from=frontend /app/web/build /app/web/build
 
-# Create .ssh directory for host key
-RUN mkdir -p /app/.ssh
+# Copy entrypoint script
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+
+# Create directories for host key (will be mounted as volumes)
+# /data is used in production (Fly.io), /app/.ssh for local dev
+RUN mkdir -p /app/.ssh /data
 
 # SSH and HTTP ports
 EXPOSE 2222 8080
 
-# Default to running both servers
-ENTRYPOINT ["/app/devdungeon"]
+# Use entrypoint script to handle host key setup
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["--server"]

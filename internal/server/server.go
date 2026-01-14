@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -136,6 +137,15 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
+	// Ensure host key directory exists
+	if err := ensureHostKeyDir(cfg.HostKeyPath); err != nil {
+		dbClient.Close()
+		return nil, fmt.Errorf("failed to prepare host key directory: %w", err)
+	}
+
+	// Log host key information
+	logHostKeyInfo(cfg.HostKeyPath)
+
 	s := &Server{
 		config:      cfg,
 		db:          dbClient,
@@ -144,6 +154,7 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	// Create SSH server with Wish
+	// Note: Wish will generate the host key if it doesn't exist
 	sshSrv, err := wish.NewServer(
 		wish.WithAddress(net.JoinHostPort(cfg.Host, cfg.Port)),
 		wish.WithHostKeyPath(cfg.HostKeyPath),
@@ -161,6 +172,26 @@ func New(cfg Config) (*Server, error) {
 
 	s.sshSrv = sshSrv
 	return s, nil
+}
+
+// ensureHostKeyDir ensures the directory for the host key exists.
+func ensureHostKeyDir(hostKeyPath string) error {
+	dir := filepath.Dir(hostKeyPath)
+	if dir == "" || dir == "." {
+		return nil
+	}
+	return os.MkdirAll(dir, 0700)
+}
+
+// logHostKeyInfo logs information about the SSH host key.
+func logHostKeyInfo(hostKeyPath string) {
+	if _, err := os.Stat(hostKeyPath); os.IsNotExist(err) {
+		log.Info("SSH host key will be generated", "path", hostKeyPath)
+	} else if err != nil {
+		log.Warn("Could not check host key status", "path", hostKeyPath, "error", err)
+	} else {
+		log.Info("Using existing SSH host key", "path", hostKeyPath)
+	}
 }
 
 // Run starts the SSH server and blocks until shutdown.
