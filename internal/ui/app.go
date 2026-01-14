@@ -1853,10 +1853,12 @@ func (m *Model) viewMainMenu() string {
     ╚═══════════════════════════════════════════╝
 	`)
 
-	// Show greeting for multiplayer users
+	// Show greeting for multiplayer users (centered to match title box width)
 	greeting := ""
 	if m.isMultiplayer && m.username != "" {
-		greeting = m.styles.Highlight.Render(fmt.Sprintf("    Welcome back, %s", m.username)) + "\n\n"
+		greetingText := fmt.Sprintf("Welcome back, %s", m.username)
+		// Center within ~47 char width to match title box
+		greeting = lipgloss.NewStyle().Width(47).Align(lipgloss.Center).Foreground(m.styles.Highlight.GetForeground()).Render(greetingText) + "\n\n"
 	}
 
 	var menu string
