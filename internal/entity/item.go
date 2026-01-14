@@ -49,8 +49,8 @@ type ItemEffect struct {
 type EffectType string
 
 const (
-	EffectHeal        EffectType = "heal"
-	EffectRestoreMEM  EffectType = "restore_mem"
+	EffectHeal        EffectType = "heal"       // Restore RAM
+	EffectRestoreFD   EffectType = "restore_fd" // Restore file descriptors
 	EffectDamage      EffectType = "damage"
 	EffectBuff        EffectType = "buff"
 	EffectReveal      EffectType = "reveal"
@@ -102,7 +102,7 @@ var ItemTemplates = map[string]ItemTemplate{
 		Glyph:       '!',
 		ItemType:    ItemTypeConsumable,
 		Rarity:      RarityRare,
-		Description: "Grants temporary invincibility",
+		Description: "Grants temporary invincibility (root mode)",
 		Stackable:   true,
 		MaxStack:    3,
 		Effects: []ItemEffect{
@@ -122,30 +122,30 @@ var ItemTemplates = map[string]ItemTemplate{
 			{Type: EffectReveal, Value: 1, Target: TargetFloor},
 		},
 	},
-	"pid_restore": {
-		ID:          "pid_restore",
-		Name:        "PID restore",
+	"malloc": {
+		ID:          "malloc",
+		Name:        "malloc()",
 		Glyph:       '+',
 		ItemType:    ItemTypeConsumable,
 		Rarity:      RarityCommon,
-		Description: "Restores 30 PID",
+		Description: "Allocates 30 RAM",
 		Stackable:   true,
 		MaxStack:    10,
 		Effects: []ItemEffect{
 			{Type: EffectHeal, Value: 30, Target: TargetSelf},
 		},
 	},
-	"mem_restore": {
-		ID:          "mem_restore",
-		Name:        "MEM restore",
+	"fd_restore": {
+		ID:          "fd_restore",
+		Name:        "close()",
 		Glyph:       '*',
 		ItemType:    ItemTypeConsumable,
 		Rarity:      RarityCommon,
-		Description: "Restores 20 MEM",
+		Description: "Closes unused FDs, restores 4",
 		Stackable:   true,
 		MaxStack:    10,
 		Effects: []ItemEffect{
-			{Type: EffectRestoreMEM, Value: 20, Target: TargetSelf},
+			{Type: EffectRestoreFD, Value: 4, Target: TargetSelf},
 		},
 	},
 	// Weapons
@@ -155,17 +155,17 @@ var ItemTemplates = map[string]ItemTemplate{
 		Glyph:       ')',
 		ItemType:    ItemTypeWeapon,
 		Rarity:      RarityRare,
-		Description: "Instant kill on low HP enemies",
+		Description: "SIGKILL: instant kill on low RAM enemies",
 		Stackable:   false,
 		EquipSlot:   SlotWeapon,
 		StatBonus:   types.Stats{CPU: 10},
 		Effects: []ItemEffect{
-			{Type: EffectInstantKill, Value: 20, Target: TargetEnemy}, // Kills if <20 HP
+			{Type: EffectInstantKill, Value: 20, Target: TargetEnemy}, // Kills if <20 RAM
 		},
 	},
 	"basic_script": {
 		ID:          "basic_script",
-		Name:        "basic script",
+		Name:        "bash script",
 		Glyph:       ')',
 		ItemType:    ItemTypeWeapon,
 		Rarity:      RarityCommon,
@@ -181,43 +181,43 @@ var ItemTemplates = map[string]ItemTemplate{
 		Glyph:       '[',
 		ItemType:    ItemTypeArmor,
 		Rarity:      RarityUncommon,
-		Description: "Increases execution permissions",
+		Description: "Increases execution permissions and RAM",
 		Stackable:   false,
 		EquipSlot:   SlotArmor,
-		StatBonus:   types.Stats{PID: 20, UID: 1},
+		StatBonus:   types.Stats{RAM: 20, UID: -100}, // Lower UID = more power
 	},
 	"basic_shell": {
 		ID:          "basic_shell",
-		Name:        "basic shell",
+		Name:        "/bin/sh",
 		Glyph:       '[',
 		ItemType:    ItemTypeArmor,
 		Rarity:      RarityCommon,
 		Description: "Basic protective shell",
 		Stackable:   false,
 		EquipSlot:   SlotArmor,
-		StatBonus:   types.Stats{PID: 10},
+		StatBonus:   types.Stats{RAM: 10},
 	},
 	// Loot drops
 	"memory_fragment": {
 		ID:          "memory_fragment",
-		Name:        "memory fragment",
+		Name:        "RAM fragment",
 		Glyph:       '%',
 		ItemType:    ItemTypeConsumable,
 		Rarity:      RarityCommon,
-		Description: "Restores 10 MEM",
+		Description: "Allocates 10 RAM",
 		Stackable:   true,
 		MaxStack:    20,
 		Effects: []ItemEffect{
-			{Type: EffectRestoreMEM, Value: 10, Target: TargetSelf},
+			{Type: EffectHeal, Value: 10, Target: TargetSelf},
 		},
 	},
 	"service_token": {
 		ID:          "service_token",
-		Name:        "service token",
+		Name:        "systemd token",
 		Glyph:       '$',
 		ItemType:    ItemTypeConsumable,
 		Rarity:      RarityUncommon,
-		Description: "Restores 20 PID",
+		Description: "Allocates 20 RAM",
 		Stackable:   true,
 		MaxStack:    10,
 		Effects: []ItemEffect{
@@ -243,7 +243,7 @@ var ItemTemplates = map[string]ItemTemplate{
 		Glyph:       '#',
 		ItemType:    ItemTypeConsumable,
 		Rarity:      RarityUncommon,
-		Description: "Deals 40 damage to an enemy",
+		Description: "Throws 40 damage at an enemy",
 		Stackable:   true,
 		MaxStack:    5,
 		Effects: []ItemEffect{
@@ -256,10 +256,10 @@ var ItemTemplates = map[string]ItemTemplate{
 		Glyph:       '^',
 		ItemType:    ItemTypeConsumable,
 		Rarity:      RarityRare,
-		Description: "Permanently +1 UID",
+		Description: "Permanently lowers UID by 100",
 		Stackable:   false,
 		Effects: []ItemEffect{
-			{Type: EffectBuff, Value: 1, Target: TargetSelf},
+			{Type: EffectBuff, Value: -100, Target: TargetSelf}, // Lower UID = more power
 		},
 	},
 }
@@ -391,24 +391,24 @@ func (eq *Equipment) GetStatBonus() types.Stats {
 	bonus := types.Stats{}
 	if eq.Weapon != nil {
 		bonus.CPU += eq.Weapon.StatBonus.CPU
-		bonus.PID += eq.Weapon.StatBonus.PID
-		bonus.MEM += eq.Weapon.StatBonus.MEM
+		bonus.RAM += eq.Weapon.StatBonus.RAM
+		bonus.FD += eq.Weapon.StatBonus.FD
 	}
 	if eq.Armor != nil {
 		bonus.CPU += eq.Armor.StatBonus.CPU
-		bonus.PID += eq.Armor.StatBonus.PID
-		bonus.MEM += eq.Armor.StatBonus.MEM
+		bonus.RAM += eq.Armor.StatBonus.RAM
+		bonus.FD += eq.Armor.StatBonus.FD
 		bonus.UID += eq.Armor.StatBonus.UID
 	}
 	if eq.Utility1 != nil {
 		bonus.CPU += eq.Utility1.StatBonus.CPU
-		bonus.PID += eq.Utility1.StatBonus.PID
-		bonus.MEM += eq.Utility1.StatBonus.MEM
+		bonus.RAM += eq.Utility1.StatBonus.RAM
+		bonus.FD += eq.Utility1.StatBonus.FD
 	}
 	if eq.Utility2 != nil {
 		bonus.CPU += eq.Utility2.StatBonus.CPU
-		bonus.PID += eq.Utility2.StatBonus.PID
-		bonus.MEM += eq.Utility2.StatBonus.MEM
+		bonus.RAM += eq.Utility2.StatBonus.RAM
+		bonus.FD += eq.Utility2.StatBonus.FD
 	}
 	return bonus
 }

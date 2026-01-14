@@ -484,9 +484,9 @@ func (m *Model) renderStats() string {
 	p := m.player
 	content := fmt.Sprintf(
 		"%s\n%s\n\n"+
-			"PID: %s/%d\n"+
-			"MEM: %s/%d\n"+
+			"RAM: %s/%d\n"+
 			"CPU: %d\n"+
+			"FD:  %s/%d\n"+
 			"NICE: %d\n"+
 			"UID: %d\n\n"+
 			"Level: %d\n"+
@@ -494,11 +494,11 @@ func (m *Model) renderStats() string {
 			"Floor: /home",
 		m.styles.Title.Render(string(p.Class)),
 		m.styles.Muted.Render("Process Status"),
-		m.colorizeHP(p.Stats.PID, p.MaxStats.MaxPID),
-		p.MaxStats.MaxPID,
-		m.colorizeMEM(p.Stats.MEM, p.MaxStats.MaxMEM),
-		p.MaxStats.MaxMEM,
+		m.colorizeRAM(p.Stats.RAM, p.MaxStats.MaxRAM),
+		p.MaxStats.MaxRAM,
 		p.Stats.CPU,
+		m.colorizeFD(p.Stats.FD, p.MaxStats.MaxFD),
+		p.MaxStats.MaxFD,
 		p.Stats.NICE,
 		p.Stats.UID,
 		p.Level,
@@ -509,8 +509,8 @@ func (m *Model) renderStats() string {
 	return m.styles.StatPanel.Width(20).Render(content)
 }
 
-// colorizeHP colors HP based on percentage.
-func (m *Model) colorizeHP(current, max int) string {
+// colorizeRAM colors RAM (health) based on percentage.
+func (m *Model) colorizeRAM(current, max int) string {
 	pct := float64(current) / float64(max)
 	str := fmt.Sprintf("%d", current)
 	if pct > 0.6 {
@@ -521,8 +521,8 @@ func (m *Model) colorizeHP(current, max int) string {
 	return m.styles.Danger.Render(str)
 }
 
-// colorizeMEM colors MEM based on percentage.
-func (m *Model) colorizeMEM(current, max int) string {
+// colorizeFD colors FD (ability resource) based on percentage.
+func (m *Model) colorizeFD(current, max int) string {
 	pct := float64(current) / float64(max)
 	str := fmt.Sprintf("%d", current)
 	if pct > 0.5 {

@@ -435,7 +435,7 @@ func TestItemPickup(t *testing.T) {
 		t.Skip("Adjacent position not walkable")
 	}
 
-	testItem := entity.NewItem("pid_restore", "test_item_123", itemPos)
+	testItem := entity.NewItem("malloc", "test_item_123", itemPos)
 	if testItem == nil {
 		t.Fatal("Failed to create test item")
 	}

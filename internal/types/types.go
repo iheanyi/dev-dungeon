@@ -19,18 +19,19 @@ const (
 )
 
 // Stats represents the core stats for entities.
+// Modeled after real Linux process attributes.
 type Stats struct {
-	PID  int // Health/HP
-	CPU  int // Attack power
-	MEM  int // Ability capacity / mana
-	NICE int // Speed/priority (lower = faster)
-	UID  int // Permission level
+	RAM  int // Health - memory allocation (OOM = death)
+	CPU  int // Attack power - processing cycles
+	FD   int // Ability resource - file descriptors (mana)
+	NICE int // Speed/priority (lower = faster, accurate to Linux)
+	UID  int // Access level - permissions (0 = root = max power)
 }
 
 // MaxStats represents the maximum values for stats.
 type MaxStats struct {
-	MaxPID int
-	MaxMEM int
+	MaxRAM int // Maximum memory allocation
+	MaxFD  int // Maximum file descriptors (like ulimit -n)
 }
 
 // GameState represents the current state of the game.

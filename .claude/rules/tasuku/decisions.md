@@ -1,22 +1,36 @@
-# Decisions
+# Tasuku Decisions
 
-## seeded-rng-architecture - 2026-01-14T01:01:46Z
+_Auto-synced from .tasuku/context/decisions.md_
+
+## seeded-rng-architecture (2026-01-14)
+
 **Chose**: Deterministic seed derivation with FNV hash: masterSeed -> floorSeed -> entitySeed
+
 **Over**: Global rand with SetSeed calls, Passing RNG instances everywhere, Time-based seeds only
+
 **Because**: Enables reproducible dungeons for testing/debugging, allows players to share seeds for cool runs, and derived seeds mean changing floor 1 generation won't affect floor 5
 
-## bsp-dungeon-generation - 2026-01-14T01:01:46Z
+## bsp-dungeon-generation (2026-01-14)
+
 **Chose**: Binary Space Partitioning (BSP) for dungeon generation
+
 **Over**: Cellular automata, Drunkard's walk, Simple random room placement
+
 **Because**: BSP guarantees non-overlapping rooms, ensures connectivity through tree structure, and produces classic roguelike layouts. Can still vary room shapes within cells for different floor types.
 
-## save-system-strategy - 2026-01-14T01:06:29Z
+## save-system-strategy (2026-01-14)
+
 **Chose**: Hybrid save system: checkpoint on floor transition + background auto-save every 60s
+
 **Over**: Save only on floor transition, Continuous goroutine save, Manual save only
+
 **Because**: Floor transitions are natural checkpoints for roguelikes, but background auto-save prevents frustrating crash losses. Only save deltas (dead enemies, looted items) since floors regenerate from seed.
 
-## stat-system-redesign - 2026-01-14T01:13:13Z
+## stat-system-redesign (2026-01-14)
+
 **Chose**: RAM (health), CPU (attack), FD (ability resource), NICE (speed), UID (access) - Linux-accurate stats
+
 **Over**: Original PID/CPU/MEM/NICE/UID, Full terminal ps aux style, Traditional HP/ATK/MP/SPD
+
 **Because**: RAM as health is Linux-accurate (OOM = death), FD as mana reflects real process limits, keeps NICE/UID which were already perfect. Balances accuracy with accessibility.
 

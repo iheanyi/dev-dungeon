@@ -1,6 +1,17 @@
 {
   "version": "v4",
   "tasks": {
+    "admin-console": {
+      "status": "ready",
+      "priority": 3,
+      "tags": [
+        "feature",
+        "debug",
+        "dev-tools"
+      ],
+      "file": "tasks/admin-console.md",
+      "updated_at": "2026-01-14T01:16:33.199308Z"
+    },
     "class-system": {
       "status": "ready",
       "priority": 3,
@@ -14,10 +25,10 @@
       "updated_at": "2026-01-14T00:36:10.094589Z"
     },
     "dungeon-gen": {
-      "status": "ready",
+      "status": "done",
       "priority": 1,
       "file": "tasks/dungeon-gen.md",
-      "updated_at": "2026-01-14T00:36:09.609226Z"
+      "updated_at": "2026-01-14T01:02:47.693308Z"
     },
     "enemy-system": {
       "status": "ready",
@@ -26,10 +37,10 @@
       "updated_at": "2026-01-14T00:36:10.344227Z"
     },
     "game-engine": {
-      "status": "ready",
+      "status": "done",
       "priority": 1,
       "file": "tasks/game-engine.md",
-      "updated_at": "2026-01-14T00:36:09.371407Z"
+      "updated_at": "2026-01-14T01:02:47.928168Z"
     },
     "inventory-system": {
       "status": "ready",
@@ -38,10 +49,10 @@
       "updated_at": "2026-01-14T00:36:10.587518Z"
     },
     "meta-progression": {
-      "status": "ready",
+      "status": "in_progress",
       "priority": 2,
       "file": "tasks/meta-progression.md",
-      "updated_at": "2026-01-14T00:36:11.078832Z"
+      "updated_at": "2026-01-14T01:06:40.085852Z"
     },
     "player-entity": {
       "status": "ready",
@@ -55,6 +66,17 @@
       "file": "tasks/project-setup.md",
       "updated_at": "2026-01-14T00:42:46.607252Z"
     },
+    "reality-mode": {
+      "status": "ready",
+      "priority": 4,
+      "tags": [
+        "feature",
+        "post-v1",
+        "cool-idea"
+      ],
+      "file": "tasks/reality-mode.md",
+      "updated_at": "2026-01-14T01:16:33.124386Z"
+    },
     "ui-system": {
       "status": "ready",
       "priority": 1,
@@ -63,7 +85,7 @@
     }
   },
   "archived_count": 0,
-  "learnings_count": 0,
-  "decisions_count": 0,
-  "updated_at": "2026-01-14T00:42:46.60736Z"
+  "learnings_count": 1,
+  "decisions_count": 4,
+  "updated_at": "2026-01-14T01:16:33.199529Z"
 }
