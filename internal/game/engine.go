@@ -22,6 +22,26 @@ type MoveResult struct {
 }
 
 // Engine is the core game engine that manages game state and logic.
+// RunStats tracks statistics for the current run.
+type RunStats struct {
+	EnemiesKilled   map[string]int // Kills by enemy type
+	TotalKills      int
+	DamageDealt     int
+	DamageTaken     int
+	ItemsCollected  int
+	ItemsUsed       int
+	FloorsExplored  int
+	MaxDepthReached int
+	StepsWalked     int
+}
+
+// NewRunStats creates a new run stats tracker.
+func NewRunStats() *RunStats {
+	return &RunStats{
+		EnemiesKilled: make(map[string]int),
+	}
+}
+
 type Engine struct {
 	config      *config.Config
 	player      *entity.Player
@@ -32,6 +52,7 @@ type Engine struct {
 	masterSeed  int64
 	messages    []string // Recent game messages
 	saveManager *save.Manager
+	stats       *RunStats // Current run statistics
 }
 
 // NewEngine creates a new game engine with the given configuration and seed.
@@ -74,6 +95,11 @@ func (e *Engine) SetGenerator(gen DungeonGenerator) {
 func (e *Engine) StartNewGame(playerClass entity.PlayerClass) error {
 	// Create the player
 	e.player = entity.NewPlayer(playerClass)
+
+	// Initialize run statistics
+	e.stats = NewRunStats()
+	e.stats.FloorsExplored = 1
+	e.stats.MaxDepthReached = 1
 
 	// Generate the first floor
 	if err := e.generateFloor(1); err != nil {
@@ -409,6 +435,11 @@ func (e *Engine) MovePlayer(dir types.Direction) MoveResult {
 	// Move the player
 	e.player.SetPosition(newPos)
 
+	// Track step
+	if e.stats != nil {
+		e.stats.StepsWalked++
+	}
+
 	// Update visibility
 	e.world.UpdateVisibility(newPos, e.getViewRadius())
 
@@ -421,6 +452,10 @@ func (e *Engine) MovePlayer(dir types.Direction) MoveResult {
 			result.PickedUp = item
 			result.Message = fmt.Sprintf("You picked up %s.", item.Name())
 			e.addMessage("Picked up %s.", item.Name())
+			// Track item pickup
+			if e.stats != nil {
+				e.stats.ItemsCollected++
+			}
 		} else {
 			result.Message = "Your inventory is full."
 		}
@@ -485,6 +520,14 @@ func (e *Engine) DescendStairs() error {
 
 	// Update visibility
 	e.world.UpdateVisibility(e.player.Position(), e.getViewRadius())
+
+	// Track floor exploration
+	if e.stats != nil {
+		e.stats.FloorsExplored++
+		if nextDepth > e.stats.MaxDepthReached {
+			e.stats.MaxDepthReached = nextDepth
+		}
+	}
 
 	e.addMessage("You descend to %s (depth %d).", e.world.CurrentFloor.Type.FloorName(), nextDepth)
 
@@ -650,6 +693,11 @@ func (e *Engine) CurrentDepth() int {
 // CurrentFloorType returns the type of the current floor.
 func (e *Engine) CurrentFloorType() types.FloorType {
 	return e.world.GetFloorType()
+}
+
+// GetRunStats returns the current run statistics.
+func (e *Engine) GetRunStats() *RunStats {
+	return e.stats
 }
 
 // --- Save/Load Methods ---

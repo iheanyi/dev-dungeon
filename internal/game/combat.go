@@ -488,10 +488,15 @@ func (e *Engine) EndCombat(combat *CombatState) {
 			}
 		}
 
-		// Remove dead enemies from world
+		// Remove dead enemies from world and track kills
 		for _, enemy := range combat.Enemies {
 			if !enemy.IsAlive() {
 				e.world.RemoveEnemy(enemy.ID())
+				// Track kill statistics
+				if e.stats != nil {
+					e.stats.TotalKills++
+					e.stats.EnemiesKilled[string(enemy.Type)]++
+				}
 			}
 		}
 

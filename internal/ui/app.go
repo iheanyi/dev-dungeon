@@ -1618,10 +1618,31 @@ func (m *Model) viewGameOver() string {
     ║              PROCESS TERMINATED           ║
     ║                  exit(1)                  ║
     ╚═══════════════════════════════════════════╝
-	`)
+	`) + "\n"
+
+	// Show run statistics
+	if m.engine != nil {
+		stats := m.engine.GetRunStats()
+		if stats != nil {
+			content += m.styles.Title.Render("─── Run Statistics ───") + "\n"
+			content += fmt.Sprintf("  Total Kills:     %d\n", stats.TotalKills)
+			content += fmt.Sprintf("  Max Depth:       %d\n", stats.MaxDepthReached)
+			content += fmt.Sprintf("  Floors Explored: %d\n", stats.FloorsExplored)
+			content += fmt.Sprintf("  Steps Walked:    %d\n", stats.StepsWalked)
+			content += fmt.Sprintf("  Items Collected: %d\n", stats.ItemsCollected)
+
+			// Show kill breakdown if any kills
+			if stats.TotalKills > 0 && len(stats.EnemiesKilled) > 0 {
+				content += "\n" + m.styles.Muted.Render("  Kill Log:") + "\n"
+				for enemyType, count := range stats.EnemiesKilled {
+					content += fmt.Sprintf("    %s: %d\n", enemyType, count)
+				}
+			}
+		}
+	}
 
 	if m.player != nil {
-		content += fmt.Sprintf("\n\nExit codes earned: %d\n", m.player.ExitCodes)
+		content += fmt.Sprintf("\nLevel Reached: %d\n", m.player.Level)
 	}
 
 	content += m.styles.Muted.Render("\n[Enter] Continue  [Q] Quit")
@@ -1636,7 +1657,26 @@ func (m *Model) viewVictory() string {
     ║              KERNEL DEFEATED              ║
     ║                  exit(0)                  ║
     ╚═══════════════════════════════════════════╝
-	`)
+	`) + "\n"
+
+	content += m.styles.Title.Render("You have conquered /dev/dungeon!") + "\n\n"
+
+	// Show run statistics
+	if m.engine != nil {
+		stats := m.engine.GetRunStats()
+		if stats != nil {
+			content += m.styles.Highlight.Render("─── Final Statistics ───") + "\n"
+			content += fmt.Sprintf("  Total Kills:     %d\n", stats.TotalKills)
+			content += fmt.Sprintf("  Max Depth:       %d\n", stats.MaxDepthReached)
+			content += fmt.Sprintf("  Floors Explored: %d\n", stats.FloorsExplored)
+			content += fmt.Sprintf("  Steps Walked:    %d\n", stats.StepsWalked)
+			content += fmt.Sprintf("  Items Collected: %d\n", stats.ItemsCollected)
+		}
+	}
+
+	if m.player != nil {
+		content += fmt.Sprintf("\nFinal Level: %d\n", m.player.Level)
+	}
 
 	content += m.styles.Muted.Render("\n[Enter] Continue  [Q] Quit")
 
