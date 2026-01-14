@@ -688,6 +688,7 @@ func NewEquipment() *Equipment {
 }
 
 // Equip equips an item in the appropriate slot.
+// For utility items, auto-fills Utility2 if Utility1 is occupied.
 func (eq *Equipment) Equip(item *Item) *Item {
 	var old *Item
 	switch item.EquipSlot {
@@ -698,13 +699,61 @@ func (eq *Equipment) Equip(item *Item) *Item {
 		old = eq.Armor
 		eq.Armor = item
 	case SlotUtility1:
+		// Auto-fill: if Utility1 is occupied, try Utility2
+		if eq.Utility1 != nil && eq.Utility2 == nil {
+			eq.Utility2 = item
+			return nil
+		}
 		old = eq.Utility1
 		eq.Utility1 = item
 	case SlotUtility2:
+		// Auto-fill: if Utility2 is occupied, try Utility1
+		if eq.Utility2 != nil && eq.Utility1 == nil {
+			eq.Utility1 = item
+			return nil
+		}
 		old = eq.Utility2
 		eq.Utility2 = item
 	}
 	return old
+}
+
+// Unequip removes an item from the specified slot and returns it.
+func (eq *Equipment) Unequip(slot EquipSlot) *Item {
+	var item *Item
+	switch slot {
+	case SlotWeapon:
+		item = eq.Weapon
+		eq.Weapon = nil
+	case SlotArmor:
+		item = eq.Armor
+		eq.Armor = nil
+	case SlotUtility1:
+		item = eq.Utility1
+		eq.Utility1 = nil
+	case SlotUtility2:
+		item = eq.Utility2
+		eq.Utility2 = nil
+	}
+	return item
+}
+
+// GetAll returns all equipped items.
+func (eq *Equipment) GetAll() []*Item {
+	var items []*Item
+	if eq.Weapon != nil {
+		items = append(items, eq.Weapon)
+	}
+	if eq.Armor != nil {
+		items = append(items, eq.Armor)
+	}
+	if eq.Utility1 != nil {
+		items = append(items, eq.Utility1)
+	}
+	if eq.Utility2 != nil {
+		items = append(items, eq.Utility2)
+	}
+	return items
 }
 
 // GetStatBonus returns total stat bonuses from equipment.

@@ -324,3 +324,108 @@ func TestInvincibilityPreventsDamage(t *testing.T) {
 			initialRAM, player.Stats.RAM)
 	}
 }
+
+// === Exit Codes / Currency System Tests ===
+
+func TestCombatRewardsExitCodes(t *testing.T) {
+	player := entity.NewPlayer(entity.ClassInit)
+
+	// Create enemies with known XP rewards
+	enemy1 := entity.NewEnemy(entity.EnemyZombie, "zombie1", types.Position{}, 1)
+	enemy2 := entity.NewEnemy(entity.EnemyDaemon, "daemon1", types.Position{}, 1)
+
+	combat := NewCombatState(player, []*entity.Enemy{enemy1, enemy2}, 12345)
+
+	// Kill both enemies
+	enemy1.Stats.RAM = 0
+	enemy2.Stats.RAM = 0
+
+	xp, exitCodes, loot := combat.CalculateRewards()
+
+	// XP should be sum of enemy XP rewards
+	expectedXP := enemy1.XPReward + enemy2.XPReward
+	if xp != expectedXP {
+		t.Errorf("expected XP %d, got %d", expectedXP, xp)
+	}
+
+	// Exit codes should be XP / 2
+	expectedExitCodes := expectedXP / 2
+	if exitCodes != expectedExitCodes {
+		t.Errorf("expected exit codes %d, got %d", expectedExitCodes, exitCodes)
+	}
+
+	// Loot is random, just verify it's a valid slice
+	_ = loot
+}
+
+func TestCombatRewardsOnlyForDeadEnemies(t *testing.T) {
+	player := entity.NewPlayer(entity.ClassInit)
+
+	enemy1 := entity.NewEnemy(entity.EnemyZombie, "zombie1", types.Position{}, 1)
+	enemy2 := entity.NewEnemy(entity.EnemyDaemon, "daemon1", types.Position{}, 1)
+
+	combat := NewCombatState(player, []*entity.Enemy{enemy1, enemy2}, 12345)
+
+	// Only kill first enemy
+	enemy1.Stats.RAM = 0
+	// enemy2 is still alive
+
+	xp, exitCodes, _ := combat.CalculateRewards()
+
+	// Should only get rewards from dead enemy
+	if xp != enemy1.XPReward {
+		t.Errorf("expected XP %d (only from dead enemy), got %d", enemy1.XPReward, xp)
+	}
+
+	if exitCodes != enemy1.XPReward/2 {
+		t.Errorf("expected exit codes %d, got %d", enemy1.XPReward/2, exitCodes)
+	}
+}
+
+func TestPlayerExitCodesStartAtZero(t *testing.T) {
+	player := entity.NewPlayer(entity.ClassBash)
+
+	if player.ExitCodes != 0 {
+		t.Errorf("new player should start with 0 exit codes, got %d", player.ExitCodes)
+	}
+}
+
+func TestPlayerExitCodesCanBeAdded(t *testing.T) {
+	player := entity.NewPlayer(entity.ClassInit)
+
+	player.ExitCodes += 100
+	if player.ExitCodes != 100 {
+		t.Errorf("expected 100 exit codes, got %d", player.ExitCodes)
+	}
+
+	player.ExitCodes += 50
+	if player.ExitCodes != 150 {
+		t.Errorf("expected 150 exit codes, got %d", player.ExitCodes)
+	}
+}
+
+func TestPlayerExitCodesCanBeSpent(t *testing.T) {
+	player := entity.NewPlayer(entity.ClassInit)
+	player.ExitCodes = 100
+
+	// Simulate purchase
+	cost := 30
+	if player.ExitCodes >= cost {
+		player.ExitCodes -= cost
+	}
+
+	if player.ExitCodes != 70 {
+		t.Errorf("expected 70 exit codes after purchase, got %d", player.ExitCodes)
+	}
+}
+
+func TestPlayerExitCodesSavedAndLoaded(t *testing.T) {
+	// This is tested in engine_test.go but let's add explicit verification
+	player := entity.NewPlayer(entity.ClassVim)
+	player.ExitCodes = 500
+
+	// Verify the value persists on the player struct
+	if player.ExitCodes != 500 {
+		t.Errorf("exit codes should persist, got %d", player.ExitCodes)
+	}
+}

@@ -230,23 +230,92 @@ func TestEquipmentSlots(t *testing.T) {
 	}
 }
 
-func TestEquipmentReplacement(t *testing.T) {
+func TestEquipmentUtilityAutoFill(t *testing.T) {
 	eq := NewEquipment()
 
-	// Both utilities have SlotUtility1, so second should replace first
+	// Both utilities have SlotUtility1, but second should auto-fill Utility2
 	util1 := NewItem("ssh_key", "util1", types.Position{})
 	util2 := NewItem("env_vars", "util2", types.Position{})
 
 	eq.Equip(util1)
 	if eq.Utility1 != util1 {
-		t.Error("first utility should be equipped")
+		t.Error("first utility should be in slot 1")
 	}
 
+	// Second utility should auto-fill Utility2 instead of replacing
 	old := eq.Equip(util2)
-	if old != util1 {
-		t.Error("should return the replaced item")
+	if old != nil {
+		t.Error("should not replace anything when auto-filling slot 2")
 	}
-	if eq.Utility1 != util2 {
-		t.Error("utility1 should be replaced with second utility")
+	if eq.Utility1 != util1 {
+		t.Error("utility1 should still have first item")
+	}
+	if eq.Utility2 != util2 {
+		t.Error("utility2 should have second item (auto-filled)")
+	}
+}
+
+func TestEquipmentUtilityReplaceWhenBothFull(t *testing.T) {
+	eq := NewEquipment()
+
+	util1 := NewItem("ssh_key", "util1", types.Position{})
+	util2 := NewItem("env_vars", "util2", types.Position{})
+	util3 := NewItem("gpg_ring", "util3", types.Position{})
+
+	eq.Equip(util1) // Goes to Utility1
+	eq.Equip(util2) // Goes to Utility2 (auto-fill)
+
+	// Third should replace Utility1 (since they all have SlotUtility1)
+	old := eq.Equip(util3)
+	if old != util1 {
+		t.Errorf("should return replaced item from slot 1, got %v", old)
+	}
+	if eq.Utility1 != util3 {
+		t.Error("utility1 should now have third item")
+	}
+	if eq.Utility2 != util2 {
+		t.Error("utility2 should still have second item")
+	}
+}
+
+func TestEquipmentUnequip(t *testing.T) {
+	eq := NewEquipment()
+
+	weapon := NewItem("vim_blade", "weapon", types.Position{})
+	eq.Equip(weapon)
+
+	unequipped := eq.Unequip(SlotWeapon)
+	if unequipped != weapon {
+		t.Error("should return unequipped weapon")
+	}
+	if eq.Weapon != nil {
+		t.Error("weapon slot should be empty after unequip")
+	}
+
+	// Unequip empty slot
+	unequipped = eq.Unequip(SlotArmor)
+	if unequipped != nil {
+		t.Error("unequipping empty slot should return nil")
+	}
+}
+
+func TestEquipmentGetAll(t *testing.T) {
+	eq := NewEquipment()
+
+	// Empty equipment
+	all := eq.GetAll()
+	if len(all) != 0 {
+		t.Errorf("empty equipment should return 0 items, got %d", len(all))
+	}
+
+	// Add items
+	eq.Equip(NewItem("vim_blade", "w", types.Position{}))
+	eq.Equip(NewItem("firewall", "a", types.Position{}))
+	eq.Equip(NewItem("ssh_key", "u1", types.Position{}))
+	eq.Equip(NewItem("env_vars", "u2", types.Position{}))
+
+	all = eq.GetAll()
+	if len(all) != 4 {
+		t.Errorf("should have 4 equipped items, got %d", len(all))
 	}
 }
