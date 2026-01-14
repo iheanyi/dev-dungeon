@@ -491,6 +491,35 @@ func (e *Engine) DescendStairs() error {
 	return nil
 }
 
+// ForceDescend forces descent to the next floor regardless of player position (admin/debug).
+func (e *Engine) ForceDescend() error {
+	if e.player == nil || e.world.CurrentFloor == nil {
+		return errors.New("no active game")
+	}
+
+	// Save before floor transition
+	e.Save(save.TriggerFloorTransition)
+
+	// Cache current floor state
+	e.world.CacheCurrentFloor()
+
+	// Generate or load next floor
+	nextDepth := e.world.CurrentDepth + 1
+	if err := e.generateFloor(nextDepth); err != nil {
+		return fmt.Errorf("failed to descend: %w", err)
+	}
+
+	// Place player at stairs up of new floor
+	e.player.SetPosition(e.world.CurrentFloor.StairsUp)
+
+	// Update visibility
+	e.world.UpdateVisibility(e.player.Position(), e.getViewRadius())
+
+	e.addMessage("[ADMIN] Forced descent to %s (depth %d).", e.world.CurrentFloor.Type.FloorName(), nextDepth)
+
+	return nil
+}
+
 // AscendStairs attempts to go up stairs.
 func (e *Engine) AscendStairs() error {
 	if e.player == nil || e.world.CurrentFloor == nil {

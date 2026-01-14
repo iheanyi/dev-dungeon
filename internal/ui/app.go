@@ -25,6 +25,7 @@ const (
 	ViewPause
 	ViewGameOver
 	ViewVictory
+	ViewAdmin
 )
 
 // Model is the main Bubble Tea model for the game.
@@ -56,6 +57,12 @@ type Model struct {
 	// Class selection state
 	classCursor  int
 	classOptions []entity.PlayerClass
+
+	// Admin console state
+	adminCursor  int
+	adminOptions []string
+	godMode      bool
+	prevView     ViewType // View to return to after admin
 
 	// Messages
 	statusMsg    string
@@ -189,6 +196,17 @@ func New(cfg *config.Config) *Model {
 			entity.ClassSudo,
 		},
 		classCursor: 0,
+		adminOptions: []string{
+			"Toggle God Mode",
+			"Full Heal",
+			"Give XP (+100)",
+			"Spawn Item",
+			"Teleport to Stairs",
+			"Skip to Next Floor",
+			"Show Debug Info",
+			"Close",
+		},
+		adminCursor: 0,
 		combatLog:   make([]string, 0),
 		styles:      NewStyles(),
 	}
@@ -237,6 +255,8 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updatePause(msg)
 	case ViewGameOver:
 		return m.updateGameOver(msg)
+	case ViewAdmin:
+		return m.updateAdmin(msg)
 	}
 
 	return m, nil
@@ -397,6 +417,21 @@ func (m *Model) updateGame(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.currentView = ViewInventory
 	case "p", "esc":
 		m.currentView = ViewPause
+	case "q":
+		// Save and return to main menu
+		if m.engine != nil {
+			m.engine.Shutdown()
+			m.engine = nil
+		}
+		m.player = nil
+		m.currentView = ViewMainMenu
+		m.gameState = types.StateMainMenu
+		m.statusMsg = "Game saved."
+	case "`":
+		// Open admin console
+		m.prevView = ViewGame
+		m.adminCursor = 0
+		m.currentView = ViewAdmin
 	}
 	return m, nil
 }
@@ -507,15 +542,29 @@ func (m *Model) executeCombatAction(key string) (tea.Model, tea.Cmd) {
 
 	// Enemy turns
 	if !m.combat.IsOver {
+		// Remember health before enemy turns for god mode
+		preHP := m.player.Stats.RAM
+
 		enemyResults := m.combat.ExecuteEnemyTurns()
 		for _, er := range enemyResults {
 			m.combatLog = append(m.combatLog, er.Message)
 			if er.Defeat {
-				m.endCombat(false)
-				m.currentView = ViewGameOver
-				m.gameState = types.StateGameOver
-				return m, nil
+				if m.godMode {
+					// God mode: restore health, ignore defeat
+					m.player.Stats.RAM = preHP
+					m.combatLog = append(m.combatLog, "[GOD MODE] Damage negated!")
+				} else {
+					m.endCombat(false)
+					m.currentView = ViewGameOver
+					m.gameState = types.StateGameOver
+					return m, nil
+				}
 			}
+		}
+
+		// God mode: restore any damage taken
+		if m.godMode && m.player.Stats.RAM < preHP {
+			m.player.Stats.RAM = preHP
 		}
 	}
 
@@ -749,6 +798,110 @@ func (m *Model) updateGameOver(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateAdmin handles admin console input.
+func (m *Model) updateAdmin(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k", "w":
+		m.adminCursor--
+		if m.adminCursor < 0 {
+			m.adminCursor = len(m.adminOptions) - 1
+		}
+	case "down", "j", "s":
+		m.adminCursor++
+		if m.adminCursor >= len(m.adminOptions) {
+			m.adminCursor = 0
+		}
+	case "enter", " ":
+		return m.executeAdminAction()
+	case "esc", "`", "q":
+		m.currentView = m.prevView
+	}
+	return m, nil
+}
+
+// executeAdminAction executes the selected admin command.
+func (m *Model) executeAdminAction() (tea.Model, tea.Cmd) {
+	if m.player == nil || m.engine == nil {
+		m.statusMsg = "No active game."
+		m.currentView = m.prevView
+		return m, nil
+	}
+
+	switch m.adminOptions[m.adminCursor] {
+	case "Toggle God Mode":
+		m.godMode = !m.godMode
+		if m.godMode {
+			m.statusMsg = "[ADMIN] God mode ENABLED - invincible"
+		} else {
+			m.statusMsg = "[ADMIN] God mode DISABLED"
+		}
+
+	case "Full Heal":
+		m.player.Stats.RAM = m.player.MaxStats.MaxRAM
+		m.player.Stats.FD = m.player.MaxStats.MaxFD
+		m.statusMsg = "[ADMIN] Fully healed (RAM + FD restored)"
+
+	case "Give XP (+100)":
+		if m.player.GainXP(100) {
+			m.statusMsg = fmt.Sprintf("[ADMIN] +100 XP - LEVEL UP! Now level %d", m.player.Level)
+		} else {
+			m.statusMsg = fmt.Sprintf("[ADMIN] +100 XP (%d/%d)", m.player.XP, m.player.XPToLevel)
+		}
+
+	case "Spawn Item":
+		// Spawn a random useful item
+		items := []string{"malloc", "kill_9", "chmod_x", "sudo_potion", "core_dump"}
+		itemID := items[m.engine.MasterSeed()%int64(len(items))]
+		item := entity.NewItem(itemID, fmt.Sprintf("admin_%d", m.engine.MasterSeed()), m.player.Position())
+		if item != nil {
+			if m.player.Inventory.AddItem(item) {
+				m.statusMsg = fmt.Sprintf("[ADMIN] Spawned %s in inventory", item.Name())
+			} else {
+				m.statusMsg = "[ADMIN] Inventory full!"
+			}
+		}
+
+	case "Teleport to Stairs":
+		// Find stairs down position
+		tiles := m.engine.GetVisibleTiles()
+		for y, row := range tiles {
+			for x, tile := range row {
+				if tile.Type == types.TileStairsDown {
+					m.player.SetPosition(types.Position{X: x, Y: y})
+					m.statusMsg = "[ADMIN] Teleported to stairs"
+					m.currentView = m.prevView
+					return m, nil
+				}
+			}
+		}
+		m.statusMsg = "[ADMIN] No stairs found on this floor"
+
+	case "Skip to Next Floor":
+		if err := m.engine.DescendStairs(); err != nil {
+			// Force descent even if not on stairs
+			m.engine.ForceDescend()
+			m.statusMsg = fmt.Sprintf("[ADMIN] Forced descent to depth %d", m.engine.CurrentDepth())
+		} else {
+			m.statusMsg = fmt.Sprintf("[ADMIN] Descended to depth %d", m.engine.CurrentDepth())
+		}
+
+	case "Show Debug Info":
+		pos := m.player.Position()
+		m.statusMsg = fmt.Sprintf("[DEBUG] Pos: (%d,%d) Floor: %s Depth: %d Seed: %d God: %v",
+			pos.X, pos.Y,
+			m.engine.CurrentFloorType().FloorName(),
+			m.engine.CurrentDepth(),
+			m.engine.MasterSeed(),
+			m.godMode)
+
+	case "Close":
+		m.currentView = m.prevView
+		return m, nil
+	}
+
+	return m, nil
+}
+
 // View implements tea.Model.
 func (m *Model) View() string {
 	switch m.currentView {
@@ -768,6 +921,8 @@ func (m *Model) View() string {
 		return m.viewGameOver()
 	case ViewVictory:
 		return m.viewVictory()
+	case ViewAdmin:
+		return m.viewAdmin()
 	default:
 		return "Unknown view"
 	}
@@ -1333,4 +1488,39 @@ func (m *Model) viewVictory() string {
 	content += m.styles.Muted.Render("\n[Enter] Continue  [Q] Quit")
 
 	return m.styles.Container.Render(content)
+}
+
+// viewAdmin renders the admin console.
+func (m *Model) viewAdmin() string {
+	title := m.styles.Danger.Render("═══ ADMIN CONSOLE ═══") + "\n"
+	title += m.styles.Muted.Render("(debug commands - use at your own risk)") + "\n\n"
+
+	var menu string
+	for i, opt := range m.adminOptions {
+		cursor := "  "
+		style := m.styles.MenuItem
+		if i == m.adminCursor {
+			cursor = "> "
+			style = m.styles.MenuSelected
+		}
+		menu += style.Render(cursor+opt) + "\n"
+	}
+
+	// Show current status
+	status := "\n" + m.styles.Muted.Render("─── Status ───") + "\n"
+	if m.godMode {
+		status += m.styles.Success.Render("  God Mode: ENABLED") + "\n"
+	} else {
+		status += m.styles.Normal.Render("  God Mode: disabled") + "\n"
+	}
+	if m.player != nil {
+		status += fmt.Sprintf("  RAM: %d/%d  Level: %d\n", m.player.Stats.RAM, m.player.MaxStats.MaxRAM, m.player.Level)
+	}
+	if m.engine != nil {
+		status += fmt.Sprintf("  Depth: %d  Floor: %s\n", m.engine.CurrentDepth(), m.engine.CurrentFloorType().FloorName())
+	}
+
+	footer := m.styles.Muted.Render("\n[↑/↓] Navigate  [Enter] Execute  [Esc/`] Close")
+
+	return m.styles.Container.Render(title + menu + status + footer)
 }
