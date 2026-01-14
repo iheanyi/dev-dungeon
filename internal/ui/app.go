@@ -1939,7 +1939,7 @@ func (m *Model) renderLog(width int) string {
 		content = "Ready."
 	}
 
-	footer := m.styles.Muted.Render("[WASD/hjkl] Move  [</>] Stairs  [I] Inv  [M] Log  [P] Pause  [?] Help")
+	footer := m.styles.Muted.Render("[WASD/hjkl] Move  [</>] Stairs  [I] Inv  [$] Shop  [M] Log  [P] Pause  [?] Help")
 
 	// Add 2 for border padding
 	logWidth := width + 2
@@ -2362,6 +2362,8 @@ func (m *Model) viewHelp() string {
 
 	actions := m.styles.Highlight.Render("Actions:") + "\n"
 	actions += "  I                         - Open inventory\n"
+	actions += "  $                         - Open shop (ls -la)\n"
+	actions += "  M                         - Message history\n"
 	actions += "  P or Esc                  - Pause menu\n"
 	actions += "  Q                         - Save & quit to menu\n"
 	actions += "  ?                         - This help screen\n\n"
@@ -2375,6 +2377,7 @@ func (m *Model) viewHelp() string {
 	inventory := m.styles.Highlight.Render("Inventory:") + "\n"
 	inventory += "  Enter / Space            - Use or equip item\n"
 	inventory += "  E                        - Equip item\n"
+	inventory += "  U                        - Unequip item\n"
 	inventory += "  D                        - Drop item\n\n"
 
 	stats := m.styles.Highlight.Render("Stats:") + "\n"
