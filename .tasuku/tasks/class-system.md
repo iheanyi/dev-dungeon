@@ -1,8 +1,8 @@
 ---
-status: ready
+status: done
 priority: 3
 created_at: 2026-01-14T00:36:11.326932Z
-updated_at: 2026-01-14T03:14:14.175856Z
+updated_at: 2026-01-14T19:43:06.911232Z
 ---
 
 # Implement unlockables system - class unlock checks, unlock shop UI, permanent...

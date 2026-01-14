@@ -13,10 +13,10 @@
       "updated_at": "2026-01-14T03:14:28.106525Z"
     },
     "class-system": {
-      "status": "ready",
+      "status": "done",
       "priority": 3,
       "file": "tasks/class-system.md",
-      "updated_at": "2026-01-14T03:14:14.175856Z"
+      "updated_at": "2026-01-14T19:43:06.911232Z"
     },
     "combat-system": {
       "status": "done",
@@ -63,7 +63,7 @@
         "post-v1"
       ],
       "file": "tasks/multiplayer-wish.md",
-      "updated_at": "2026-01-14T01:46:06.512388Z"
+      "updated_at": "2026-01-14T19:43:21.244381Z"
     },
     "player-entity": {
       "status": "done",
@@ -108,5 +108,5 @@
   "archived_count": 0,
   "learnings_count": 4,
   "decisions_count": 5,
-  "updated_at": "2026-01-14T18:15:02.399244Z"
+  "updated_at": "2026-01-14T19:43:21.244922Z"
 }
