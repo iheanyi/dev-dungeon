@@ -511,6 +511,25 @@ func TestDescendWithoutStairs(t *testing.T) {
 	_ = startPos
 }
 
+func TestCannotDescendPastBossFloor(t *testing.T) {
+	cfg := config.DefaultConfig()
+	engine := NewEngine(cfg, 12345)
+
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("StartNewGame failed: %v", err)
+	}
+
+	// Manually set depth to boss floor
+	engine.world.CurrentDepth = 8
+
+	// Try to descend past the final floor
+	err := engine.DescendStairs()
+
+	if err == nil {
+		t.Error("should not be able to descend past the boss floor (depth 8)")
+	}
+}
+
 func TestStateManagement(t *testing.T) {
 	cfg := config.DefaultConfig()
 	engine := NewEngine(cfg, 12345)

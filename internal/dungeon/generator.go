@@ -164,6 +164,11 @@ func (g *Generator) placeStairs(floor *types.Floor) {
 	floor.PlayerStart = floor.StairsUp
 	floor.SetTile(floor.StairsUp, types.NewTile(types.TileStairsUp))
 
+	// No stairs down on boss floor (/dev/null) - it's the final floor
+	if floor.Type == types.FloorDevNull {
+		return
+	}
+
 	// Stairs down in last room (exit)
 	lastRoom := floor.Rooms[len(floor.Rooms)-1]
 	floor.StairsDown = lastRoom.Center()

@@ -527,6 +527,11 @@ func (e *Engine) DescendStairs() error {
 		return errors.New("no active game")
 	}
 
+	// Can't descend past the final floor (/dev/null at depth 8)
+	if e.world.CurrentDepth >= 8 {
+		return errors.New("you've reached the deepest level - defeat the Kernel Panic to escape")
+	}
+
 	playerPos := e.player.Position()
 	tile := e.world.CurrentFloor.GetTile(playerPos)
 
