@@ -26,6 +26,7 @@ const (
 	ViewGameOver
 	ViewVictory
 	ViewAdmin
+	ViewHelp
 )
 
 // Model is the main Bubble Tea model for the game.
@@ -259,6 +260,8 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateGameOver(msg)
 	case ViewAdmin:
 		return m.updateAdmin(msg)
+	case ViewHelp:
+		return m.updateHelp(msg)
 	}
 
 	return m, nil
@@ -438,6 +441,9 @@ func (m *Model) updateGame(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.statusMsg = "Permission denied: requires root (UID 0). Try sudo class or find a root shard."
 		}
+	case "?":
+		m.prevView = ViewGame
+		m.currentView = ViewHelp
 	}
 	return m, nil
 }
@@ -906,6 +912,15 @@ func (m *Model) updateGameOver(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateHelp handles help screen input.
+func (m *Model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "?", "q", "enter", " ":
+		m.currentView = m.prevView
+	}
+	return m, nil
+}
+
 // updateAdmin handles admin console input.
 func (m *Model) updateAdmin(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -1031,6 +1046,8 @@ func (m *Model) View() string {
 		return m.viewVictory()
 	case ViewAdmin:
 		return m.viewAdmin()
+	case ViewHelp:
+		return m.viewHelp()
 	default:
 		return "Unknown view"
 	}
@@ -1659,4 +1676,48 @@ func (m *Model) viewAdmin() string {
 	footer := m.styles.Muted.Render("\n[↑/↓] Navigate  [Enter] Execute  [Esc/`] Close")
 
 	return m.styles.Container.Render(title + menu + status + footer)
+}
+
+// viewHelp renders the help/keybindings screen.
+func (m *Model) viewHelp() string {
+	title := m.styles.Title.Render("═══ HELP / KEYBINDINGS ═══") + "\n\n"
+
+	movement := m.styles.Highlight.Render("Movement:") + "\n"
+	movement += "  WASD / Arrow Keys / hjkl  - Move\n"
+	movement += "  > or .                    - Descend stairs\n"
+	movement += "  < or ,                    - Ascend stairs\n\n"
+
+	actions := m.styles.Highlight.Render("Actions:") + "\n"
+	actions += "  I                         - Open inventory\n"
+	actions += "  P or Esc                  - Pause menu\n"
+	actions += "  Q                         - Save & quit to menu\n"
+	actions += "  ?                         - This help screen\n\n"
+
+	combat := m.styles.Highlight.Render("Combat:") + "\n"
+	combat += "  1 or Enter                - Attack (kill -TERM)\n"
+	combat += "  2                         - Hack (use skill)\n"
+	combat += "  3                         - Use item\n"
+	combat += "  4                         - Attempt to flee\n\n"
+
+	inventory := m.styles.Highlight.Render("Inventory:") + "\n"
+	inventory += "  Enter / Space            - Use or equip item\n"
+	inventory += "  E                        - Equip item\n"
+	inventory += "  D                        - Drop item\n\n"
+
+	stats := m.styles.Highlight.Render("Stats:") + "\n"
+	stats += "  RAM   - Health (memory). Reach 0 = OOM killed\n"
+	stats += "  CPU   - Attack power\n"
+	stats += "  FD    - File descriptors for skills\n"
+	stats += "  NICE  - Speed (lower = faster, more crits)\n"
+	stats += "  UID   - Access level (0 = root = admin access)\n\n"
+
+	tips := m.styles.Muted.Render("Tips:") + "\n"
+	tips += "  - Walk into enemies to start combat\n"
+	tips += "  - Items are auto-picked up when walking over them\n"
+	tips += "  - sudo class starts with UID 0 (root access)\n"
+	tips += "  - Find root_shard items to lower your UID\n"
+
+	footer := m.styles.Muted.Render("\n[Esc/?/Enter] Close")
+
+	return m.styles.Container.Render(title + movement + actions + combat + inventory + stats + tips + footer)
 }
