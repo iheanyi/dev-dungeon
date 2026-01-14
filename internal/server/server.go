@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -23,6 +24,91 @@ import (
 	"github.com/iheanyi/devdungeon/internal/db"
 )
 
+// rateLimiter tracks authentication attempts per IP.
+type rateLimiter struct {
+	attempts map[string]*attemptInfo
+	mu       sync.RWMutex
+}
+
+type attemptInfo struct {
+	count     int
+	firstTime time.Time
+	blocked   bool
+}
+
+// Rate limit settings
+const (
+	maxAuthAttempts   = 5           // Max attempts per window
+	rateLimitWindow   = time.Minute // Window duration
+	blockDuration     = 5 * time.Minute
+)
+
+func newRateLimiter() *rateLimiter {
+	rl := &rateLimiter{
+		attempts: make(map[string]*attemptInfo),
+	}
+	// Start cleanup goroutine
+	go rl.cleanup()
+	return rl
+}
+
+func (rl *rateLimiter) cleanup() {
+	ticker := time.NewTicker(time.Minute)
+	for range ticker.C {
+		rl.mu.Lock()
+		now := time.Now()
+		for ip, info := range rl.attempts {
+			// Remove entries older than block duration
+			if now.Sub(info.firstTime) > blockDuration {
+				delete(rl.attempts, ip)
+			}
+		}
+		rl.mu.Unlock()
+	}
+}
+
+func (rl *rateLimiter) isAllowed(ip string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	info, exists := rl.attempts[ip]
+	now := time.Now()
+
+	if !exists {
+		rl.attempts[ip] = &attemptInfo{count: 1, firstTime: now}
+		return true
+	}
+
+	// Check if blocked
+	if info.blocked {
+		if now.Sub(info.firstTime) > blockDuration {
+			// Unblock after duration
+			info.blocked = false
+			info.count = 1
+			info.firstTime = now
+			return true
+		}
+		return false
+	}
+
+	// Check if window expired
+	if now.Sub(info.firstTime) > rateLimitWindow {
+		info.count = 1
+		info.firstTime = now
+		return true
+	}
+
+	// Increment counter
+	info.count++
+	if info.count > maxAuthAttempts {
+		info.blocked = true
+		log.Warn("Rate limiting IP", "ip", ip, "attempts", info.count)
+		return false
+	}
+
+	return true
+}
+
 // Config holds SSH server configuration.
 type Config struct {
 	Host        string
@@ -33,10 +119,11 @@ type Config struct {
 
 // Server is the SSH game server.
 type Server struct {
-	config   Config
-	db       *db.Client
-	sshSrv   *ssh.Server
-	sessions *SessionManager
+	config      Config
+	db          *db.Client
+	sshSrv      *ssh.Server
+	sessions    *SessionManager
+	rateLimiter *rateLimiter
 }
 
 // New creates a new SSH game server.
@@ -50,9 +137,10 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	s := &Server{
-		config:   cfg,
-		db:       dbClient,
-		sessions: NewSessionManager(),
+		config:      cfg,
+		db:          dbClient,
+		sessions:    NewSessionManager(),
+		rateLimiter: newRateLimiter(),
 	}
 
 	// Create SSH server with Wish
@@ -111,13 +199,35 @@ func (s *Server) Run() error {
 
 // publicKeyAuth handles SSH public key authentication.
 func (s *Server) publicKeyAuth(ctx ssh.Context, key ssh.PublicKey) bool {
+	// Get client IP for rate limiting
+	remoteAddr := ctx.RemoteAddr().String()
+	ip, _, _ := net.SplitHostPort(remoteAddr)
+	if ip == "" {
+		ip = remoteAddr
+	}
+
+	// Check rate limit
+	if !s.rateLimiter.isAllowed(ip) {
+		log.Warn("Rate limited", "ip", ip)
+		return false
+	}
+
 	fingerprint := gossh.FingerprintSHA256(key)
 	username := ctx.User()
 
-	log.Debug("Auth attempt", "user", username, "fingerprint", fingerprint)
+	log.Debug("Auth attempt", "user", username, "fingerprint", fingerprint, "ip", ip, "key_type", key.Type())
 
-	// Look up user by fingerprint
-	user, err := s.db.GetUserByFingerprint(context.Background(), fingerprint)
+	// Validate key type - only allow secure algorithms
+	if !isKeyTypeSupported(key) {
+		log.Warn("Unsupported key type rejected", "type", key.Type(), "fingerprint", fingerprint)
+		return false
+	}
+
+	// Look up user by fingerprint with timeout
+	dbCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	user, err := s.db.GetUserByFingerprint(dbCtx, fingerprint)
 	if err != nil {
 		log.Error("Database error during auth", "error", err)
 		return false
@@ -128,12 +238,12 @@ func (s *Server) publicKeyAuth(ctx ssh.Context, key ssh.PublicKey) bool {
 		// Store fingerprint in context for registration middleware
 		ctx.SetValue("fingerprint", fingerprint)
 		ctx.SetValue("needs_registration", true)
-		log.Info("New key, will prompt for registration", "fingerprint", fingerprint)
+		log.Info("New key, will prompt for registration", "fingerprint", fingerprint, "ip", ip)
 		return true
 	}
 
 	if user.IsBanned {
-		log.Warn("Banned user attempted connection", "user", user.Username, "fingerprint", fingerprint)
+		log.Warn("Banned user attempted connection", "user", user.Username, "fingerprint", fingerprint, "ip", ip)
 		return false
 	}
 
@@ -141,13 +251,31 @@ func (s *Server) publicKeyAuth(ctx ssh.Context, key ssh.PublicKey) bool {
 	ctx.SetValue("user", user)
 	ctx.SetValue("fingerprint", fingerprint)
 
-	// Update last login
-	if err := s.db.UpdateLastLogin(context.Background(), user.ID); err != nil {
+	// Update last login with timeout
+	updateCtx, updateCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer updateCancel()
+	if err := s.db.UpdateLastLogin(updateCtx, user.ID); err != nil {
 		log.Error("Failed to update last login", "error", err)
 	}
 
-	log.Info("User authenticated", "user", user.Username)
+	log.Info("User authenticated", "user", user.Username, "ip", ip)
 	return true
+}
+
+// Supported SSH key types (secure algorithms only).
+var supportedKeyTypes = map[string]bool{
+	gossh.KeyAlgoED25519:    true, // Ed25519 - recommended
+	gossh.KeyAlgoECDSA256:   true, // ECDSA P-256
+	gossh.KeyAlgoECDSA384:   true, // ECDSA P-384
+	gossh.KeyAlgoECDSA521:   true, // ECDSA P-521
+	gossh.KeyAlgoRSA:        true, // RSA (>= 2048 bits enforced by library)
+	gossh.KeyAlgoSKED25519:  true, // Security Key Ed25519
+	gossh.KeyAlgoSKECDSA256: true, // Security Key ECDSA
+}
+
+// isKeyTypeSupported checks if the key type is one of the supported algorithms.
+func isKeyTypeSupported(key ssh.PublicKey) bool {
+	return supportedKeyTypes[key.Type()]
 }
 
 // gameMiddleware returns the Bubble Tea middleware for the game.
