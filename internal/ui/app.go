@@ -645,6 +645,11 @@ func (m *Model) continueGame() {
 		m.engine.SetGenerator(dungeon.NewGenerator(dungeonCfg))
 	}
 
+	// Set unlocked items for loot pool (for newly generated floors when descending)
+	if m.metaProgress != nil {
+		m.engine.SetUnlockedItems(m.metaProgress.UnlockedItems)
+	}
+
 	// Try to load the latest save
 	if err := m.engine.LoadLatestSave(); err != nil {
 		m.statusMsg = err.Error()
@@ -676,6 +681,9 @@ func (m *Model) startNewGame(playerClass entity.PlayerClass) {
 		bonuses.CPU = m.metaProgress.PermanentBonuses.CPU
 		bonuses.FD = m.metaProgress.PermanentBonuses.MEM   // MEM maps to FD
 		bonuses.NICE = m.metaProgress.PermanentBonuses.NICE
+
+		// Set unlocked items for loot pool (must be set before StartNewGame generates floors)
+		m.engine.SetUnlockedItems(m.metaProgress.UnlockedItems)
 	}
 
 	// Start a new game with the selected class and bonuses
@@ -2825,11 +2833,11 @@ func (m *Model) getClassUnlockPrice(class entity.PlayerClass) int {
 	case entity.ClassCron:
 		return 50
 	case entity.ClassBash:
-		return 75
-	case entity.ClassVim:
 		return 100
+	case entity.ClassVim:
+		return 200
 	case entity.ClassSudo:
-		return 150
+		return 500
 	default:
 		return 0
 	}
@@ -3023,14 +3031,14 @@ func (m *Model) getUnlockableBonuses() []UnlockableBonus {
 	// Calculate current levels from meta progress
 	ramLevel := m.metaProgress.PermanentBonuses.PID / 5
 	cpuLevel := m.metaProgress.PermanentBonuses.CPU / 2
-	memLevel := m.metaProgress.PermanentBonuses.MEM / 5
+	memLevel := m.metaProgress.PermanentBonuses.MEM / 2
 	niceLevel := m.metaProgress.PermanentBonuses.NICE / 1
 
 	return []UnlockableBonus{
 		{ID: "ram", Name: "+5 Base RAM", Description: "Increases starting health", StatType: "RAM", BonusAmount: 5, CurrentLevel: ramLevel, MaxLevel: 10, BasePrice: 25},
-		{ID: "cpu", Name: "+2 Base CPU", Description: "Increases starting attack power", StatType: "CPU", BonusAmount: 2, CurrentLevel: cpuLevel, MaxLevel: 10, BasePrice: 30},
-		{ID: "mem", Name: "+5 Base FD", Description: "Increases starting ability resource", StatType: "MEM", BonusAmount: 5, CurrentLevel: memLevel, MaxLevel: 10, BasePrice: 25},
-		{ID: "nice", Name: "-1 Base NICE", Description: "Faster starting speed", StatType: "NICE", BonusAmount: 1, CurrentLevel: niceLevel, MaxLevel: 5, BasePrice: 40},
+		{ID: "cpu", Name: "+2 Base CPU", Description: "Increases starting attack power", StatType: "CPU", BonusAmount: 2, CurrentLevel: cpuLevel, MaxLevel: 10, BasePrice: 50},
+		{ID: "mem", Name: "+2 Base FD", Description: "Increases starting ability resource", StatType: "MEM", BonusAmount: 2, CurrentLevel: memLevel, MaxLevel: 10, BasePrice: 30},
+		{ID: "nice", Name: "-1 Base NICE", Description: "Faster starting speed", StatType: "NICE", BonusAmount: 1, CurrentLevel: niceLevel, MaxLevel: 5, BasePrice: 75},
 	}
 }
 

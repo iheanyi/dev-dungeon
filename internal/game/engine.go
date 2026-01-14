@@ -43,16 +43,17 @@ func NewRunStats() *RunStats {
 }
 
 type Engine struct {
-	config      *config.Config
-	player      *entity.Player
-	world       *GameWorld
-	generator   DungeonGenerator
-	state       types.GameState
-	rng         *rand.Rand
-	masterSeed  int64
-	messages    []string // Recent game messages
-	saveManager *save.Manager
-	stats       *RunStats // Current run statistics
+	config        *config.Config
+	player        *entity.Player
+	world         *GameWorld
+	generator     DungeonGenerator
+	state         types.GameState
+	rng           *rand.Rand
+	masterSeed    int64
+	messages      []string // Recent game messages
+	saveManager   *save.Manager
+	stats         *RunStats  // Current run statistics
+	unlockedItems []string   // Items unlocked via meta-progression (added to loot pool)
 }
 
 // NewEngine creates a new game engine with the given configuration and seed.
@@ -89,6 +90,12 @@ func NewEngine(cfg *config.Config, seed int64) *Engine {
 // SetGenerator sets the dungeon generator for the engine.
 func (e *Engine) SetGenerator(gen DungeonGenerator) {
 	e.generator = gen
+}
+
+// SetUnlockedItems sets the list of items unlocked via meta-progression.
+// These items are added to the loot pool for item generation.
+func (e *Engine) SetUnlockedItems(items []string) {
+	e.unlockedItems = items
 }
 
 // StartNewGame initializes a new game with the given player class.
@@ -379,6 +386,25 @@ func (e *Engine) selectItemTemplate(depth int, rng *rand.Rand) string {
 	uncommon := []string{"grep_scroll", "service_token", "basic_script", "basic_shell", "pipe_wrench", "sed_saber", "awk_axe", "firewall", "sandbox", "ssh_key", "cron_tab", "config_file", "realloc", "nice_boost", "cpu_boost"}
 	rare := []string{"sudo_potion", "kill_9", "chmod_x", "core_dump", "vim_blade", "selinux_shield", "container", "gpg_ring", "tmux_session", "mmap", "segfault_bomb", "cron_claw"}
 	legendary := []string{"fork_bomb", "rm_rf", "sudo_armor"}
+
+	// Add unlocked items to their appropriate rarity pools
+	// Unlocked items are categorized by their template rarity
+	for _, itemID := range e.unlockedItems {
+		template, ok := entity.ItemTemplates[itemID]
+		if !ok {
+			continue
+		}
+		switch template.Rarity {
+		case entity.RarityCommon:
+			common = append(common, itemID)
+		case entity.RarityUncommon:
+			uncommon = append(uncommon, itemID)
+		case entity.RarityRare:
+			rare = append(rare, itemID)
+		case entity.RarityEpic, entity.RarityLegendary:
+			legendary = append(legendary, itemID)
+		}
+	}
 
 	roll := rng.Float64()
 	var pool []string

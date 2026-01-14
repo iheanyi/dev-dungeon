@@ -638,14 +638,14 @@ func TestClassUnlockPrices(t *testing.T) {
 	if m.getClassUnlockPrice(entity.ClassCron) != 50 {
 		t.Errorf("cron should cost 50, got %d", m.getClassUnlockPrice(entity.ClassCron))
 	}
-	if m.getClassUnlockPrice(entity.ClassBash) != 75 {
-		t.Errorf("bash should cost 75, got %d", m.getClassUnlockPrice(entity.ClassBash))
+	if m.getClassUnlockPrice(entity.ClassBash) != 100 {
+		t.Errorf("bash should cost 100, got %d", m.getClassUnlockPrice(entity.ClassBash))
 	}
-	if m.getClassUnlockPrice(entity.ClassVim) != 100 {
-		t.Errorf("vim should cost 100, got %d", m.getClassUnlockPrice(entity.ClassVim))
+	if m.getClassUnlockPrice(entity.ClassVim) != 200 {
+		t.Errorf("vim should cost 200, got %d", m.getClassUnlockPrice(entity.ClassVim))
 	}
-	if m.getClassUnlockPrice(entity.ClassSudo) != 150 {
-		t.Errorf("sudo should cost 150, got %d", m.getClassUnlockPrice(entity.ClassSudo))
+	if m.getClassUnlockPrice(entity.ClassSudo) != 500 {
+		t.Errorf("sudo should cost 500, got %d", m.getClassUnlockPrice(entity.ClassSudo))
 	}
 }
 
