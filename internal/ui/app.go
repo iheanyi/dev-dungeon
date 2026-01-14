@@ -18,6 +18,7 @@ type ViewType int
 
 const (
 	ViewMainMenu ViewType = iota
+	ViewClassSelect
 	ViewGame
 	ViewCombat
 	ViewInventory
@@ -51,6 +52,10 @@ type Model struct {
 
 	// Inventory state
 	invCursor    int
+
+	// Class selection state
+	classCursor  int
+	classOptions []entity.PlayerClass
 
 	// Messages
 	statusMsg    string
@@ -176,8 +181,16 @@ func New(cfg *config.Config) *Model {
 			"Quit",
 		},
 		menuCursor: 0,
-		combatLog:  make([]string, 0),
-		styles:     NewStyles(),
+		classOptions: []entity.PlayerClass{
+			entity.ClassInit,
+			entity.ClassCron,
+			entity.ClassBash,
+			entity.ClassVim,
+			entity.ClassSudo,
+		},
+		classCursor: 0,
+		combatLog:   make([]string, 0),
+		styles:      NewStyles(),
 	}
 }
 
@@ -212,6 +225,8 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.currentView {
 	case ViewMainMenu:
 		return m.updateMainMenu(msg)
+	case ViewClassSelect:
+		return m.updateClassSelect(msg)
 	case ViewGame:
 		return m.updateGame(msg)
 	case ViewCombat:
@@ -259,7 +274,8 @@ func (m *Model) updateMainMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) selectMenuItem() (tea.Model, tea.Cmd) {
 	switch m.menuOptions[m.menuCursor] {
 	case "New Game":
-		m.startNewGame()
+		m.classCursor = 0
+		m.currentView = ViewClassSelect
 		return m, nil
 	case "Continue":
 		m.continueGame()
@@ -271,6 +287,28 @@ func (m *Model) selectMenuItem() (tea.Model, tea.Cmd) {
 	case "Quit":
 		m.shutdown()
 		return m, tea.Quit
+	}
+	return m, nil
+}
+
+// updateClassSelect handles class selection input.
+func (m *Model) updateClassSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k", "w":
+		m.classCursor--
+		if m.classCursor < 0 {
+			m.classCursor = len(m.classOptions) - 1
+		}
+	case "down", "j", "s":
+		m.classCursor++
+		if m.classCursor >= len(m.classOptions) {
+			m.classCursor = 0
+		}
+	case "enter", " ":
+		m.startNewGame(m.classOptions[m.classCursor])
+		return m, nil
+	case "esc", "q":
+		m.currentView = ViewMainMenu
 	}
 	return m, nil
 }
@@ -301,8 +339,8 @@ func (m *Model) continueGame() {
 	m.statusMsg = fmt.Sprintf("Welcome back to %s.", m.engine.CurrentFloorType().FloorName())
 }
 
-// startNewGame initializes a new game.
-func (m *Model) startNewGame() {
+// startNewGame initializes a new game with the selected class.
+func (m *Model) startNewGame(playerClass entity.PlayerClass) {
 	// Create the game engine with seed 0 (random)
 	m.engine = game.NewEngine(m.config, 0)
 
@@ -312,10 +350,10 @@ func (m *Model) startNewGame() {
 	dungeonCfg.Height = m.config.Display.MapHeight
 	m.engine.SetGenerator(dungeon.NewGenerator(dungeonCfg))
 
-	// Start a new game with the configured class
-	playerClass := entity.PlayerClass(m.config.Game.StartingClass)
+	// Start a new game with the selected class
 	if err := m.engine.StartNewGame(playerClass); err != nil {
 		m.statusMsg = fmt.Sprintf("Failed to start game: %v", err)
+		m.currentView = ViewMainMenu
 		return
 	}
 
@@ -323,7 +361,7 @@ func (m *Model) startNewGame() {
 	m.player = m.engine.Player()
 	m.currentView = ViewGame
 	m.gameState = types.StateExploring
-	m.statusMsg = fmt.Sprintf("Welcome to %s. Navigate the filesystem. Survive.", m.engine.CurrentFloorType().FloorName())
+	m.statusMsg = fmt.Sprintf("Spawned as %s. Welcome to %s.", playerClass, m.engine.CurrentFloorType().FloorName())
 }
 
 // updateGame handles game view input.
@@ -716,6 +754,8 @@ func (m *Model) View() string {
 	switch m.currentView {
 	case ViewMainMenu:
 		return m.viewMainMenu()
+	case ViewClassSelect:
+		return m.viewClassSelect()
 	case ViewGame:
 		return m.viewGame()
 	case ViewCombat:
@@ -731,6 +771,59 @@ func (m *Model) View() string {
 	default:
 		return "Unknown view"
 	}
+}
+
+// getClassDescription returns a description and stats preview for a class.
+func (m *Model) getClassDescription(class entity.PlayerClass) (string, string) {
+	switch class {
+	case entity.ClassInit:
+		return "The first process. Balanced starter.",
+			"RAM: 100  CPU: 10  FD: 16  NICE: 10\nSkill: fork() - spawn child process"
+	case entity.ClassCron:
+		return "Scheduler daemon. Fast and precise.",
+			"RAM: 100  CPU: 8   FD: 16  NICE: 5 (fast!)\nSkill: crontab - schedule 2x damage"
+	case entity.ClassBash:
+		return "Powerful shell. High attack output.",
+			"RAM: 100  CPU: 15  FD: 12  NICE: 10\nSkill: pipe | - chain attacks"
+	case entity.ClassVim:
+		return "Complex editor. Many abilities.",
+			"RAM: 100  CPU: 8   FD: 24  NICE: 10\nSkill: :normal - macro replay attack"
+	case entity.ClassSudo:
+		return "Root access. High risk, high power.",
+			"RAM: 80   CPU: 10  FD: 16  UID: 0 (root!)\nSkill: sudo !! - bypass all defenses"
+	default:
+		return "Unknown class.", ""
+	}
+}
+
+// viewClassSelect renders the class selection screen.
+func (m *Model) viewClassSelect() string {
+	title := m.styles.Title.Render(`
+    ╔═══════════════════════════════════════════╗
+    ║           SELECT YOUR PROCESS             ║
+    ╚═══════════════════════════════════════════╝
+	`)
+
+	var menu string
+	for i, class := range m.classOptions {
+		cursor := "  "
+		style := m.styles.MenuItem
+		if i == m.classCursor {
+			cursor = "> "
+			style = m.styles.MenuSelected
+		}
+		menu += style.Render(fmt.Sprintf("%s%s", cursor, class)) + "\n"
+	}
+
+	// Show description of selected class
+	desc, stats := m.getClassDescription(m.classOptions[m.classCursor])
+	details := "\n" + m.styles.Muted.Render("─── Class Info ───") + "\n"
+	details += m.styles.Normal.Render(desc) + "\n\n"
+	details += m.styles.Highlight.Render(stats) + "\n"
+
+	footer := m.styles.Muted.Render("\n[↑/↓] Navigate  [Enter] Select  [Esc] Back")
+
+	return m.styles.Container.Render(title + "\n" + menu + details + footer)
 }
 
 // viewMainMenu renders the main menu.
@@ -1057,12 +1150,12 @@ func (m *Model) renderLog(width int) string {
 
 // viewCombat renders the combat view.
 func (m *Model) viewCombat() string {
-	title := m.styles.Danger.Render("═══ COMBAT ═══\n")
+	title := m.styles.Danger.Render("═══ COMBAT ═══") + "\n\n"
 
 	// Show player stats
 	playerInfo := ""
 	if m.player != nil {
-		playerInfo = fmt.Sprintf("%s  %s\n",
+		playerInfo = fmt.Sprintf("%s %s\n",
 			m.styles.Player.Render("@"),
 			m.styles.Title.Render(string(m.player.Class)))
 		playerInfo += fmt.Sprintf("RAM: %s/%d  FD: %d/%d\n\n",
@@ -1076,7 +1169,7 @@ func (m *Model) viewCombat() string {
 	var enemyInfo string
 	if m.combat != nil {
 		for _, enemy := range m.combat.GetAliveEnemies() {
-			enemyInfo += fmt.Sprintf("%s  %s  RAM: %d/%d  CPU: %d\n",
+			enemyInfo += fmt.Sprintf("  %s %-16s RAM: %d/%d  CPU: %d\n",
 				m.styles.Enemy.Render(string(enemy.Glyph())),
 				enemy.Name(),
 				enemy.Stats.RAM,
@@ -1084,7 +1177,7 @@ func (m *Model) viewCombat() string {
 				enemy.Stats.CPU)
 		}
 		if enemyInfo != "" {
-			enemyInfo = m.styles.Muted.Render("─── Enemies ───\n") + enemyInfo + "\n"
+			enemyInfo = m.styles.Muted.Render("─── Enemies ───") + "\n" + enemyInfo + "\n"
 		}
 	}
 
@@ -1096,12 +1189,12 @@ func (m *Model) viewCombat() string {
 		"[4] Flee",
 	}
 	var menu string
-	menu = m.styles.Muted.Render("─── Actions ───\n")
+	menu = m.styles.Muted.Render("─── Actions ───") + "\n"
 	for i, opt := range options {
 		if i == m.combatCursor {
-			menu += m.styles.MenuSelected.Render("> "+opt) + "\n"
+			menu += m.styles.MenuSelected.Render("  > "+opt) + "\n"
 		} else {
-			menu += m.styles.MenuItem.Render("  "+opt) + "\n"
+			menu += m.styles.MenuItem.Render("    "+opt) + "\n"
 		}
 	}
 
