@@ -71,7 +71,7 @@
 			<div class="mt-6 bg-terminal-bg p-4">
 				<p class="text-terminal-gray mb-2"># Join today's run:</p>
 				<code class="text-terminal-green">
-					ssh -p 2222 player@devdungeon.io --daily
+					ssh -p 2222 player@dev-dungeon.com --daily
 				</code>
 			</div>
 		{/if}

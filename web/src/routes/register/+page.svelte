@@ -128,7 +128,7 @@
 			<div>
 				<p class="text-terminal-green-bright mb-1">After registering, connect:</p>
 				<code class="text-terminal-green bg-terminal-bg px-2 py-1 block">
-					ssh -p 2222 {username || 'username'}@devdungeon.io
+					ssh -p 2222 {username || 'username'}@dev-dungeon.com
 				</code>
 			</div>
 		</div>

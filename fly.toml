@@ -1,7 +1,18 @@
 # Fly.io configuration for /dev/dungeon
 # See https://fly.io/docs/reference/configuration/ for more information
+#
+# Custom Domain Setup (dev-dungeon.com):
+#   1. fly certs add dev-dungeon.com
+#   2. Add DNS records at your registrar:
+#      - A record: @ -> <fly-ipv4> (from `fly ips list`)
+#      - AAAA record: @ -> <fly-ipv6>
+#      - CNAME record: www -> dev-dungeon.fly.dev
+#   3. For SSH on custom domain, add to DNS:
+#      - A record: ssh -> <fly-ipv4>
+#      - AAAA record: ssh -> <fly-ipv6>
+#      OR use the root domain directly
 
-app = "devdungeon"
+app = "dev-dungeon"
 primary_region = "ord"
 
 [build]

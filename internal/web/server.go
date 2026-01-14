@@ -300,7 +300,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	s.jsonResponse(w, http.StatusCreated, map[string]interface{}{
 		"username": user.Username,
 		"nanoid":   user.NanoID,
-		"message":  "Account created! Connect with: ssh -p 2222 " + user.Username + "@devdungeon.io",
+		"message":  "Account created! Connect with: ssh " + user.Username + "@dev-dungeon.com",
 	})
 }
 

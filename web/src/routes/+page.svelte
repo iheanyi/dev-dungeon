@@ -38,7 +38,7 @@
 
 <!-- Quick Connect -->
 <div class="terminal-box p-6 mb-8">
-	<h2 class="text-terminal-amber text-lg mb-4">$ ssh player@devdungeon.io</h2>
+	<h2 class="text-terminal-amber text-lg mb-4">$ ssh player@dev-dungeon.com</h2>
 	<p class="text-terminal-green-dim mb-4">
 		Connect via SSH to play. Your public key is your identity.
 	</p>
@@ -46,7 +46,7 @@
 		<p class="text-terminal-gray"># Generate a key (if needed)</p>
 		<p class="text-terminal-green">ssh-keygen -t ed25519 -f ~/.ssh/id_devdungeon</p>
 		<p class="text-terminal-gray mt-2"># Connect to play</p>
-		<p class="text-terminal-green">ssh -p 2222 player@devdungeon.io</p>
+		<p class="text-terminal-green">ssh -p 2222 player@dev-dungeon.com</p>
 	</div>
 </div>
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Transform /dev/dungeon into an SSH-accessible multiplayer roguelike where players connect via `ssh username@devdungeon.io` and their identity is tied to their SSH public key.
+Transform /dev/dungeon into an SSH-accessible multiplayer roguelike where players connect via `ssh username@dev-dungeon.com` and their identity is tied to their SSH public key.
 
 ---
 
@@ -50,7 +50,7 @@ SHA256:abc123... -> "iheanyi" (username)
 ```
 Player Terminal
     |
-    | ssh player@devdungeon.io
+    | ssh player@dev-dungeon.com
     v
 ┌─────────────────────────────────────────────┐
 │         Wish SSH Server (Go)                │
@@ -203,7 +203,7 @@ CREATE TABLE daily_seeds (
 
 ```
 1. SSH Handshake
-   └─ Client: ssh iheanyi@devdungeon.io
+   └─ Client: ssh iheanyi@dev-dungeon.com
    └─ Server: Present host key
    └─ Client: Accept/verify host key
 
@@ -211,7 +211,7 @@ CREATE TABLE daily_seeds (
    └─ Client: Present public key
    └─ Server: Query DB for fingerprint
    └─ If found: Auth success, get user_id
-   └─ If not: Reject with "Register at devdungeon.io/register"
+   └─ If not: Reject with "Register at dev-dungeon.com/register"
 
 3. Session Setup
    └─ Allocate PTY for terminal
@@ -234,7 +234,7 @@ CREATE TABLE daily_seeds (
 
 ## Registration Flow (Web)
 
-Simple web portal at `devdungeon.io`:
+Simple web portal at `dev-dungeon.com`:
 
 1. User visits `/register`
 2. Enters desired username
@@ -244,7 +244,7 @@ Simple web portal at `devdungeon.io`:
    - Key is valid Ed25519/RSA format
    - Fingerprint not already registered
 5. Creates user record
-6. Shows: "You can now connect with `ssh username@devdungeon.io`"
+6. Shows: "You can now connect with `ssh username@dev-dungeon.com`"
 
 ---
 

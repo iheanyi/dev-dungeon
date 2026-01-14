@@ -207,7 +207,7 @@ Earn **exit codes** based on how far you descend. Spend them on:
 Connect via SSH and play from anywhere:
 
 ```bash
-ssh player@devdungeon.io
+ssh player@dev-dungeon.com
 ```
 
 Your SSH key is your identity. First connection prompts for username registration. Progress syncs across devices.
@@ -287,7 +287,7 @@ brew install flyctl
 
 # Login and create app
 fly auth login
-fly apps create devdungeon
+fly apps create dev-dungeon
 
 # Create PostgreSQL database
 fly postgres create --name devdungeon-db
@@ -297,11 +297,46 @@ fly postgres attach devdungeon-db
 fly secrets set \
   DATABASE_URL="postgres://..."
 
+# Create persistent volume for SSH host key
+fly volumes create devdungeon_data --region ord --size 1
+
 # Deploy
 fly deploy
 
 # SSH to your server
-ssh -p 22 player@devdungeon.fly.dev
+ssh player@dev-dungeon.com
+```
+
+### Custom Domain Setup (dev-dungeon.com)
+
+```bash
+# 1. Add SSL certificate for web
+fly certs add dev-dungeon.com
+fly certs add www.dev-dungeon.com
+
+# 2. Get your Fly.io IP addresses
+fly ips list
+```
+
+Then add these DNS records at your domain registrar:
+
+| Type | Name | Value |
+|------|------|-------|
+| A | @ | `<fly-ipv4>` |
+| AAAA | @ | `<fly-ipv6>` |
+| CNAME | www | dev-dungeon.fly.dev |
+
+**For SSH on the custom domain** (so users can `ssh player@dev-dungeon.com`):
+
+The A/AAAA records above already point to your Fly app. Fly.io routes port 22 traffic to your SSH service automatically based on the `fly.toml` configuration.
+
+Verify with:
+```bash
+# Test web
+curl https://dev-dungeon.com/api/health
+
+# Test SSH
+ssh -v player@dev-dungeon.com
 ```
 
 ### Environment Variables
