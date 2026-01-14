@@ -291,7 +291,6 @@ func New(cfg *config.Config) *Model {
 		menuOptions: []string{
 			"New Game",
 			"Continue",
-			"Settings",
 			"Quit",
 		},
 		menuCursor: 0,
@@ -430,10 +429,6 @@ func (m *Model) selectMenuItem() (tea.Model, tea.Cmd) {
 		return m, nil
 	case "Continue":
 		m.continueGame()
-		return m, nil
-	case "Settings":
-		// TODO: Settings screen
-		m.statusMsg = "Settings not yet implemented"
 		return m, nil
 	case "Quit":
 		m.shutdown()
