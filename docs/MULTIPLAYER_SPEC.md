@@ -69,14 +69,14 @@ Player Terminal
 └─────────────────────────────────────────────┘
     |
     v
-┌──────────────┐     ┌──────────────┐
-│  PostgreSQL  │     │    Redis     │
-├──────────────┤     ├──────────────┤
-│ accounts     │     │ leaderboard  │
-│ game_saves   │     │ active_users │
-│ meta_progress│     │ session_locks│
-│ statistics   │     │ async_drops  │
-└──────────────┘     └──────────────┘
+┌──────────────────────────────────┐
+│           PostgreSQL             │
+├──────────────────────────────────┤
+│ accounts      │ leaderboard      │
+│ game_saves    │ active_sessions  │
+│ meta_progress │ async_drops      │
+│ statistics    │ session_locks    │
+└──────────────────────────────────┘
 ```
 
 ### New Packages
@@ -88,8 +88,7 @@ internal/
 │   ├── auth.go       # Public key -> user lookup
 │   └── session.go    # Per-connection handler
 ├── db/               # NEW: Database layer
-│   ├── postgres.go   # Player accounts, saves
-│   ├── redis.go      # Real-time state
+│   ├── postgres.go   # Player accounts, saves, sessions, leaderboards
 │   └── models.go     # DB models
 ├── accounts/         # NEW: User management
 │   ├── register.go   # Web registration flow
@@ -104,7 +103,7 @@ internal/
 - Players SSH in with their key
 - Game state persists in PostgreSQL (not local files)
 - Play from any machine with your key
-- Global leaderboards (Redis)
+- Global leaderboards (PostgreSQL)
 
 ### Phase 2: Async Multiplayer
 - **Message drops**: Leave notes in dungeons for others to find
@@ -223,7 +222,7 @@ CREATE TABLE daily_seeds (
 4. Gameplay
    └─ Normal game loop (existing code)
    └─ Saves go to PostgreSQL instead of filesystem
-   └─ Leaderboard updates via Redis
+   └─ Leaderboard updates via PostgreSQL
 
 5. Disconnect
    └─ Auto-save to PostgreSQL
@@ -267,8 +266,7 @@ Simple web portal at `devdungeon.io`:
 require (
     github.com/charmbracelet/wish v1.x.x
     github.com/charmbracelet/ssh v0.x.x
-    github.com/jackc/pgx/v5 v5.x.x       // PostgreSQL
-    github.com/redis/go-redis/v9 v9.x.x  // Redis
+    github.com/jackc/pgx/v5 v5.x.x          // PostgreSQL
     github.com/matoous/go-nanoid/v2 v2.x.x  // Alphanumeric IDs
 )
 ```
@@ -292,7 +290,6 @@ id, _ := gonanoid.Generate("0123456789abcdefghijklmnopqrstuvwxyz", 21)
 - [ ] No shell access (Wish app-only)
 - [ ] Log all connections (IP, fingerprint, duration)
 - [ ] PostgreSQL connection over TLS
-- [ ] Redis on private network only
 - [ ] Host key stored securely (not in repo)
 - [ ] Ban system by fingerprint
 - [ ] Input validation on all player actions
@@ -361,8 +358,7 @@ Drops persist 24-48 hours, selected randomly from pool.
 
 **Recommended Stack:**
 - **SSH Server**: Fly.io (supports TCP on custom ports, Wish-friendly)
-- **Database**: PlanetScale Postgres ($5/mo starter)
-- **Cache**: Upstash Redis (serverless, free tier available)
+- **Database**: Fly Postgres or Neon ($5/mo starter)
 
 **Fly.io SSH config** (`fly.toml`):
 ```toml
@@ -399,19 +395,16 @@ docker run -d --name devdungeon-db \
   -e POSTGRES_DB=devdungeon \
   -p 5432:5432 postgres:18
 
-# 2. Start local Redis (Docker)
-docker run -d --name devdungeon-redis -p 6379:6379 redis:7
-
-# 3. Run migrations
+# 2. Run migrations
 go run ./cmd/migrate up
 
-# 4. Start SSH server on localhost:2222
+# 3. Start SSH server on localhost:2222
 go run ./cmd/devdungeon --server --port 2222
 
-# 5. Generate test key (if needed)
+# 4. Generate test key (if needed)
 ssh-keygen -t ed25519 -f ~/.ssh/id_devdungeon_test -N ""
 
-# 6. Connect from another terminal
+# 5. Connect from another terminal
 ssh -i ~/.ssh/id_devdungeon_test -p 2222 testuser@localhost
 
 # First connection triggers in-terminal registration flow
@@ -420,7 +413,6 @@ ssh -i ~/.ssh/id_devdungeon_test -p 2222 testuser@localhost
 **Environment variables for local dev:**
 ```bash
 export DATABASE_URL="postgres://postgres:dev@localhost:5432/devdungeon?sslmode=disable"
-export REDIS_URL="redis://localhost:6379"
 export SSH_HOST_KEY_PATH="./dev_host_key"  # Auto-generated if missing
 export SSH_PORT=2222
 ```
@@ -432,16 +424,18 @@ export SSH_PORT=2222
 1. **SSH Server Skeleton** - Wish setup, basic auth
 2. **PostgreSQL Integration** - Migrate save system
 3. **Web Registration** - Simple Go HTTP server
-4. **Leaderboards** - Redis integration
+4. **Leaderboards** - PostgreSQL queries with indexes
 5. **Async Drops** - Messages/items between players
 6. **Polish** - Timeouts, rate limits, logging
+
+**Future consideration:** PostgreSQL LISTEN/NOTIFY can be used for real-time co-op features when Phase 3 is implemented.
 
 ---
 
 ## Verification
 
 **Local Testing Checklist:**
-- [ ] Docker PostgreSQL + Redis running
+- [ ] Docker PostgreSQL running
 - [ ] SSH server starts on port 2222
 - [ ] First connection triggers registration flow
 - [ ] Can create account with username + public key
