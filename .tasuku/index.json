@@ -19,10 +19,10 @@
       "updated_at": "2026-01-14T00:36:11.326932Z"
     },
     "combat-system": {
-      "status": "ready",
+      "status": "done",
       "priority": 1,
       "file": "tasks/combat-system.md",
-      "updated_at": "2026-01-14T00:36:10.094589Z"
+      "updated_at": "2026-01-14T01:44:29.950786Z"
     },
     "dungeon-gen": {
       "status": "done",
@@ -31,10 +31,10 @@
       "updated_at": "2026-01-14T01:02:47.693308Z"
     },
     "enemy-system": {
-      "status": "ready",
+      "status": "in_progress",
       "priority": 2,
       "file": "tasks/enemy-system.md",
-      "updated_at": "2026-01-14T00:36:10.344227Z"
+      "updated_at": "2026-01-14T01:46:17.144901Z"
     },
     "game-engine": {
       "status": "done",
@@ -43,22 +43,33 @@
       "updated_at": "2026-01-14T01:02:47.928168Z"
     },
     "inventory-system": {
-      "status": "ready",
+      "status": "done",
       "priority": 2,
       "file": "tasks/inventory-system.md",
-      "updated_at": "2026-01-14T00:36:10.587518Z"
+      "updated_at": "2026-01-14T01:44:30.006369Z"
     },
     "meta-progression": {
-      "status": "in_progress",
+      "status": "done",
       "priority": 2,
       "file": "tasks/meta-progression.md",
-      "updated_at": "2026-01-14T01:06:40.085852Z"
+      "updated_at": "2026-01-14T01:18:30.526009Z"
+    },
+    "multiplayer-wish": {
+      "status": "ready",
+      "priority": 4,
+      "tags": [
+        "feature",
+        "multiplayer",
+        "post-v1"
+      ],
+      "file": "tasks/multiplayer-wish.md",
+      "updated_at": "2026-01-14T01:46:06.512388Z"
     },
     "player-entity": {
-      "status": "ready",
+      "status": "done",
       "priority": 1,
       "file": "tasks/player-entity.md",
-      "updated_at": "2026-01-14T00:36:09.844434Z"
+      "updated_at": "2026-01-14T01:44:38.37091Z"
     },
     "project-setup": {
       "status": "done",
@@ -78,14 +89,14 @@
       "updated_at": "2026-01-14T01:16:33.124386Z"
     },
     "ui-system": {
-      "status": "ready",
+      "status": "done",
       "priority": 1,
       "file": "tasks/ui-system.md",
-      "updated_at": "2026-01-14T00:36:10.833173Z"
+      "updated_at": "2026-01-14T01:44:29.980762Z"
     }
   },
   "archived_count": 0,
-  "learnings_count": 1,
-  "decisions_count": 4,
-  "updated_at": "2026-01-14T01:16:33.199529Z"
+  "learnings_count": 2,
+  "decisions_count": 5,
+  "updated_at": "2026-01-14T01:46:17.145052Z"
 }

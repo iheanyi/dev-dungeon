@@ -34,3 +34,11 @@ _Auto-synced from .tasuku/context/decisions.md_
 
 **Because**: RAM as health is Linux-accurate (OOM = death), FD as mana reflects real process limits, keeps NICE/UID which were already perfect. Balances accuracy with accessibility.
 
+## multiplayer-architecture (2026-01-14)
+
+**Chose**: Wish (SSH-based) for authentic terminal multiplayer
+
+**Over**: WebSocket server + web client, P2P networking, REST API with polling
+
+**Because**: Wish is Charm's SSH library - players SSH into the server and get a terminal session. Fits the Unix theme perfectly (ssh user@devdungeon.io), handles auth via SSH keys, and Bubble Tea works natively. Storage: PostgreSQL for accounts/leaderboards, Redis for real-time state. Co-op could be async (leave items/messages) or sync (shared dungeon, turn order by NICE stat). Seed sharing for competitive runs is easy - same seed = same dungeon.
+
