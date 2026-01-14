@@ -97,7 +97,7 @@ func (cs *CombatState) ExecuteEnemyTurns() []CombatResult {
 			continue
 		}
 
-		result := cs.enemyAttack(i)
+		result := cs.enemyTurn(i)
 		results = append(results, result)
 		cs.Log = append(cs.Log, result.Message)
 
@@ -232,11 +232,52 @@ func (cs *CombatState) playerFlee() CombatResult {
 	return CombatResult{Message: msg, Fled: false}
 }
 
-// enemyAttack performs an enemy's attack.
-func (cs *CombatState) enemyAttack(enemyIdx int) CombatResult {
+// enemyTurn performs an enemy's turn based on their behavior.
+func (cs *CombatState) enemyTurn(enemyIdx int) CombatResult {
 	enemy := cs.Enemies[enemyIdx]
 
-	// Calculate damage
+	// Choose action based on behavior
+	switch enemy.Behavior {
+	case entity.BehaviorAggressive:
+		return cs.enemyAttack(enemy)
+
+	case entity.BehaviorDefensive:
+		// Heal when below 30% health
+		healthPct := float64(enemy.Stats.RAM) / float64(enemy.MaxStats.MaxRAM)
+		if healthPct < 0.3 && cs.rng.Float64() < 0.6 {
+			return cs.enemyHeal(enemy)
+		}
+		return cs.enemyAttack(enemy)
+
+	case entity.BehaviorErratic:
+		// Random action
+		roll := cs.rng.Float64()
+		if roll < 0.6 {
+			return cs.enemyAttack(enemy)
+		} else if roll < 0.8 {
+			return cs.enemyWildSwing(enemy) // High damage, might miss
+		} else {
+			return cs.enemyConfused(enemy) // Does nothing
+		}
+
+	case entity.BehaviorSwarm:
+		// Fork bomb: chance to spawn another enemy
+		if len(cs.GetAliveEnemies()) < 4 && cs.rng.Float64() < 0.3 {
+			return cs.enemyFork(enemy)
+		}
+		return cs.enemyAttack(enemy)
+
+	case entity.BehaviorStealth:
+		// Ambush: higher crit chance, lower base damage
+		return cs.enemyAmbush(enemy)
+
+	default:
+		return cs.enemyAttack(enemy)
+	}
+}
+
+// enemyAttack performs a basic enemy attack.
+func (cs *CombatState) enemyAttack(enemy *entity.Enemy) CombatResult {
 	baseDamage := enemy.Stats.CPU
 
 	// Variance: 80-120%
@@ -245,23 +286,125 @@ func (cs *CombatState) enemyAttack(enemyIdx int) CombatResult {
 
 	// Apply armor reduction
 	if cs.Player.Equipment.Armor != nil {
-		reduction := cs.Player.Equipment.Armor.StatBonus.RAM / 5 // Armor gives damage reduction
+		reduction := cs.Player.Equipment.Armor.StatBonus.RAM / 5
 		damage -= reduction
 		if damage < 1 {
 			damage = 1
 		}
 	}
 
-	// Apply damage to player
 	cs.Player.TakeDamage(damage)
 
-	result := CombatResult{
+	return CombatResult{
 		Damage:     damage,
 		TargetName: "you",
+		Message:    fmt.Sprintf("%s attacks for %d damage!", enemy.Name(), damage),
+	}
+}
+
+// enemyHeal heals the enemy (defensive behavior).
+func (cs *CombatState) enemyHeal(enemy *entity.Enemy) CombatResult {
+	healAmount := enemy.MaxStats.MaxRAM / 4
+	enemy.Stats.RAM += healAmount
+	if enemy.Stats.RAM > enemy.MaxStats.MaxRAM {
+		enemy.Stats.RAM = enemy.MaxStats.MaxRAM
 	}
 
-	result.Message = fmt.Sprintf("%s attacks for %d damage!", enemy.Name(), damage)
-	return result
+	return CombatResult{
+		Message: fmt.Sprintf("%s allocates memory, healing %d RAM!", enemy.Name(), healAmount),
+	}
+}
+
+// enemyWildSwing is an erratic high-risk attack.
+func (cs *CombatState) enemyWildSwing(enemy *entity.Enemy) CombatResult {
+	// 40% miss chance
+	if cs.rng.Float64() < 0.4 {
+		return CombatResult{
+			Missed:  true,
+			Message: fmt.Sprintf("%s swings wildly and misses!", enemy.Name()),
+		}
+	}
+
+	// 1.5x damage if it hits
+	damage := int(float64(enemy.Stats.CPU) * 1.5)
+
+	if cs.Player.Equipment.Armor != nil {
+		reduction := cs.Player.Equipment.Armor.StatBonus.RAM / 5
+		damage -= reduction
+		if damage < 1 {
+			damage = 1
+		}
+	}
+
+	cs.Player.TakeDamage(damage)
+
+	return CombatResult{
+		Damage:     damage,
+		TargetName: "you",
+		Message:    fmt.Sprintf("%s lands a wild swing for %d damage!", enemy.Name(), damage),
+	}
+}
+
+// enemyConfused does nothing (erratic behavior).
+func (cs *CombatState) enemyConfused(enemy *entity.Enemy) CombatResult {
+	messages := []string{
+		fmt.Sprintf("%s is confused and does nothing.", enemy.Name()),
+		fmt.Sprintf("%s segfaults momentarily.", enemy.Name()),
+		fmt.Sprintf("%s throws a null pointer at nothing.", enemy.Name()),
+	}
+	return CombatResult{
+		Message: messages[cs.rng.Intn(len(messages))],
+	}
+}
+
+// enemyFork spawns a copy (swarm behavior).
+func (cs *CombatState) enemyFork(enemy *entity.Enemy) CombatResult {
+	// Create a weaker copy
+	fork := entity.NewEnemy(enemy.Type, fmt.Sprintf("%s_fork_%d", enemy.ID(), cs.rng.Int()), types.Position{}, 1)
+	fork.Stats.RAM = fork.Stats.RAM / 2 // Half health
+	fork.Stats.CPU = fork.Stats.CPU / 2 // Half damage
+
+	cs.Enemies = append(cs.Enemies, fork)
+
+	return CombatResult{
+		Message: fmt.Sprintf("%s forks! A new %s spawns!", enemy.Name(), fork.Name()),
+	}
+}
+
+// enemyAmbush is a stealth attack with high crit chance.
+func (cs *CombatState) enemyAmbush(enemy *entity.Enemy) CombatResult {
+	baseDamage := enemy.Stats.CPU
+
+	// 50% crit chance for stealth enemies
+	isCrit := cs.rng.Float64() < 0.5
+	if isCrit {
+		baseDamage = int(float64(baseDamage) * 1.8)
+	}
+
+	variance := 0.9 + cs.rng.Float64()*0.2
+	damage := int(float64(baseDamage) * variance)
+
+	if cs.Player.Equipment.Armor != nil {
+		reduction := cs.Player.Equipment.Armor.StatBonus.RAM / 5
+		damage -= reduction
+		if damage < 1 {
+			damage = 1
+		}
+	}
+
+	cs.Player.TakeDamage(damage)
+
+	msg := fmt.Sprintf("%s strikes from the shadows for %d damage!", enemy.Name(), damage)
+	if isCrit {
+		msg = fmt.Sprintf("AMBUSH! %s", msg)
+	}
+
+	return CombatResult{
+		Damage:     damage,
+		TargetName: "you",
+		IsCritical: isCrit,
+		Message:    msg,
+	}
 }
 
 // allEnemiesDead returns true if all enemies are dead.
