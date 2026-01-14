@@ -159,11 +159,7 @@ func giveStartingGear(p *Player, class PlayerClass) {
 			p.Equipment.Equip(armor)
 		}
 		// No weapon - starts unarmed but powerful
-		// Bonus: sudo potion
-		sudoPotion := NewItem("sudo_potion", "sudo_pot", types.Position{})
-		if sudoPotion != nil {
-			p.Inventory.AddItem(sudoPotion)
-		}
+		// Note: sudo_potion removed from starting gear for multiplayer balance
 	}
 }
 
@@ -189,13 +185,13 @@ func getClassStats(class PlayerClass) (types.Stats, types.MaxStats) {
 		baseStats.CPU = 8
 	case ClassBash:
 		// Bash: Powerful shell, high attack
-		baseStats.CPU = 15  // More attack
+		baseStats.CPU = 12  // More attack (nerfed from 15 for multiplayer balance)
 		baseStats.FD = 12   // Fewer abilities
 		maxStats.MaxFD = 12
 	case ClassVim:
 		// Vim: Complex editor, many abilities
-		baseStats.FD = 24   // More ability capacity
-		maxStats.MaxFD = 24
+		baseStats.FD = 20   // More ability capacity (nerfed from 24 for multiplayer balance)
+		maxStats.MaxFD = 20
 		baseStats.CPU = 8
 	case ClassSudo:
 		// Sudo: Privilege escalation, access-focused

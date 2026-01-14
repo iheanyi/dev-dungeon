@@ -125,7 +125,7 @@ var ItemTemplates = map[string]ItemTemplate{
 		Stackable:   true,
 		MaxStack:    3,
 		Effects: []ItemEffect{
-			{Type: EffectBuff, Value: 3, Target: TargetSelf}, // 3 turns invincible
+			{Type: EffectBuff, Value: 1, Target: TargetSelf}, // 1 turn invincible (nerfed from 3 for multiplayer balance)
 		},
 	},
 	"grep_scroll": {
@@ -179,7 +179,7 @@ var ItemTemplates = map[string]ItemTemplate{
 		EquipSlot:   SlotWeapon,
 		StatBonus:   types.Stats{CPU: 10},
 		Effects: []ItemEffect{
-			{Type: EffectInstantKill, Value: 20, Target: TargetEnemy}, // Kills if <20 RAM
+			{Type: EffectInstantKill, Value: 15, Target: TargetEnemy}, // Kills if <15 RAM (nerfed from 20)
 		},
 	},
 	"basic_script": {
@@ -360,7 +360,7 @@ var ItemTemplates = map[string]ItemTemplate{
 		EquipSlot:   SlotWeapon,
 		StatBonus:   types.Stats{CPU: 20},
 		Effects: []ItemEffect{
-			{Type: EffectInstantKill, Value: 30, Target: TargetEnemy},
+			{Type: EffectInstantKill, Value: 20, Target: TargetEnemy}, // Nerfed from 30 for multiplayer balance
 		},
 	},
 	"cron_claw": {
@@ -531,11 +531,11 @@ var ItemTemplates = map[string]ItemTemplate{
 		Glyph:       '+',
 		ItemType:    ItemTypeConsumable,
 		Rarity:      RarityRare,
-		Description: "Memory map: full heal!",
+		Description: "Memory map: major heal",
 		Stackable:   true,
 		MaxStack:    3,
 		Effects: []ItemEffect{
-			{Type: EffectHeal, Value: 999, Target: TargetSelf},
+			{Type: EffectHeal, Value: 80, Target: TargetSelf}, // Nerfed from 999 for multiplayer balance
 		},
 	},
 	"nice_boost": {
