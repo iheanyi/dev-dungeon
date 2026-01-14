@@ -88,6 +88,23 @@ Or run directly:
 go run ./cmd/devdungeon/
 ```
 
+### Running as SSH Server
+
+```bash
+# Start PostgreSQL (Docker)
+docker run -d --name devdungeon-db \
+  -e POSTGRES_PASSWORD=dev \
+  -e POSTGRES_DB=devdungeon \
+  -p 5432:5432 postgres:18
+
+# Run as SSH server
+export DATABASE_URL="postgres://postgres:dev@localhost:5432/devdungeon?sslmode=disable"
+go run ./cmd/devdungeon/ --server --port 2222
+
+# Connect from another terminal
+ssh -p 2222 yourname@localhost
+```
+
 ### Controls
 
 ```
@@ -160,23 +177,45 @@ Earn **exit codes** based on how far you descend. Spend them on:
 - New items in the loot pool
 - Starting equipment
 
-## Roadmap
+## Current Features
 
 - [x] Core architecture & UI framework
 - [x] Entity system (player, enemies, items)
 - [x] Configuration system
-- [ ] Procedural dungeon generation
-- [ ] Turn-based combat system
-- [ ] Enemy AI behaviors
-- [ ] Meta-progression & save system
-- [ ] SSH multiplayer via [Wish](https://github.com/charmbracelet/wish)
+- [x] Procedural dungeon generation (BSP algorithm)
+- [x] Turn-based combat system with abilities
+- [x] Enemy AI with varied behaviors
+- [x] Field of view and fog of war
+- [x] Equipment system (weapons, armor, accessories)
+- [x] Skill system (process-themed abilities)
+- [x] Meta-progression with exit codes
+- [x] Save/load system
+- [x] 8 floor types from `/home` to `/dev/null`
+- [x] Boss fights (Kernel Panic final boss)
+
+## Roadmap
+
+- [ ] SSH multiplayer via [Wish](https://github.com/charmbracelet/wish) *(in progress)*
+- [ ] Leaderboards and async drops
+- [ ] Co-op dungeon runs
+- [ ] Unlockables shop (spend exit codes)
+
+## Multiplayer (Coming Soon)
+
+Connect via SSH and play from anywhere:
+
+```bash
+ssh player@devdungeon.io
+```
+
+Your SSH key is your identity. First connection prompts for username registration. Progress syncs across devices.
 
 ## Built With
 
 - [Go](https://golang.org/) - Because it's fast and fun
 - [Bubble Tea](https://github.com/charmbracelet/bubbletea) - TUI framework
 - [Lip Gloss](https://github.com/charmbracelet/lipgloss) - Styling
-- [Bubbles](https://github.com/charmbracelet/bubbles) - TUI components
+- [Wish](https://github.com/charmbracelet/wish) - SSH server for multiplayer
 
 ## License
 

@@ -761,6 +761,14 @@ func (e *Engine) SaveSync(trigger save.SaveTrigger) error {
 	return e.saveManager.SaveSync(data, trigger)
 }
 
+// GetSaveData returns the current game state as save data (for external storage).
+func (e *Engine) GetSaveData() *save.SaveData {
+	if e.player == nil {
+		return nil
+	}
+	return e.toSaveData()
+}
+
 // LoadGame loads a saved game state.
 func (e *Engine) LoadGame(data *save.SaveData) error {
 	if data == nil {

@@ -214,69 +214,87 @@ type Styles struct {
 
 // NewStyles creates the default styles.
 func NewStyles() *Styles {
+	return newStyles(nil)
+}
+
+// NewStylesWithRenderer creates styles using a custom renderer (for SSH sessions).
+func NewStylesWithRenderer(renderer *lipgloss.Renderer) *Styles {
+	return newStyles(renderer)
+}
+
+// newStyles is the internal constructor.
+func newStyles(renderer *lipgloss.Renderer) *Styles {
+	// Helper to create styles with optional renderer
+	newStyle := func() lipgloss.Style {
+		if renderer != nil {
+			return renderer.NewStyle()
+		}
+		return lipgloss.NewStyle()
+	}
+
 	return &Styles{
-		Container: lipgloss.NewStyle().
+		Container: newStyle().
 			Padding(1, 2),
-		Header: lipgloss.NewStyle().
+		Header: newStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("86")).
 			BorderStyle(lipgloss.NormalBorder()).
 			BorderBottom(true).
 			BorderForeground(lipgloss.Color("240")),
-		Footer: lipgloss.NewStyle().
+		Footer: newStyle().
 			Foreground(lipgloss.Color("240")),
 
-		MapBorder: lipgloss.NewStyle().
+		MapBorder: newStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("63")),
-		StatPanel: lipgloss.NewStyle().
+		StatPanel: newStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("63")).
 			Padding(0, 1),
-		LogPanel: lipgloss.NewStyle().
+		LogPanel: newStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("240")).
 			Padding(0, 1),
 
-		Title: lipgloss.NewStyle().
+		Title: newStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("86")),
-		Subtitle: lipgloss.NewStyle().
+		Subtitle: newStyle().
 			Foreground(lipgloss.Color("243")),
-		Normal: lipgloss.NewStyle().
+		Normal: newStyle().
 			Foreground(lipgloss.Color("252")),
-		Highlight: lipgloss.NewStyle().
+		Highlight: newStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("212")),
-		Danger: lipgloss.NewStyle().
+		Danger: newStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("196")),
-		Success: lipgloss.NewStyle().
+		Success: newStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("46")),
-		Muted: lipgloss.NewStyle().
+		Muted: newStyle().
 			Foreground(lipgloss.Color("240")),
 
-		MenuItem: lipgloss.NewStyle().
+		MenuItem: newStyle().
 			Foreground(lipgloss.Color("252")),
-		MenuSelected: lipgloss.NewStyle().
+		MenuSelected: newStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("86")).
 			Background(lipgloss.Color("236")),
 
-		Wall: lipgloss.NewStyle().
+		Wall: newStyle().
 			Foreground(lipgloss.Color("240")),
-		Floor: lipgloss.NewStyle().
+		Floor: newStyle().
 			Foreground(lipgloss.Color("238")),
-		Player: lipgloss.NewStyle().
+		Player: newStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("86")),
-		Enemy: lipgloss.NewStyle().
+		Enemy: newStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("196")),
-		Item: lipgloss.NewStyle().
+		Item: newStyle().
 			Foreground(lipgloss.Color("226")),
-		Stairs: lipgloss.NewStyle().
+		Stairs: newStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("45")),
 	}
@@ -284,7 +302,17 @@ func NewStyles() *Styles {
 
 // New creates a new UI model.
 func New(cfg *config.Config) *Model {
-	return &Model{
+	return newModel(cfg, nil)
+}
+
+// NewWithRenderer creates a new UI model with a custom renderer (for SSH sessions).
+func NewWithRenderer(cfg *config.Config, renderer *lipgloss.Renderer) *Model {
+	return newModel(cfg, renderer)
+}
+
+// newModel is the internal constructor.
+func newModel(cfg *config.Config, renderer *lipgloss.Renderer) *Model {
+	m := &Model{
 		config:      cfg,
 		currentView: ViewMainMenu,
 		gameState:   types.StateMainMenu,
@@ -312,11 +340,24 @@ func New(cfg *config.Config) *Model {
 			"Show Debug Info",
 			"Close",
 		},
-		adminCursor:     0,
-		combatLog:       make([]string, 0),
-		messageHistory:  make([]string, 0),
-		styles:          NewStyles(),
+		adminCursor:    0,
+		combatLog:      make([]string, 0),
+		messageHistory: make([]string, 0),
 	}
+
+	// Use provided renderer or default styles
+	if renderer != nil {
+		m.styles = NewStylesWithRenderer(renderer)
+	} else {
+		m.styles = NewStyles()
+	}
+
+	return m
+}
+
+// GetEngine returns the game engine (for external save/load).
+func (m *Model) GetEngine() *game.Engine {
+	return m.engine
 }
 
 // Init implements tea.Model.

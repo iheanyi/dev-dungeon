@@ -46,3 +46,6 @@ debug.log
 # Environment
 .env
 .env.local
+
+# SSH host keys (server mode)
+.ssh/
