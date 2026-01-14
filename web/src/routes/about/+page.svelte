@@ -135,8 +135,8 @@
 		<h2 class="text-terminal-amber mb-4">SEE ALSO</h2>
 		<div class="text-terminal-green-dim text-sm space-y-1">
 			<p>
-				<a href="https://github.com/iheanyi/devdungeon" class="text-terminal-green hover:glow">
-					github.com/iheanyi/devdungeon
+				<a href="https://github.com/iheanyi/dev-dungeon" class="text-terminal-green hover:glow">
+					github.com/iheanyi/dev-dungeon
 				</a>
 				<span class="text-terminal-gray"> - Source code</span>
 			</p>

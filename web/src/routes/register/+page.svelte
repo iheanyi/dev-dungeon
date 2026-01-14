@@ -27,7 +27,8 @@
 	}
 
 	function isValidUsername(name: string): boolean {
-		return name.length >= 3 && name.length <= 20 && /^[a-zA-Z0-9_]+$/.test(name);
+		// SSH-friendly: lowercase alphanumeric + dashes, no leading dash
+		return name.length >= 3 && name.length <= 20 && /^[a-z0-9][a-z0-9-]*$/.test(name);
 	}
 </script>
 
@@ -64,14 +65,14 @@
 					id="username"
 					bind:value={username}
 					class="input-terminal"
-					placeholder="your_username"
+					placeholder="your-username"
 					minlength="3"
 					maxlength="20"
-					pattern="[a-zA-Z0-9_]+"
+					pattern="[a-z0-9][a-z0-9-]*"
 					required
 				/>
 				<p class="text-terminal-gray text-sm mt-1">
-					3-20 characters, alphanumeric and underscore only
+					3-20 characters, lowercase letters, numbers, and dashes
 				</p>
 			</div>
 

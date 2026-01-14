@@ -23,12 +23,12 @@
 <div class="text-center mb-12">
 	<!-- ASCII Logo -->
 	<pre class="ascii-art text-terminal-green glow inline-block text-left">
- ██████╗ ███████╗██╗   ██╗██████╗ ██╗   ██╗███╗   ██╗ ██████╗ ███████╗ ██████╗ ███╗   ██╗
-██╔════╝ ██╔════╝██║   ██║██╔══██╗██║   ██║████╗  ██║██╔════╝ ██╔════╝██╔═══██╗████╗  ██║
-██║  ███╗█████╗  ██║   ██║██║  ██║██║   ██║██╔██╗ ██║██║  ███╗█████╗  ██║   ██║██╔██╗ ██║
-██║   ██║██╔══╝  ╚██╗ ██╔╝██║  ██║██║   ██║██║╚██╗██║██║   ██║██╔══╝  ██║   ██║██║╚██╗██║
-╚██████╔╝███████╗ ╚████╔╝ ██████╔╝╚██████╔╝██║ ╚████║╚██████╔╝███████╗╚██████╔╝██║ ╚████║
- ╚═════╝ ╚══════╝  ╚═══╝  ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝ ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═══╝
+██████╗ ███████╗██╗   ██╗██████╗ ██╗   ██╗███╗   ██╗ ██████╗ ███████╗ ██████╗ ███╗   ██╗
+██╔══██╗██╔════╝██║   ██║██╔══██╗██║   ██║████╗  ██║██╔════╝ ██╔════╝██╔═══██╗████╗  ██║
+██║  ██║█████╗  ██║   ██║██║  ██║██║   ██║██╔██╗ ██║██║  ███╗█████╗  ██║   ██║██╔██╗ ██║
+██║  ██║██╔══╝  ╚██╗ ██╔╝██║  ██║██║   ██║██║╚██╗██║██║   ██║██╔══╝  ██║   ██║██║╚██╗██║
+██████╔╝███████╗ ╚████╔╝ ██████╔╝╚██████╔╝██║ ╚████║╚██████╔╝███████╗╚██████╔╝██║ ╚████║
+╚═════╝ ╚══════╝  ╚═══╝  ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝ ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═══╝
 	</pre>
 
 	<p class="text-terminal-green-dim text-xl mt-4 font-mono">
@@ -141,8 +141,8 @@
 <footer class="mt-12 text-center text-terminal-gray text-sm">
 	<p>Built with <a href="https://github.com/charmbracelet/bubbletea" class="text-terminal-green-dim hover:text-terminal-green">Bubble Tea</a> & <a href="https://github.com/charmbracelet/wish" class="text-terminal-green-dim hover:text-terminal-green">Wish</a></p>
 	<p class="mt-2">
-		<a href="https://github.com/iheanyi/devdungeon" class="text-terminal-green-dim hover:text-terminal-green">
-			github.com/iheanyi/devdungeon
+		<a href="https://github.com/iheanyi/dev-dungeon" class="text-terminal-green-dim hover:text-terminal-green">
+			github.com/iheanyi/dev-dungeon
 		</a>
 	</p>
 </footer>

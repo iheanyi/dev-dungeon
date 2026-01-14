@@ -73,7 +73,7 @@
 ```bash
 # Clone the repository
 git clone https://github.com/iheanyi/dev-dungeon.git
-cd devdungeon
+cd dev-dungeon
 
 # Build the game
 go build -o devdungeon ./cmd/devdungeon/
@@ -195,12 +195,14 @@ Earn **exit codes** based on how far you descend. Spend them on:
 
 ## Roadmap
 
-- [ ] SSH multiplayer via [Wish](https://github.com/charmbracelet/wish) *(in progress)*
-- [ ] Leaderboards and async drops
+- [x] SSH multiplayer via [Wish](https://github.com/charmbracelet/wish)
+- [x] Web portal for registration and leaderboards
+- [x] Unlockables shop (spend exit codes)
+- [ ] Async drops (messages/items between players)
 - [ ] Co-op dungeon runs
-- [ ] Unlockables shop (spend exit codes)
+- [ ] Daily seeded runs
 
-## Multiplayer (Coming Soon)
+## Multiplayer
 
 Connect via SSH and play from anywhere:
 
@@ -210,12 +212,147 @@ ssh player@devdungeon.io
 
 Your SSH key is your identity. First connection prompts for username registration. Progress syncs across devices.
 
+## Development
+
+### Prerequisites
+
+- Go 1.25+
+- Node.js 22+
+- PostgreSQL 18+ (or Docker)
+- Redis 7+ (or Docker)
+
+### Quick Start
+
+```bash
+# Install development tools
+brew install overmind air  # macOS
+# or: go install github.com/DarthSim/overmind/v2@latest github.com/air-verse/air@latest
+
+# Clone and setup
+git clone https://github.com/iheanyi/dev-dungeon.git
+cd dev-dungeon
+go mod download
+cd web && npm install && cd ..
+
+# Start databases with Docker
+docker compose up -d postgres redis
+
+# Create .env file
+cat > .env << 'EOF'
+DATABASE_URL=postgres://postgres:dev@localhost:5432/devdungeon?sslmode=disable
+REDIS_URL=redis://localhost:6379
+SSH_PORT=2222
+HTTP_PORT=8080
+EOF
+
+# Run migrations
+go run ./cmd/migrate up
+
+# Start development (both services with live reload)
+make dev
+```
+
+### Available Commands
+
+```bash
+make dev          # Start both server + frontend (requires overmind)
+make dev-server   # Start Go server with Air live reload
+make dev-web      # Start Vite frontend dev server
+make build        # Build Go binary and web frontend
+make test         # Run Go tests
+make play         # Play the game locally (single player)
+```
+
+## Deployment
+
+### Docker Compose (Recommended for Self-Hosting)
+
+```bash
+# Build and start all services
+docker compose up -d
+
+# View logs
+docker compose logs -f devdungeon
+
+# SSH to play
+ssh -p 2222 yourname@localhost
+
+# Web portal
+open http://localhost:8080
+```
+
+### Production Deployment (Fly.io)
+
+```bash
+# Install Fly CLI
+brew install flyctl
+
+# Login and create app
+fly auth login
+fly apps create devdungeon
+
+# Create PostgreSQL database
+fly postgres create --name devdungeon-db
+fly postgres attach devdungeon-db
+
+# Create Redis (Upstash)
+fly redis create --name devdungeon-redis
+
+# Set secrets
+fly secrets set \
+  DATABASE_URL="postgres://..." \
+  REDIS_URL="redis://..."
+
+# Deploy
+fly deploy
+
+# SSH to your server
+ssh -p 22 player@devdungeon.fly.dev
+```
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DATABASE_URL` | PostgreSQL connection string | Required |
+| `REDIS_URL` | Redis connection string | Required |
+| `SSH_PORT` | SSH server port | `2222` |
+| `HTTP_PORT` | HTTP server port | `8080` |
+| `SSH_HOST_KEY_PATH` | Path to SSH host key | `.ssh/host_key` |
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│              Load Balancer                  │
+│         (SSH port 22, HTTP port 443)        │
+└─────────────────────────────────────────────┘
+                    │
+      ┌─────────────┴─────────────┐
+      │                           │
+┌─────────────┐           ┌─────────────┐
+│   SSH :2222 │           │  HTTP :8080 │
+│   (Wish)    │           │  (Web API)  │
+└─────────────┘           └─────────────┘
+      │                           │
+      └─────────────┬─────────────┘
+                    │
+      ┌─────────────┴─────────────┐
+      │                           │
+┌─────────────┐           ┌─────────────┐
+│ PostgreSQL  │           │    Redis    │
+│ (accounts,  │           │ (leaderboard│
+│  saves)     │           │  sessions)  │
+└─────────────┘           └─────────────┘
+```
+
 ## Built With
 
 - [Go](https://golang.org/) - Because it's fast and fun
 - [Bubble Tea](https://github.com/charmbracelet/bubbletea) - TUI framework
 - [Lip Gloss](https://github.com/charmbracelet/lipgloss) - Styling
 - [Wish](https://github.com/charmbracelet/wish) - SSH server for multiplayer
+- [SvelteKit](https://kit.svelte.dev/) - Web portal
 
 ## License
 
