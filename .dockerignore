@@ -1,0 +1,44 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Local development
+.env
+.env.local
+*.local.md
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test artifacts
+*.test
+*.out
+coverage.txt
+
+# Node modules (web frontend builds separately)
+web/node_modules
+web/.svelte-kit
+
+# Documentation
+docs/
+*.md
+!web/README.md
+
+# Tasuku task management
+.tasuku/
+
+# SSH keys (generated at runtime)
+.ssh/
+
+# OS files
+.DS_Store
+Thumbs.db

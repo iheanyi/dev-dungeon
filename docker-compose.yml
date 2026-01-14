@@ -1,4 +1,25 @@
 services:
+  # Game server (SSH + HTTP)
+  devdungeon:
+    build: .
+    container_name: devdungeon-server
+    environment:
+      DATABASE_URL: postgres://postgres:dev@postgres:5432/devdungeon?sslmode=disable
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "2222:2222"  # SSH
+      - "8080:8080"  # HTTP
+    volumes:
+      - devdungeon-ssh:/app/.ssh  # Persist host key
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["--server"]
+    restart: unless-stopped
+
+  # PostgreSQL database
   postgres:
     image: postgres:18
     container_name: devdungeon-db
@@ -17,6 +38,7 @@ services:
       timeout: 5s
       retries: 5
 
+  # Redis for leaderboards and real-time state
   redis:
     image: redis:7-alpine
     container_name: devdungeon-redis
@@ -33,3 +55,4 @@ services:
 volumes:
   devdungeon-postgres:
   devdungeon-redis:
+  devdungeon-ssh:
