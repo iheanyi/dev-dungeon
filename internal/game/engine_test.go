@@ -5,6 +5,7 @@ import (
 
 	"github.com/iheanyi/devdungeon/internal/config"
 	"github.com/iheanyi/devdungeon/internal/entity"
+	"github.com/iheanyi/devdungeon/internal/save"
 	"github.com/iheanyi/devdungeon/internal/types"
 )
 
@@ -585,5 +586,88 @@ func TestFloorTypeProgression(t *testing.T) {
 		if actualType != expectedType {
 			t.Errorf("depth %d: expected %v, got %v", depth+1, expectedType.FloorName(), actualType.FloorName())
 		}
+	}
+}
+
+func TestLoadGameDoesNotDuplicateItems(t *testing.T) {
+	cfg := config.DefaultConfig()
+	engine := NewEngine(cfg, 12345)
+
+	// Start a new game
+	if err := engine.StartNewGame(entity.ClassBash); err != nil {
+		t.Fatalf("StartNewGame failed: %v", err)
+	}
+
+	// Record initial inventory count (starting gear)
+	initialInventoryCount := len(engine.Player().Inventory.Items)
+
+	// Create mock save data with specific inventory
+	saveData := engine.toSaveData()
+
+	// Clear the inventory in save data to simulate a saved state with no items
+	saveData.Player.Inventory = nil
+	saveData.Player.Equipment.Weapon = ""
+	saveData.Player.Equipment.Armor = ""
+
+	// Load the save - this should NOT add starting gear again
+	if err := engine.LoadGame(saveData); err != nil {
+		t.Fatalf("LoadGame failed: %v", err)
+	}
+
+	// Inventory should be empty (not have starting gear)
+	if len(engine.Player().Inventory.Items) != 0 {
+		t.Errorf("expected empty inventory after loading save with no items, got %d items",
+			len(engine.Player().Inventory.Items))
+	}
+
+	// Equipment should be empty
+	if engine.Player().Equipment.Weapon != nil {
+		t.Errorf("expected no weapon after loading save with no weapon, got %s",
+			engine.Player().Equipment.Weapon.Name())
+	}
+
+	_ = initialInventoryCount
+}
+
+func TestLoadGamePreservesInventory(t *testing.T) {
+	cfg := config.DefaultConfig()
+	engine := NewEngine(cfg, 12345)
+
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("StartNewGame failed: %v", err)
+	}
+
+	// Get save data
+	saveData := engine.toSaveData()
+
+	// Add a specific item to save data inventory
+	saveData.Player.Inventory = []save.ItemData{
+		{TemplateID: "malloc", Quantity: 5},
+		{TemplateID: "realloc", Quantity: 2},
+	}
+	saveData.Player.Equipment.Weapon = "vim_blade"
+	saveData.Player.Equipment.Armor = "firewall"
+
+	// Load the save
+	if err := engine.LoadGame(saveData); err != nil {
+		t.Fatalf("LoadGame failed: %v", err)
+	}
+
+	// Verify inventory has exactly what we saved (not starting gear)
+	if len(engine.Player().Inventory.Items) != 2 {
+		t.Errorf("expected 2 items in inventory, got %d", len(engine.Player().Inventory.Items))
+	}
+
+	// Verify equipment
+	if engine.Player().Equipment.Weapon == nil {
+		t.Error("expected weapon to be equipped")
+	} else if engine.Player().Equipment.Weapon.TemplateID != "vim_blade" {
+		t.Errorf("expected vim_blade weapon, got %s", engine.Player().Equipment.Weapon.TemplateID)
+	}
+
+	if engine.Player().Equipment.Armor == nil {
+		t.Error("expected armor to be equipped")
+	} else if engine.Player().Equipment.Armor.TemplateID != "firewall" {
+		t.Errorf("expected firewall armor, got %s", engine.Player().Equipment.Armor.TemplateID)
 	}
 }

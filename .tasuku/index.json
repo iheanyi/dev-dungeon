@@ -31,10 +31,10 @@
       "updated_at": "2026-01-14T01:02:47.693308Z"
     },
     "enemy-system": {
-      "status": "in_progress",
+      "status": "done",
       "priority": 2,
       "file": "tasks/enemy-system.md",
-      "updated_at": "2026-01-14T01:46:17.144901Z"
+      "updated_at": "2026-01-14T02:44:34.112038Z"
     },
     "game-engine": {
       "status": "done",
@@ -96,7 +96,7 @@
     }
   },
   "archived_count": 0,
-  "learnings_count": 2,
+  "learnings_count": 3,
   "decisions_count": 5,
-  "updated_at": "2026-01-14T01:46:17.145052Z"
+  "updated_at": "2026-01-14T02:44:34.112149Z"
 }
