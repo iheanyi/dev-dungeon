@@ -46,10 +46,12 @@ type Model struct {
 	menuOptions  []string
 
 	// Combat state
-	combatCursor int
-	combatLog    []string
-	enemies      []*entity.Enemy
-	combat       *game.CombatState
+	combatCursor    int
+	combatLog       []string
+	enemies         []*entity.Enemy
+	combat          *game.CombatState
+	selectingSkill  bool
+	skillCursor     int
 
 	// Inventory state
 	invCursor    int
@@ -428,10 +430,14 @@ func (m *Model) updateGame(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.gameState = types.StateMainMenu
 		m.statusMsg = "Game saved."
 	case "`":
-		// Open admin console
-		m.prevView = ViewGame
-		m.adminCursor = 0
-		m.currentView = ViewAdmin
+		// Open admin console - requires root (UID 0)
+		if m.player != nil && m.player.Stats.UID == 0 {
+			m.prevView = ViewGame
+			m.adminCursor = 0
+			m.currentView = ViewAdmin
+		} else {
+			m.statusMsg = "Permission denied: requires root (UID 0). Try sudo class or find a root shard."
+		}
 	}
 	return m, nil
 }
@@ -470,6 +476,11 @@ func (m *Model) startCombat(enemies []*entity.Enemy) {
 
 // updateCombat handles combat view input.
 func (m *Model) updateCombat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// If selecting a skill, handle skill selection
+	if m.selectingSkill {
+		return m.updateSkillSelect(msg)
+	}
+
 	switch msg.String() {
 	case "up", "k", "w":
 		m.combatCursor--
@@ -491,6 +502,43 @@ func (m *Model) updateCombat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateSkillSelect handles skill selection within combat.
+func (m *Model) updateSkillSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	numSkills := len(m.player.Skills)
+	if numSkills == 0 {
+		m.selectingSkill = false
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "up", "k", "w":
+		m.skillCursor--
+		if m.skillCursor < 0 {
+			m.skillCursor = numSkills - 1
+		}
+	case "down", "j", "s":
+		m.skillCursor++
+		if m.skillCursor >= numSkills {
+			m.skillCursor = 0
+		}
+	case "enter", " ":
+		// Execute the selected skill
+		m.selectingSkill = false
+		return m.executeSkill(m.skillCursor)
+	case "esc", "q":
+		// Cancel skill selection
+		m.selectingSkill = false
+	case "1", "2", "3", "4", "5":
+		// Quick select skill by number
+		idx := int(msg.String()[0] - '1')
+		if idx >= 0 && idx < numSkills {
+			m.selectingSkill = false
+			return m.executeSkill(idx)
+		}
+	}
+	return m, nil
+}
+
 // executeCombatAction executes the selected combat action.
 func (m *Model) executeCombatAction(key string) (tea.Model, tea.Cmd) {
 	if m.combat == nil {
@@ -507,8 +555,14 @@ func (m *Model) executeCombatAction(key string) (tea.Model, tea.Cmd) {
 	switch actionIndex {
 	case 0: // Attack
 		action = types.ActionAttack
-	case 1: // Hack (skill)
-		action = types.ActionHack
+	case 1: // Hack (skill) - open skill selection
+		if m.player != nil && len(m.player.Skills) > 0 {
+			m.selectingSkill = true
+			m.skillCursor = 0
+			return m, nil
+		}
+		m.combatLog = append(m.combatLog, "No skills available.")
+		return m, nil
 	case 2: // Use Item
 		m.currentView = ViewInventory
 		return m, nil
@@ -571,6 +625,60 @@ func (m *Model) executeCombatAction(key string) (tea.Model, tea.Cmd) {
 	// Tick cooldowns at start of new turn
 	m.combat.TickCooldowns()
 
+	return m, nil
+}
+
+// executeSkill executes a specific skill and handles enemy turns.
+func (m *Model) executeSkill(skillIdx int) (tea.Model, tea.Cmd) {
+	if m.combat == nil {
+		return m, nil
+	}
+
+	// Find first alive enemy as target
+	targetIdx := 0
+	for i, enemy := range m.combat.Enemies {
+		if enemy.IsAlive() {
+			targetIdx = i
+			break
+		}
+	}
+
+	// Execute skill
+	result := m.combat.ExecutePlayerAction(types.ActionHack, targetIdx, skillIdx)
+	m.combatLog = append(m.combatLog, result.Message)
+
+	// Check for victory
+	if result.Victory {
+		m.endCombat(true)
+		return m, nil
+	}
+
+	// Enemy turns
+	if !m.combat.IsOver {
+		preHP := m.player.Stats.RAM
+
+		enemyResults := m.combat.ExecuteEnemyTurns()
+		for _, er := range enemyResults {
+			m.combatLog = append(m.combatLog, er.Message)
+			if er.Defeat {
+				if m.godMode {
+					m.player.Stats.RAM = preHP
+					m.combatLog = append(m.combatLog, "[GOD MODE] Damage negated!")
+				} else {
+					m.endCombat(false)
+					m.currentView = ViewGameOver
+					m.gameState = types.StateGameOver
+					return m, nil
+				}
+			}
+		}
+
+		if m.godMode && m.player.Stats.RAM < preHP {
+			m.player.Stats.RAM = preHP
+		}
+	}
+
+	m.combat.TickCooldowns()
 	return m, nil
 }
 
@@ -1336,21 +1444,51 @@ func (m *Model) viewCombat() string {
 		}
 	}
 
-	// Combat options
-	options := []string{
-		"[1] Attack (kill -TERM)",
-		"[2] Hack (use skill)",
-		"[3] Use Item",
-		"[4] Flee",
-	}
 	var menu string
-	menu = m.styles.Muted.Render("─── Actions ───") + "\n"
-	for i, opt := range options {
-		if i == m.combatCursor {
-			menu += m.styles.MenuSelected.Render("  > "+opt) + "\n"
-		} else {
-			menu += m.styles.MenuItem.Render("    "+opt) + "\n"
+	var footer string
+
+	if m.selectingSkill && m.player != nil {
+		// Skill selection mode
+		menu = m.styles.Highlight.Render("─── Select Skill ───") + "\n"
+		for i, skill := range m.player.Skills {
+			// Show cooldown and FD cost
+			cdStr := ""
+			if skill.CurrentCD > 0 {
+				cdStr = m.styles.Danger.Render(fmt.Sprintf(" [CD:%d]", skill.CurrentCD))
+			}
+			fdStr := ""
+			if skill.FDCost > 0 {
+				fdStr = m.styles.Muted.Render(fmt.Sprintf(" (FD:%d)", skill.FDCost))
+			}
+
+			skillStr := fmt.Sprintf("[%d] %s%s%s", i+1, skill.Name, fdStr, cdStr)
+
+			if i == m.skillCursor {
+				menu += m.styles.MenuSelected.Render("  > "+skillStr) + "\n"
+				// Show skill description
+				menu += m.styles.Muted.Render("      "+skill.Description) + "\n"
+			} else {
+				menu += m.styles.MenuItem.Render("    "+skillStr) + "\n"
+			}
 		}
+		footer = m.styles.Muted.Render("\n[↑/↓] Select  [Enter/1-5] Use  [Esc] Cancel")
+	} else {
+		// Normal combat menu
+		options := []string{
+			"[1] Attack (kill -TERM)",
+			"[2] Hack (use skill)",
+			"[3] Use Item",
+			"[4] Flee",
+		}
+		menu = m.styles.Muted.Render("─── Actions ───") + "\n"
+		for i, opt := range options {
+			if i == m.combatCursor {
+				menu += m.styles.MenuSelected.Render("  > "+opt) + "\n"
+			} else {
+				menu += m.styles.MenuItem.Render("    "+opt) + "\n"
+			}
+		}
+		footer = m.styles.Muted.Render("\n[↑/↓] Select  [Enter/1-4] Act")
 	}
 
 	// Combat log
@@ -1365,8 +1503,6 @@ func (m *Model) viewCombat() string {
 			log += m.styles.Normal.Render("  "+entry) + "\n"
 		}
 	}
-
-	footer := m.styles.Muted.Render("\n[↑/↓] Select  [Enter/1-4] Act")
 
 	return m.styles.Container.Render(title + playerInfo + enemyInfo + menu + log + footer)
 }

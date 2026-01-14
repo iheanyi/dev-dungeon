@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "tasuku": {
+      "args": [
+        "serve",
+        "mcp"
+      ],
+      "command": "/Users/iheanyi/development/go/bin/tk",
+      "type": "stdio"
+    }
+  }
+}
