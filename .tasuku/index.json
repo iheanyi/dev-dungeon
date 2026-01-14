@@ -1,0 +1,69 @@
+{
+  "version": "v4",
+  "tasks": {
+    "class-system": {
+      "status": "ready",
+      "priority": 3,
+      "file": "tasks/class-system.md",
+      "updated_at": "2026-01-14T00:36:11.326932Z"
+    },
+    "combat-system": {
+      "status": "ready",
+      "priority": 1,
+      "file": "tasks/combat-system.md",
+      "updated_at": "2026-01-14T00:36:10.094589Z"
+    },
+    "dungeon-gen": {
+      "status": "ready",
+      "priority": 1,
+      "file": "tasks/dungeon-gen.md",
+      "updated_at": "2026-01-14T00:36:09.609226Z"
+    },
+    "enemy-system": {
+      "status": "ready",
+      "priority": 2,
+      "file": "tasks/enemy-system.md",
+      "updated_at": "2026-01-14T00:36:10.344227Z"
+    },
+    "game-engine": {
+      "status": "ready",
+      "priority": 1,
+      "file": "tasks/game-engine.md",
+      "updated_at": "2026-01-14T00:36:09.371407Z"
+    },
+    "inventory-system": {
+      "status": "ready",
+      "priority": 2,
+      "file": "tasks/inventory-system.md",
+      "updated_at": "2026-01-14T00:36:10.587518Z"
+    },
+    "meta-progression": {
+      "status": "ready",
+      "priority": 2,
+      "file": "tasks/meta-progression.md",
+      "updated_at": "2026-01-14T00:36:11.078832Z"
+    },
+    "player-entity": {
+      "status": "ready",
+      "priority": 1,
+      "file": "tasks/player-entity.md",
+      "updated_at": "2026-01-14T00:36:09.844434Z"
+    },
+    "project-setup": {
+      "status": "done",
+      "priority": 1,
+      "file": "tasks/project-setup.md",
+      "updated_at": "2026-01-14T00:42:46.607252Z"
+    },
+    "ui-system": {
+      "status": "ready",
+      "priority": 1,
+      "file": "tasks/ui-system.md",
+      "updated_at": "2026-01-14T00:36:10.833173Z"
+    }
+  },
+  "archived_count": 0,
+  "learnings_count": 0,
+  "decisions_count": 0,
+  "updated_at": "2026-01-14T00:42:46.60736Z"
+}
