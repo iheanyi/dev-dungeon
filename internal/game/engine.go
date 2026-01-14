@@ -276,23 +276,30 @@ func (e *Engine) populateFloor(depth int, floorSeed int64) {
 	}
 
 	// Normal floor population
-	// Number of enemies scales with depth
-	numEnemies := 2 + depth
-	if numEnemies > 10 {
-		numEnemies = 10
+	// Number of enemy "encounters" scales with depth
+	numEncounters := 2 + depth
+	if numEncounters > 8 {
+		numEncounters = 8
 	}
 
-	// Spawn enemies
-	for i := 0; i < numEnemies; i++ {
-		pos := e.findEmptyPosition(floorRng)
-		if pos == nil {
-			continue
-		}
-
+	// Spawn enemy groups
+	enemyIndex := 0
+	for encounter := 0; encounter < numEncounters; encounter++ {
 		enemyType := e.selectEnemyType(depth, floorRng)
-		enemyID := fmt.Sprintf("enemy_%d_%d", depth, i)
-		enemy := entity.NewEnemy(enemyType, enemyID, *pos, depth)
-		e.world.AddEnemy(enemy)
+		groupSize := entity.GetGroupSize(enemyType, floorRng)
+
+		// Spawn the group near each other
+		for i := 0; i < groupSize; i++ {
+			pos := e.findEmptyPosition(floorRng)
+			if pos == nil {
+				continue
+			}
+
+			enemyID := fmt.Sprintf("enemy_%d_%d", depth, enemyIndex)
+			enemy := entity.NewEnemy(enemyType, enemyID, *pos, depth)
+			e.world.AddEnemy(enemy)
+			enemyIndex++
+		}
 	}
 
 	// Number of items

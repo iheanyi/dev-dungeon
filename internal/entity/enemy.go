@@ -46,6 +46,8 @@ type EnemyTemplate struct {
 	XPReward  int
 	Behavior  EnemyBehavior
 	LootTable []string
+	MinSpawn  int // Minimum group size when spawning (default 1)
+	MaxSpawn  int // Maximum group size when spawning (default 1)
 }
 
 // EnemyTemplates holds all enemy definitions.
@@ -64,6 +66,8 @@ var EnemyTemplates = map[EnemyType]EnemyTemplate{
 		XPReward:  10,
 		Behavior:  BehaviorAggressive,
 		LootTable: []string{"memory_fragment"},
+		MinSpawn:  1, // Zombies spawn in hordes
+		MaxSpawn:  3,
 	},
 	EnemyDaemon: {
 		Type:  EnemyDaemon,
@@ -79,6 +83,8 @@ var EnemyTemplates = map[EnemyType]EnemyTemplate{
 		XPReward:  20,
 		Behavior:  BehaviorDefensive,
 		LootTable: []string{"service_token"},
+		MinSpawn:  1, // Daemons sometimes have helper processes
+		MaxSpawn:  2,
 	},
 	EnemyForkBomb: {
 		Type:  EnemyForkBomb,
@@ -94,6 +100,8 @@ var EnemyTemplates = map[EnemyType]EnemyTemplate{
 		XPReward:  15,
 		Behavior:  BehaviorSwarm,
 		LootTable: []string{"cpu_cycle"},
+		MinSpawn:  1, // Start small, they multiply in combat
+		MaxSpawn:  2,
 	},
 	EnemySegfault: {
 		Type:  EnemySegfault,
@@ -109,6 +117,8 @@ var EnemyTemplates = map[EnemyType]EnemyTemplate{
 		XPReward:  25,
 		Behavior:  BehaviorErratic,
 		LootTable: []string{"core_dump"},
+		MinSpawn:  1, // Solitary, unpredictable
+		MaxSpawn:  1,
 	},
 	EnemyRootkit: {
 		Type:  EnemyRootkit,
@@ -124,6 +134,8 @@ var EnemyTemplates = map[EnemyType]EnemyTemplate{
 		XPReward:  50,
 		Behavior:  BehaviorStealth,
 		LootTable: []string{"root_shard"},
+		MinSpawn:  1, // Stealthy, works alone
+		MaxSpawn:  1,
 	},
 	EnemyKernelPanic: {
 		Type:  EnemyKernelPanic,
@@ -139,6 +151,8 @@ var EnemyTemplates = map[EnemyType]EnemyTemplate{
 		XPReward:  500,
 		Behavior:  BehaviorAggressive,
 		LootTable: []string{"victory"},
+		MinSpawn:  1, // Boss - always single
+		MaxSpawn:  1,
 	},
 }
 
@@ -204,4 +218,31 @@ func (e *Enemy) IsAlive() bool {
 // GetDamage returns the damage this enemy deals.
 func (e *Enemy) GetDamage() int {
 	return e.Stats.CPU
+}
+
+// GetGroupSize returns a random group size for the given enemy type.
+// Uses the template's MinSpawn/MaxSpawn values. Defaults to 1 if not set.
+func GetGroupSize(enemyType EnemyType, rng interface{ Intn(n int) int }) int {
+	template, ok := EnemyTemplates[enemyType]
+	if !ok {
+		return 1
+	}
+
+	minSpawn := template.MinSpawn
+	maxSpawn := template.MaxSpawn
+
+	// Default to 1 if not set
+	if minSpawn <= 0 {
+		minSpawn = 1
+	}
+	if maxSpawn <= 0 || maxSpawn < minSpawn {
+		maxSpawn = minSpawn
+	}
+
+	// Return single spawn if min == max
+	if minSpawn == maxSpawn {
+		return minSpawn
+	}
+
+	return minSpawn + rng.Intn(maxSpawn-minSpawn+1)
 }
