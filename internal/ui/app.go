@@ -7,7 +7,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/iheanyi/devdungeon/internal/config"
+	"github.com/iheanyi/devdungeon/internal/dungeon"
 	"github.com/iheanyi/devdungeon/internal/entity"
+	"github.com/iheanyi/devdungeon/internal/game"
 	"github.com/iheanyi/devdungeon/internal/types"
 )
 
@@ -28,6 +30,7 @@ const (
 type Model struct {
 	// Core game state
 	config    *config.Config
+	engine    *game.Engine
 	player    *entity.Player
 	gameState types.GameState
 
@@ -179,7 +182,8 @@ func New(cfg *config.Config) *Model {
 
 // Init implements tea.Model.
 func (m *Model) Init() tea.Cmd {
-	return nil
+	// Request initial window size
+	return tea.EnterAltScreen
 }
 
 // Update implements tea.Model.
@@ -197,12 +201,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKeyPress processes keyboard input.
 func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Global keys
-	switch msg.String() {
-	case "ctrl+c", "q":
-		if m.currentView == ViewMainMenu {
-			return m, tea.Quit
-		}
+	// Ctrl+C ALWAYS quits - this is the universal escape hatch
+	if msg.String() == "ctrl+c" {
+		m.shutdown()
+		return m, tea.Quit
 	}
 
 	// View-specific input
@@ -222,6 +224,13 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// shutdown gracefully shuts down the game.
+func (m *Model) shutdown() {
+	if m.engine != nil {
+		m.engine.Shutdown()
+	}
 }
 
 // updateMainMenu handles main menu input.
@@ -252,24 +261,68 @@ func (m *Model) selectMenuItem() (tea.Model, tea.Cmd) {
 		m.startNewGame()
 		return m, nil
 	case "Continue":
-		// TODO: Load saved game
-		m.statusMsg = "No save file found"
+		m.continueGame()
 		return m, nil
 	case "Settings":
 		// TODO: Settings screen
+		m.statusMsg = "Settings not yet implemented"
 		return m, nil
 	case "Quit":
+		m.shutdown()
 		return m, tea.Quit
 	}
 	return m, nil
 }
 
-// startNewGame initializes a new game.
-func (m *Model) startNewGame() {
-	m.player = entity.NewPlayer(entity.PlayerClass(m.config.Game.StartingClass))
+// continueGame loads and continues a saved game.
+func (m *Model) continueGame() {
+	// Create a temporary engine to check for saves
+	if m.engine == nil {
+		m.engine = game.NewEngine(m.config, 0)
+
+		// Set up the dungeon generator
+		dungeonCfg := dungeon.DefaultConfig()
+		dungeonCfg.Width = m.config.Display.MapWidth
+		dungeonCfg.Height = m.config.Display.MapHeight
+		m.engine.SetGenerator(dungeon.NewGenerator(dungeonCfg))
+	}
+
+	// Try to load the latest save
+	if err := m.engine.LoadLatestSave(); err != nil {
+		m.statusMsg = err.Error()
+		return
+	}
+
+	// Get the player from the engine
+	m.player = m.engine.Player()
 	m.currentView = ViewGame
 	m.gameState = types.StateExploring
-	m.statusMsg = "Welcome to /dev/dungeon. Navigate the filesystem. Survive."
+	m.statusMsg = fmt.Sprintf("Welcome back to %s.", m.engine.CurrentFloorType().FloorName())
+}
+
+// startNewGame initializes a new game.
+func (m *Model) startNewGame() {
+	// Create the game engine with seed 0 (random)
+	m.engine = game.NewEngine(m.config, 0)
+
+	// Set up the dungeon generator
+	dungeonCfg := dungeon.DefaultConfig()
+	dungeonCfg.Width = m.config.Display.MapWidth
+	dungeonCfg.Height = m.config.Display.MapHeight
+	m.engine.SetGenerator(dungeon.NewGenerator(dungeonCfg))
+
+	// Start a new game with the configured class
+	playerClass := entity.PlayerClass(m.config.Game.StartingClass)
+	if err := m.engine.StartNewGame(playerClass); err != nil {
+		m.statusMsg = fmt.Sprintf("Failed to start game: %v", err)
+		return
+	}
+
+	// Get the player from the engine
+	m.player = m.engine.Player()
+	m.currentView = ViewGame
+	m.gameState = types.StateExploring
+	m.statusMsg = fmt.Sprintf("Welcome to %s. Navigate the filesystem. Survive.", m.engine.CurrentFloorType().FloorName())
 }
 
 // updateGame handles game view input.
@@ -283,6 +336,24 @@ func (m *Model) updateGame(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.movePlayer(types.DirLeft)
 	case "d", "right", "l":
 		m.movePlayer(types.DirRight)
+	case ">", ".":
+		// Descend stairs
+		if m.engine != nil {
+			if err := m.engine.DescendStairs(); err != nil {
+				m.statusMsg = err.Error()
+			} else {
+				m.statusMsg = fmt.Sprintf("Descended to %s (depth %d).", m.engine.CurrentFloorType().FloorName(), m.engine.CurrentDepth())
+			}
+		}
+	case "<", ",":
+		// Ascend stairs
+		if m.engine != nil {
+			if err := m.engine.AscendStairs(); err != nil {
+				m.statusMsg = err.Error()
+			} else {
+				m.statusMsg = fmt.Sprintf("Ascended to %s (depth %d).", m.engine.CurrentFloorType().FloorName(), m.engine.CurrentDepth())
+			}
+		}
 	case "i":
 		m.currentView = ViewInventory
 	case "p", "esc":
@@ -291,26 +362,27 @@ func (m *Model) updateGame(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// movePlayer moves the player in a direction.
+// movePlayer moves the player in a direction using the game engine.
 func (m *Model) movePlayer(dir types.Direction) {
-	if m.player == nil {
+	if m.engine == nil || m.player == nil {
 		return
 	}
 
-	pos := m.player.Position()
-	switch dir {
-	case types.DirUp:
-		pos.Y--
-	case types.DirDown:
-		pos.Y++
-	case types.DirLeft:
-		pos.X--
-	case types.DirRight:
-		pos.X++
+	result := m.engine.MovePlayer(dir)
+
+	// Update status message
+	if result.Message != "" {
+		m.statusMsg = result.Message
 	}
 
-	// TODO: Collision detection with world
-	m.player.SetPosition(pos)
+	// Check for combat initiation
+	if result.Combat != nil {
+		m.enemies = []*entity.Enemy{result.Combat}
+		m.currentView = ViewCombat
+		m.gameState = types.StateCombat
+		m.combatCursor = 0
+		m.combatLog = []string{fmt.Sprintf("A wild %s appears!", result.Combat.Name())}
+	}
 }
 
 // updateCombat handles combat view input.
@@ -328,6 +400,11 @@ func (m *Model) updateCombat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter", " ", "1", "2", "3", "4":
 		return m.executeCombatAction(msg.String())
+	case "esc", "q":
+		// Temporary: flee from combat (TODO: implement proper flee mechanic)
+		m.currentView = ViewGame
+		m.gameState = types.StateExploring
+		m.statusMsg = "You fled from combat! (DEBUG: combat not yet implemented)"
 	}
 	return m, nil
 }
@@ -389,8 +466,15 @@ func (m *Model) updatePause(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc", "p":
 		m.currentView = ViewGame
 	case "q":
+		// Save before returning to main menu
+		if m.engine != nil {
+			m.engine.Shutdown()
+			m.engine = nil
+		}
+		m.player = nil
 		m.currentView = ViewMainMenu
 		m.gameState = types.StateMainMenu
+		m.statusMsg = "Game saved."
 	}
 	return m, nil
 }
@@ -460,16 +544,19 @@ func (m *Model) viewMainMenu() string {
 
 // viewGame renders the main game view.
 func (m *Model) viewGame() string {
+	// Get viewport dimensions for consistent sizing
+	vpWidth, _ := m.getViewportSize()
+
 	// Stats panel
 	stats := m.renderStats()
 
-	// Map (placeholder for now)
+	// Map
 	mapView := m.renderMap()
 
-	// Log/status
-	log := m.renderLog()
+	// Log/status - match map width
+	log := m.renderLog(vpWidth)
 
-	// Layout: stats on right, map in center, log at bottom
+	// Layout: map on left, stats on right, log at bottom spanning full width
 	topRow := lipgloss.JoinHorizontal(lipgloss.Top, mapView, "  ", stats)
 
 	return m.styles.Container.Render(topRow + "\n" + log)
@@ -482,6 +569,15 @@ func (m *Model) renderStats() string {
 	}
 
 	p := m.player
+
+	// Get floor info from engine
+	floorName := "/home"
+	floorDepth := 1
+	if m.engine != nil {
+		floorName = m.engine.CurrentFloorType().FloorName()
+		floorDepth = m.engine.CurrentDepth()
+	}
+
 	content := fmt.Sprintf(
 		"%s\n%s\n\n"+
 			"RAM: %s/%d\n"+
@@ -491,7 +587,8 @@ func (m *Model) renderStats() string {
 			"UID: %d\n\n"+
 			"Level: %d\n"+
 			"XP: %d/%d\n"+
-			"Floor: /home",
+			"Floor: %s\n"+
+			"Depth: %d",
 		m.styles.Title.Render(string(p.Class)),
 		m.styles.Muted.Render("Process Status"),
 		m.colorizeRAM(p.Stats.RAM, p.MaxStats.MaxRAM),
@@ -504,6 +601,8 @@ func (m *Model) renderStats() string {
 		p.Level,
 		p.XP,
 		p.XPToLevel,
+		floorName,
+		floorDepth,
 	)
 
 	return m.styles.StatPanel.Width(20).Render(content)
@@ -531,21 +630,149 @@ func (m *Model) colorizeFD(current, max int) string {
 	return m.styles.Muted.Render(str)
 }
 
-// renderMap renders the game map (placeholder).
+// getViewportSize calculates the map viewport size based on terminal dimensions.
+func (m *Model) getViewportSize() (width, height int) {
+	termWidth := m.width
+	termHeight := m.height
+
+	// Use sensible defaults if terminal size not yet received
+	if termWidth == 0 {
+		termWidth = 120
+	}
+	if termHeight == 0 {
+		termHeight = 40
+	}
+
+	// Account for UI chrome: stats panel (26 chars), borders, padding, gaps
+	statsPanelWidth := 26
+	borderAndPadding := 10 // map border (2) + container padding (4) + gap (2) + some buffer
+
+	// Calculate available space for map
+	width = termWidth - statsPanelWidth - borderAndPadding
+	height = termHeight - 8 // Leave room for log panel (4 lines) and container padding
+
+	// Minimum bounds
+	if width < 40 {
+		width = 40
+	}
+	if height < 15 {
+		height = 15
+	}
+
+	return width, height
+}
+
+// renderMap renders the game map from the engine with a viewport centered on the player.
 func (m *Model) renderMap() string {
-	// Placeholder map
-	width := 40
-	height := 15
+	if m.engine == nil {
+		return m.styles.MapBorder.Render("No map loaded")
+	}
+
+	tiles := m.engine.GetVisibleTiles()
+	if tiles == nil || len(tiles) == 0 {
+		return m.styles.MapBorder.Render("No map loaded")
+	}
+
+	dungeonHeight := len(tiles)
+	dungeonWidth := 0
+	if dungeonHeight > 0 {
+		dungeonWidth = len(tiles[0])
+	}
+
+	playerPos := types.Position{}
+	if m.player != nil {
+		playerPos = m.player.Position()
+	}
+
+	// Calculate viewport size based on terminal dimensions
+	vpWidth, vpHeight := m.getViewportSize()
+
+	// Calculate viewport origin (top-left corner), centered on player
+	vpX := playerPos.X - vpWidth/2
+	vpY := playerPos.Y - vpHeight/2
+
+	// Clamp viewport to dungeon bounds
+	if vpX < 0 {
+		vpX = 0
+	}
+	if vpY < 0 {
+		vpY = 0
+	}
+	if vpX+vpWidth > dungeonWidth {
+		vpX = dungeonWidth - vpWidth
+		if vpX < 0 {
+			vpX = 0
+		}
+	}
+	if vpY+vpHeight > dungeonHeight {
+		vpY = dungeonHeight - vpHeight
+		if vpY < 0 {
+			vpY = 0
+		}
+	}
+
+	// Get enemies and items for rendering
+	enemies := m.engine.GetEnemies()
+	items := m.engine.GetItems()
 
 	var mapStr string
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			if m.player != nil && x == m.player.Position().X && y == m.player.Position().Y {
+	for vy := 0; vy < vpHeight; vy++ {
+		y := vpY + vy
+		if y >= dungeonHeight {
+			break
+		}
+
+		for vx := 0; vx < vpWidth; vx++ {
+			x := vpX + vx
+			if x >= dungeonWidth {
+				mapStr += " "
+				continue
+			}
+
+			pos := types.Position{X: x, Y: y}
+			tile := tiles[y][x]
+
+			// Player takes priority
+			if pos == playerPos {
 				mapStr += m.styles.Player.Render("@")
-			} else if x == 0 || x == width-1 || y == 0 || y == height-1 {
-				mapStr += m.styles.Wall.Render("#")
+				continue
+			}
+
+			// Check for enemy at position
+			enemyFound := false
+			for _, enemy := range enemies {
+				if enemy.Position() == pos && tile.Visible {
+					mapStr += m.styles.Enemy.Render(string(enemy.Glyph()))
+					enemyFound = true
+					break
+				}
+			}
+			if enemyFound {
+				continue
+			}
+
+			// Check for item at position
+			itemFound := false
+			for _, item := range items {
+				if item.Position() == pos && tile.Visible {
+					mapStr += m.styles.Item.Render(string(item.Glyph()))
+					itemFound = true
+					break
+				}
+			}
+			if itemFound {
+				continue
+			}
+
+			// Render tile based on visibility
+			if !tile.Explored && !tile.Visible {
+				mapStr += " " // Unexplored
+			} else if tile.Visible {
+				// Fully visible tiles
+				mapStr += m.renderTile(tile.Type)
 			} else {
-				mapStr += m.styles.Floor.Render(".")
+				// Explored but not visible (darker)
+				mapStr += m.styles.Muted.Render(m.getTileGlyph(tile.Type))
 			}
 		}
 		mapStr += "\n"
@@ -554,22 +781,103 @@ func (m *Model) renderMap() string {
 	return m.styles.MapBorder.Render(mapStr)
 }
 
-// renderLog renders the message log.
-func (m *Model) renderLog() string {
+// renderTile returns a styled string for a tile type.
+func (m *Model) renderTile(tileType types.TileType) string {
+	switch tileType {
+	case types.TileWall:
+		return m.styles.Wall.Render("#")
+	case types.TileFloor:
+		return m.styles.Floor.Render(".")
+	case types.TileStairsUp:
+		return m.styles.Stairs.Render("<")
+	case types.TileStairsDown:
+		return m.styles.Stairs.Render(">")
+	case types.TileDoor:
+		return m.styles.Highlight.Render("+")
+	default:
+		return " "
+	}
+}
+
+// getTileGlyph returns the character for a tile type (for explored-but-not-visible).
+func (m *Model) getTileGlyph(tileType types.TileType) string {
+	switch tileType {
+	case types.TileWall:
+		return "#"
+	case types.TileFloor:
+		return "."
+	case types.TileStairsUp:
+		return "<"
+	case types.TileStairsDown:
+		return ">"
+	case types.TileDoor:
+		return "+"
+	default:
+		return " "
+	}
+}
+
+// renderLog renders the message log with dynamic width.
+func (m *Model) renderLog(width int) string {
 	content := m.statusMsg
 	if content == "" {
 		content = "Ready."
 	}
 
-	footer := m.styles.Muted.Render("[WASD] Move  [I] Inventory  [P] Pause")
+	footer := m.styles.Muted.Render("[WASD/hjkl] Move  [</>] Stairs  [I] Inventory  [P] Pause  [Q] Quit")
 
-	return m.styles.LogPanel.Width(60).Render(content + "\n" + footer)
+	// Add 2 for border padding
+	logWidth := width + 2
+	if logWidth < 60 {
+		logWidth = 60
+	}
+
+	return m.styles.LogPanel.Width(logWidth).Render(content + "\n" + footer)
 }
 
 // viewCombat renders the combat view.
 func (m *Model) viewCombat() string {
-	// TODO: Full combat UI
-	return m.styles.Container.Render("Combat View (TODO)")
+	title := m.styles.Danger.Render("═══ COMBAT ═══\n")
+
+	// Show enemy info
+	var enemyInfo string
+	if len(m.enemies) > 0 {
+		enemy := m.enemies[0]
+		enemyInfo = fmt.Sprintf("\n%s  %s\n",
+			m.styles.Enemy.Render(string(enemy.Glyph())),
+			m.styles.Title.Render(enemy.Name()))
+		enemyInfo += fmt.Sprintf("RAM: %d/%d\n", enemy.Stats.RAM, enemy.MaxStats.MaxRAM)
+		enemyInfo += fmt.Sprintf("CPU: %d\n\n", enemy.Stats.CPU)
+	}
+
+	// Combat options
+	options := []string{"[1] Attack (kill -TERM)", "[2] Hack", "[3] Use Item", "[4] Flee"}
+	var menu string
+	for i, opt := range options {
+		if i == m.combatCursor {
+			menu += m.styles.MenuSelected.Render("> "+opt) + "\n"
+		} else {
+			menu += m.styles.MenuItem.Render("  "+opt) + "\n"
+		}
+	}
+
+	// Combat log
+	var log string
+	if len(m.combatLog) > 0 {
+		log = "\n" + m.styles.Muted.Render("─── Log ───") + "\n"
+		start := 0
+		if len(m.combatLog) > 5 {
+			start = len(m.combatLog) - 5
+		}
+		for _, entry := range m.combatLog[start:] {
+			log += m.styles.Normal.Render("  "+entry) + "\n"
+		}
+	}
+
+	footer := m.styles.Muted.Render("\n[↑/↓] Select  [Enter/1-4] Act  [Esc] Flee (debug)")
+	footer += m.styles.Danger.Render("\n\n⚠ Combat system not yet implemented - press Esc to flee")
+
+	return m.styles.Container.Render(title + enemyInfo + menu + log + footer)
 }
 
 // viewInventory renders the inventory view.

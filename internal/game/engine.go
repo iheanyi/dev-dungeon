@@ -8,6 +8,7 @@ import (
 
 	"github.com/iheanyi/devdungeon/internal/config"
 	"github.com/iheanyi/devdungeon/internal/entity"
+	"github.com/iheanyi/devdungeon/internal/save"
 	"github.com/iheanyi/devdungeon/internal/types"
 )
 
@@ -22,14 +23,15 @@ type MoveResult struct {
 
 // Engine is the core game engine that manages game state and logic.
 type Engine struct {
-	config     *config.Config
-	player     *entity.Player
-	world      *GameWorld
-	generator  DungeonGenerator
-	state      types.GameState
-	rng        *rand.Rand
-	masterSeed int64
-	messages   []string // Recent game messages
+	config      *config.Config
+	player      *entity.Player
+	world       *GameWorld
+	generator   DungeonGenerator
+	state       types.GameState
+	rng         *rand.Rand
+	masterSeed  int64
+	messages    []string // Recent game messages
+	saveManager *save.Manager
 }
 
 // NewEngine creates a new game engine with the given configuration and seed.
@@ -38,14 +40,29 @@ func NewEngine(cfg *config.Config, seed int64) *Engine {
 		seed = time.Now().UnixNano()
 	}
 
-	return &Engine{
-		config:     cfg,
-		world:      NewGameWorld(),
-		state:      types.StateMainMenu,
-		rng:        rand.New(rand.NewSource(seed)),
-		masterSeed: seed,
-		messages:   make([]string, 0),
+	// Initialize save manager
+	saveMgr, err := save.NewManager(save.DefaultConfig())
+	if err != nil {
+		// Log error but continue without saves
+		saveMgr = nil
 	}
+
+	engine := &Engine{
+		config:      cfg,
+		world:       NewGameWorld(),
+		state:       types.StateMainMenu,
+		rng:         rand.New(rand.NewSource(seed)),
+		masterSeed:  seed,
+		messages:    make([]string, 0),
+		saveManager: saveMgr,
+	}
+
+	// Start background save goroutine
+	if saveMgr != nil {
+		saveMgr.Start()
+	}
+
+	return engine
 }
 
 // SetGenerator sets the dungeon generator for the engine.
@@ -451,6 +468,9 @@ func (e *Engine) DescendStairs() error {
 		return errors.New("no stairs down here")
 	}
 
+	// Save before floor transition
+	e.Save(save.TriggerFloorTransition)
+
 	// Cache current floor state
 	e.world.CacheCurrentFloor()
 
@@ -487,6 +507,9 @@ func (e *Engine) AscendStairs() error {
 	if tile == nil || tile.Type != types.TileStairsUp {
 		return errors.New("no stairs up here")
 	}
+
+	// Save before floor transition
+	e.Save(save.TriggerFloorTransition)
 
 	// Cache current floor state
 	e.world.CacheCurrentFloor()
@@ -598,4 +621,243 @@ func (e *Engine) CurrentDepth() int {
 // CurrentFloorType returns the type of the current floor.
 func (e *Engine) CurrentFloorType() types.FloorType {
 	return e.world.GetFloorType()
+}
+
+// --- Save/Load Methods ---
+
+// Save triggers a save with the given trigger type.
+func (e *Engine) Save(trigger save.SaveTrigger) {
+	if e.saveManager == nil || e.player == nil {
+		return
+	}
+
+	data := e.toSaveData()
+	e.saveManager.Save(data, trigger)
+}
+
+// SaveSync saves and waits for completion.
+func (e *Engine) SaveSync(trigger save.SaveTrigger) error {
+	if e.saveManager == nil {
+		return errors.New("save manager not available")
+	}
+	if e.player == nil {
+		return errors.New("no active game to save")
+	}
+
+	data := e.toSaveData()
+	return e.saveManager.SaveSync(data, trigger)
+}
+
+// LoadGame loads a saved game state.
+func (e *Engine) LoadGame(data *save.SaveData) error {
+	if data == nil {
+		return errors.New("no save data provided")
+	}
+
+	// Set the master seed from save
+	e.masterSeed = data.MasterSeed
+	e.rng = rand.New(rand.NewSource(e.masterSeed))
+
+	// Recreate player from save data
+	e.player = entity.NewPlayer(data.Player.Class)
+	e.player.Stats = data.Player.Stats
+	e.player.MaxStats = data.Player.MaxStats
+	e.player.Level = data.Player.Level
+	e.player.XP = data.Player.XP
+	e.player.XPToLevel = data.Player.XPToLevel
+	e.player.ExitCodes = data.Player.ExitCodes
+
+	// Load inventory
+	for _, itemData := range data.Player.Inventory {
+		item := entity.NewItem(itemData.TemplateID, itemData.TemplateID, types.Position{})
+		if item != nil {
+			item.Quantity = itemData.Quantity
+			e.player.Inventory.AddItem(item)
+		}
+	}
+
+	// Load equipment
+	if data.Player.Equipment.Weapon != "" {
+		weapon := entity.NewItem(data.Player.Equipment.Weapon, "weapon", types.Position{})
+		if weapon != nil {
+			e.player.Equipment.Equip(weapon)
+		}
+	}
+	if data.Player.Equipment.Armor != "" {
+		armor := entity.NewItem(data.Player.Equipment.Armor, "armor", types.Position{})
+		if armor != nil {
+			e.player.Equipment.Equip(armor)
+		}
+	}
+
+	// Regenerate the current floor
+	if err := e.generateFloor(data.CurrentDepth); err != nil {
+		return fmt.Errorf("failed to regenerate floor: %w", err)
+	}
+
+	// Apply floor state deltas (dead enemies, looted items, explored tiles)
+	for _, floorState := range data.FloorStates {
+		if floorState.Depth == data.CurrentDepth {
+			e.applyFloorState(&floorState)
+			break
+		}
+	}
+
+	// Set player position
+	e.player.SetPosition(data.Player.Position)
+
+	// Update visibility
+	e.world.UpdateVisibility(e.player.Position(), e.getViewRadius())
+
+	e.state = types.StateExploring
+	e.addMessage("Game loaded. You are in %s (depth %d).", e.world.CurrentFloor.Type.FloorName(), data.CurrentDepth)
+
+	return nil
+}
+
+// LoadLatestSave loads the most recent save file.
+func (e *Engine) LoadLatestSave() error {
+	if e.saveManager == nil {
+		return errors.New("save manager not available")
+	}
+
+	data, err := e.saveManager.LoadLatest()
+	if err != nil {
+		return fmt.Errorf("failed to load save: %w", err)
+	}
+	if data == nil {
+		return errors.New("no save file found")
+	}
+
+	return e.LoadGame(data)
+}
+
+// HasSaveFile returns true if a save file exists.
+func (e *Engine) HasSaveFile() bool {
+	if e.saveManager == nil {
+		return false
+	}
+	saves, err := e.saveManager.ListSaves()
+	if err != nil {
+		return false
+	}
+	return len(saves) > 0
+}
+
+// Shutdown gracefully shuts down the engine.
+func (e *Engine) Shutdown() {
+	// Save on quit
+	if e.player != nil && e.saveManager != nil {
+		e.SaveSync(save.TriggerQuit)
+	}
+
+	// Stop the save manager
+	if e.saveManager != nil {
+		e.saveManager.Stop()
+	}
+}
+
+// toSaveData converts the current game state to SaveData.
+func (e *Engine) toSaveData() *save.SaveData {
+	// Convert inventory
+	var invData []save.ItemData
+	for _, item := range e.player.Inventory.Items {
+		invData = append(invData, save.ItemData{
+			TemplateID: item.ID(),
+			Quantity:   item.Quantity,
+		})
+	}
+
+	// Convert equipment
+	eqData := save.EquipmentData{}
+	if e.player.Equipment.Weapon != nil {
+		eqData.Weapon = e.player.Equipment.Weapon.ID()
+	}
+	if e.player.Equipment.Armor != nil {
+		eqData.Armor = e.player.Equipment.Armor.ID()
+	}
+	if e.player.Equipment.Utility1 != nil {
+		eqData.Utility1 = e.player.Equipment.Utility1.ID()
+	}
+	if e.player.Equipment.Utility2 != nil {
+		eqData.Utility2 = e.player.Equipment.Utility2.ID()
+	}
+
+	// Build floor states
+	floorStates := e.buildFloorStates()
+
+	return &save.SaveData{
+		Version:      save.Version,
+		MasterSeed:   e.masterSeed,
+		CurrentDepth: e.world.CurrentDepth,
+		Player: save.PlayerData{
+			Class:     e.player.Class,
+			Stats:     e.player.Stats,
+			MaxStats:  e.player.MaxStats,
+			Level:     e.player.Level,
+			XP:        e.player.XP,
+			XPToLevel: e.player.XPToLevel,
+			Position:  e.player.Position(),
+			Inventory: invData,
+			Equipment: eqData,
+			ExitCodes: e.player.ExitCodes,
+		},
+		FloorStates: floorStates,
+	}
+}
+
+// buildFloorStates builds floor state deltas for all visited floors.
+func (e *Engine) buildFloorStates() []save.FloorState {
+	var states []save.FloorState
+
+	// For now, just save current floor state
+	// In the future, track all visited floors
+	if e.world.CurrentFloor != nil {
+		state := save.FloorState{
+			Depth:         e.world.CurrentDepth,
+			ExploredTiles: e.getExploredTiles(),
+			DeadEnemies:   []string{}, // Track killed enemies
+			LootedItems:   []string{}, // Track picked up items
+		}
+		states = append(states, state)
+	}
+
+	return states
+}
+
+// getExploredTiles returns all explored tile positions.
+func (e *Engine) getExploredTiles() []types.Position {
+	var explored []types.Position
+	if e.world.CurrentFloor == nil {
+		return explored
+	}
+
+	for y, row := range e.world.CurrentFloor.Tiles {
+		for x, tile := range row {
+			if tile.Explored {
+				explored = append(explored, types.Position{X: x, Y: y})
+			}
+		}
+	}
+	return explored
+}
+
+// applyFloorState applies saved floor state deltas.
+func (e *Engine) applyFloorState(state *save.FloorState) {
+	// Mark explored tiles
+	for _, pos := range state.ExploredTiles {
+		if tile := e.world.CurrentFloor.GetTile(pos); tile != nil {
+			tile.Explored = true
+		}
+	}
+
+	// Remove dead enemies
+	for _, enemyID := range state.DeadEnemies {
+		e.world.RemoveEnemy(enemyID)
+	}
+
+	// Remove looted items
+	for _, itemID := range state.LootedItems {
+		e.world.RemoveItem(itemID)
+	}
 }
