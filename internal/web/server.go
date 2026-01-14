@@ -5,10 +5,22 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/charmbracelet/log"
 	"github.com/iheanyi/devdungeon/internal/db"
 )
+
+// Request size limits
+const maxRequestBodySize = 4 * 1024 // 4KB max for API requests
+
+// Valid run types for leaderboards
+var validRunTypes = map[string]bool{
+	"standard": true,
+	"daily":    true,
+	"seeded":   true,
+}
 
 // Config holds HTTP server configuration.
 type Config struct {
@@ -36,15 +48,38 @@ func New(cfg Config, dbClient *db.Client) (*Server, error) {
 
 	s.setupRoutes()
 
+	// Wrap mux with security headers middleware
+	handler := s.securityHeaders(s.mux)
+
 	s.srv = &http.Server{
-		Addr:         cfg.Host + ":" + cfg.Port,
-		Handler:      s.mux,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr:           cfg.Host + ":" + cfg.Port,
+		Handler:        handler,
+		ReadTimeout:    15 * time.Second,
+		WriteTimeout:   15 * time.Second,
+		IdleTimeout:    60 * time.Second,
+		MaxHeaderBytes: 1 << 16, // 64KB max headers
 	}
 
 	return s, nil
+}
+
+// securityHeaders adds security headers to all responses.
+func (s *Server) securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Security headers
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-XSS-Protection", "1; mode=block")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+
+		// Only add HSTS in production (when not localhost)
+		if !strings.Contains(r.Host, "localhost") && !strings.Contains(r.Host, "127.0.0.1") {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 // setupRoutes configures all HTTP routes.
@@ -118,6 +153,13 @@ func (s *Server) handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLeaderboardByType(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	runType := r.PathValue("runType")
+
+	// Validate runType parameter
+	if !validRunTypes[runType] {
+		s.jsonError(w, http.StatusBadRequest, "Invalid run type. Must be: standard, daily, or seeded")
+		return
+	}
+
 	limit := 100
 
 	entries, err := s.db.GetLeaderboard(ctx, runType, limit)
@@ -187,18 +229,38 @@ func (s *Server) handleDailySeed(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	// Validate Content-Type
+	contentType := r.Header.Get("Content-Type")
+	if contentType != "application/json" {
+		s.jsonError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
+		return
+	}
+
+	// Limit request body size
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+
 	var req struct {
 		Username  string `json:"username"`
 		PublicKey string `json:"public_key"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err.Error() == "http: request body too large" {
+			s.jsonError(w, http.StatusRequestEntityTooLarge, "Request body too large")
+			return
+		}
 		s.jsonError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	if len(req.Username) < 3 || len(req.Username) > 20 {
 		s.jsonError(w, http.StatusBadRequest, "Username must be 3-20 characters")
+		return
+	}
+
+	// Validate username format (SSH-friendly: lowercase alphanumeric + dashes)
+	if !isValidUsername(req.Username) {
+		s.jsonError(w, http.StatusBadRequest, "Username must be lowercase letters, numbers, and dashes only (no leading dash)")
 		return
 	}
 
@@ -217,18 +279,21 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	// Check if fingerprint already registered
 	existing, err := s.db.GetUserByFingerprint(ctx, fingerprint)
 	if err != nil {
+		log.Error("Database error checking fingerprint", "error", err)
 		s.jsonError(w, http.StatusInternalServerError, "Database error")
 		return
 	}
 	if existing != nil {
-		s.jsonError(w, http.StatusConflict, "This SSH key is already registered")
+		// Generic error to prevent information disclosure
+		s.jsonError(w, http.StatusConflict, "Registration failed - username or key already in use")
 		return
 	}
 
 	// Create user
 	user, err := s.db.CreateUser(ctx, req.Username, fingerprint)
 	if err != nil {
-		s.jsonError(w, http.StatusConflict, "Username already taken")
+		// Generic error to prevent username enumeration
+		s.jsonError(w, http.StatusConflict, "Registration failed - username or key already in use")
 		return
 	}
 
@@ -248,4 +313,25 @@ func parsePublicKeyFingerprint(pubKey string) (string, error) {
 	}
 
 	return fingerprintSHA256(key), nil
+}
+
+// isValidUsername checks if a username is SSH-friendly.
+// Must be lowercase alphanumeric with dashes, no leading dash.
+func isValidUsername(username string) bool {
+	if len(username) == 0 {
+		return false
+	}
+	for i, c := range username {
+		isLower := c >= 'a' && c <= 'z'
+		isDigit := c >= '0' && c <= '9'
+		isDash := c == '-'
+		// First char can't be a dash
+		if i == 0 && isDash {
+			return false
+		}
+		if !isLower && !isDigit && !isDash {
+			return false
+		}
+	}
+	return true
 }
