@@ -1,6 +1,9 @@
 package db
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Repository defines the interface for database operations.
 // This allows swapping implementations for testing (in-memory) vs production (PostgreSQL).
@@ -26,6 +29,8 @@ type Repository interface {
 	AddLeaderboardEntry(ctx context.Context, entry *LeaderboardEntry) error
 	GetTopScores(ctx context.Context, runType string, limit int) ([]LeaderboardEntry, error)
 	GetLeaderboard(ctx context.Context, runType string, limit int) ([]LeaderboardEntry, error)
+	GetDailyLeaderboard(ctx context.Context, date time.Time, limit int, cursor *LeaderboardCursor) ([]LeaderboardEntry, *LeaderboardCursor, error)
+	GetPlayerDailyRank(ctx context.Context, date time.Time, userID int) (int, *LeaderboardEntry, error)
 
 	// World drop operations
 	CreateWorldDrop(ctx context.Context, drop *WorldDrop) error
@@ -34,6 +39,7 @@ type Repository interface {
 
 	// Daily seed operations
 	GetOrCreateDailySeed(ctx context.Context) (int64, error)
+	GetDailySeed(ctx context.Context, date time.Time) (*DailySeed, error)
 
 	// Auth token operations
 	CreateAuthToken(ctx context.Context, userID int) (string, error)

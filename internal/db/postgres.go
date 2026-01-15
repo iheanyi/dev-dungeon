@@ -2,6 +2,8 @@ package db
 
 import (
 	"context"
+	crypto_rand "crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -343,8 +345,12 @@ func (c *Client) GetOrCreateDailySeed(ctx context.Context) (int64, error) {
 	`, today).Scan(&seed)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		// Generate new seed from date
-		seed = today.UnixNano()
+		// Generate cryptographically random seed (unpredictable)
+		var seedBytes [8]byte
+		if _, err := crypto_rand.Read(seedBytes[:]); err != nil {
+			return 0, fmt.Errorf("failed to generate random seed: %w", err)
+		}
+		seed = int64(binary.BigEndian.Uint64(seedBytes[:]))
 		_, err = c.pool.Exec(ctx, `
 			INSERT INTO daily_seeds (date, seed, created_at)
 			VALUES ($1, $2, $3)
@@ -357,6 +363,25 @@ func (c *Client) GetOrCreateDailySeed(ctx context.Context) (int64, error) {
 	}
 
 	return seed, nil
+}
+
+// GetDailySeed retrieves the seed for a specific date.
+// Returns nil if no seed exists for that date.
+func (c *Client) GetDailySeed(ctx context.Context, date time.Time) (*DailySeed, error) {
+	normalizedDate := date.UTC().Truncate(24 * time.Hour)
+
+	var ds DailySeed
+	err := c.pool.QueryRow(ctx, `
+		SELECT date, seed, created_at FROM daily_seeds WHERE date = $1
+	`, normalizedDate).Scan(&ds.Date, &ds.Seed, &ds.CreatedAt)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get daily seed: %w", err)
+	}
+	return &ds, nil
 }
 
 // GetUserByNanoID retrieves a user by their public NanoID.
@@ -617,4 +642,143 @@ func (c *Client) GetLeaderboard(ctx context.Context, runType string, limit int) 
 		entries = append(entries, e)
 	}
 	return entries, rows.Err()
+}
+
+// GetDailyLeaderboard retrieves daily leaderboard entries for a specific date with cursor-based pagination.
+// Returns entries with their calculated rank, and a cursor for fetching the next page.
+func (c *Client) GetDailyLeaderboard(ctx context.Context, date time.Time, limit int, cursor *LeaderboardCursor) ([]LeaderboardEntry, *LeaderboardCursor, error) {
+	normalizedDate := date.UTC().Truncate(24 * time.Hour)
+
+	// Get the seed for this date
+	var seed int64
+	err := c.pool.QueryRow(ctx, `SELECT seed FROM daily_seeds WHERE date = $1`, normalizedDate).Scan(&seed)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil, nil // No daily challenge for this date
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get daily seed: %w", err)
+	}
+
+	var query string
+	var args []interface{}
+
+	if cursor == nil {
+		// First page - no cursor
+		query = `
+			WITH ranked AS (
+				SELECT le.id, le.nanoid, le.user_id, u.username, le.run_type, le.seed,
+				       le.score, le.floors_cleared, le.time_seconds, le.class, le.created_at,
+				       RANK() OVER (ORDER BY le.score DESC) as rank
+				FROM leaderboard_entries le
+				JOIN users u ON le.user_id = u.id
+				WHERE le.run_type = 'daily' AND le.seed = $1
+			)
+			SELECT id, nanoid, user_id, username, run_type, seed, score,
+			       floors_cleared, time_seconds, class, created_at, rank
+			FROM ranked
+			ORDER BY score DESC, id ASC
+			LIMIT $2
+		`
+		args = []interface{}{seed, limit}
+	} else {
+		// Subsequent pages - use cursor for stable pagination
+		query = `
+			WITH ranked AS (
+				SELECT le.id, le.nanoid, le.user_id, u.username, le.run_type, le.seed,
+				       le.score, le.floors_cleared, le.time_seconds, le.class, le.created_at,
+				       RANK() OVER (ORDER BY le.score DESC) as rank
+				FROM leaderboard_entries le
+				JOIN users u ON le.user_id = u.id
+				WHERE le.run_type = 'daily' AND le.seed = $1
+			)
+			SELECT id, nanoid, user_id, username, run_type, seed, score,
+			       floors_cleared, time_seconds, class, created_at, rank
+			FROM ranked
+			WHERE (score < $2) OR (score = $2 AND id > $3)
+			ORDER BY score DESC, id ASC
+			LIMIT $4
+		`
+		args = []interface{}{seed, cursor.Score, cursor.ID, limit}
+	}
+
+	rows, err := c.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to query daily leaderboard: %w", err)
+	}
+	defer rows.Close()
+
+	var entries []LeaderboardEntry
+	for rows.Next() {
+		var e LeaderboardEntry
+		err := rows.Scan(
+			&e.ID, &e.NanoID, &e.UserID, &e.Username, &e.RunType, &e.Seed,
+			&e.Score, &e.FloorsCleared, &e.TimeSeconds, &e.Class, &e.CreatedAt, &e.Rank,
+		)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to scan leaderboard entry: %w", err)
+		}
+		entries = append(entries, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+
+	// Build next cursor from last entry
+	var nextCursor *LeaderboardCursor
+	if len(entries) == limit {
+		last := entries[len(entries)-1]
+		nextCursor = &LeaderboardCursor{
+			Score: last.Score,
+			ID:    last.ID,
+		}
+	}
+
+	return entries, nextCursor, nil
+}
+
+// GetPlayerDailyRank retrieves a player's rank and entry for a specific day's leaderboard.
+// Returns (0, nil, nil) if the player has no entry for that day or no daily challenge exists.
+func (c *Client) GetPlayerDailyRank(ctx context.Context, date time.Time, userID int) (int, *LeaderboardEntry, error) {
+	normalizedDate := date.UTC().Truncate(24 * time.Hour)
+
+	// Get the seed for this date
+	var seed int64
+	err := c.pool.QueryRow(ctx, `SELECT seed FROM daily_seeds WHERE date = $1`, normalizedDate).Scan(&seed)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil, nil // No daily challenge for this date
+	}
+	if err != nil {
+		return 0, nil, fmt.Errorf("failed to get daily seed: %w", err)
+	}
+
+	query := `
+		WITH ranked AS (
+			SELECT le.id, le.nanoid, le.user_id, u.username, le.run_type, le.seed,
+			       le.score, le.floors_cleared, le.time_seconds, le.class, le.created_at,
+			       RANK() OVER (ORDER BY le.score DESC) as rank
+			FROM leaderboard_entries le
+			JOIN users u ON le.user_id = u.id
+			WHERE le.run_type = 'daily' AND le.seed = $1
+		)
+		SELECT id, nanoid, user_id, username, run_type, seed, score,
+		       floors_cleared, time_seconds, class, created_at, rank
+		FROM ranked
+		WHERE user_id = $2
+		ORDER BY score DESC
+		LIMIT 1
+	`
+
+	var e LeaderboardEntry
+	err = c.pool.QueryRow(ctx, query, seed, userID).Scan(
+		&e.ID, &e.NanoID, &e.UserID, &e.Username, &e.RunType, &e.Seed,
+		&e.Score, &e.FloorsCleared, &e.TimeSeconds, &e.Class, &e.CreatedAt, &e.Rank,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil, nil // Player has no entry for this day
+	}
+	if err != nil {
+		return 0, nil, fmt.Errorf("failed to get player daily rank: %w", err)
+	}
+
+	return e.Rank, &e, nil
 }

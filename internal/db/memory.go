@@ -2,6 +2,8 @@ package db
 
 import (
 	"context"
+	crypto_rand "crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"sort"
 	"strings"
@@ -316,6 +318,119 @@ func (m *MemoryRepository) GetLeaderboard(ctx context.Context, runType string, l
 	return filtered, nil
 }
 
+// GetDailyLeaderboard retrieves daily leaderboard entries for a specific date with cursor-based pagination.
+func (m *MemoryRepository) GetDailyLeaderboard(ctx context.Context, date time.Time, limit int, cursor *LeaderboardCursor) ([]LeaderboardEntry, *LeaderboardCursor, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	normalizedDate := date.UTC().Truncate(24 * time.Hour)
+	key := normalizedDate.Format("2006-01-02")
+
+	// Check if seed exists for this date
+	seed, ok := m.dailySeeds[key]
+	if !ok {
+		return nil, nil, nil // No daily challenge for this date
+	}
+
+	// Filter daily entries for this seed
+	var filtered []LeaderboardEntry
+	for _, e := range m.leaderboard {
+		if e.RunType == "daily" && e.Seed == seed {
+			entry := e
+			// Denormalize username
+			if user, ok := m.users[e.UserID]; ok {
+				entry.Username = user.Username
+			}
+			filtered = append(filtered, entry)
+		}
+	}
+
+	// Sort by score descending, then ID ascending (for stable pagination)
+	sort.Slice(filtered, func(i, j int) bool {
+		if filtered[i].Score != filtered[j].Score {
+			return filtered[i].Score > filtered[j].Score
+		}
+		return filtered[i].ID < filtered[j].ID
+	})
+
+	// Assign ranks
+	for i := range filtered {
+		filtered[i].Rank = i + 1
+	}
+
+	// Apply cursor filter
+	if cursor != nil {
+		startIdx := 0
+		for i, e := range filtered {
+			if e.Score < cursor.Score || (e.Score == cursor.Score && e.ID > cursor.ID) {
+				startIdx = i
+				break
+			}
+			startIdx = len(filtered) // Past all entries
+		}
+		if startIdx < len(filtered) {
+			filtered = filtered[startIdx:]
+		} else {
+			filtered = nil
+		}
+	}
+
+	// Limit results
+	var nextCursor *LeaderboardCursor
+	if len(filtered) > limit {
+		filtered = filtered[:limit]
+		last := filtered[len(filtered)-1]
+		nextCursor = &LeaderboardCursor{
+			Score: last.Score,
+			ID:    last.ID,
+		}
+	}
+
+	return filtered, nextCursor, nil
+}
+
+// GetPlayerDailyRank retrieves a player's rank and entry for a specific day's leaderboard.
+func (m *MemoryRepository) GetPlayerDailyRank(ctx context.Context, date time.Time, userID int) (int, *LeaderboardEntry, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	normalizedDate := date.UTC().Truncate(24 * time.Hour)
+	key := normalizedDate.Format("2006-01-02")
+
+	// Check if seed exists for this date
+	seed, ok := m.dailySeeds[key]
+	if !ok {
+		return 0, nil, nil // No daily challenge for this date
+	}
+
+	// Get all daily entries for this seed and sort them
+	var allEntries []LeaderboardEntry
+	for _, e := range m.leaderboard {
+		if e.RunType == "daily" && e.Seed == seed {
+			entry := e
+			if user, ok := m.users[e.UserID]; ok {
+				entry.Username = user.Username
+			}
+			allEntries = append(allEntries, entry)
+		}
+	}
+
+	// Sort by score descending
+	sort.Slice(allEntries, func(i, j int) bool {
+		return allEntries[i].Score > allEntries[j].Score
+	})
+
+	// Find the player's entry and assign rank
+	for i, e := range allEntries {
+		if e.UserID == userID {
+			e.Rank = i + 1
+			return e.Rank, &e, nil
+		}
+	}
+
+	return 0, nil, nil // Player has no entry for this day
+}
+
 // --- World Drop Operations ---
 
 func (m *MemoryRepository) CreateWorldDrop(ctx context.Context, drop *WorldDrop) error {
@@ -383,9 +498,34 @@ func (m *MemoryRepository) GetOrCreateDailySeed(ctx context.Context) (int64, err
 		return seed, nil
 	}
 
-	seed := today.UnixNano()
+	// Generate cryptographically random seed (unpredictable)
+	var seedBytes [8]byte
+	if _, err := crypto_rand.Read(seedBytes[:]); err != nil {
+		return 0, err
+	}
+	seed := int64(binary.BigEndian.Uint64(seedBytes[:]))
 	m.dailySeeds[key] = seed
 	return seed, nil
+}
+
+// GetDailySeed retrieves the seed for a specific date.
+func (m *MemoryRepository) GetDailySeed(ctx context.Context, date time.Time) (*DailySeed, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	normalizedDate := date.UTC().Truncate(24 * time.Hour)
+	key := normalizedDate.Format("2006-01-02")
+
+	seed, ok := m.dailySeeds[key]
+	if !ok {
+		return nil, nil
+	}
+
+	return &DailySeed{
+		Date:      normalizedDate,
+		Seed:      seed,
+		CreatedAt: normalizedDate, // Approximate for in-memory
+	}, nil
 }
 
 // --- Auth Token Operations ---

@@ -24,6 +24,47 @@
       "file": "tasks/combat-system.md",
       "updated_at": "2026-01-14T01:44:29.950786Z"
     },
+    "daily-leaderboard-cursor-pagination": {
+      "status": "done",
+      "tags": [
+        "database"
+      ],
+      "file": "tasks/daily-leaderboard-cursor-pagination.md",
+      "updated_at": "2026-01-15T22:04:59.039171Z"
+    },
+    "daily-leaderboard-tests": {
+      "status": "done",
+      "tags": [
+        "testing"
+      ],
+      "file": "tasks/daily-leaderboard-tests.md",
+      "updated_at": "2026-01-15T22:13:42.068074Z"
+    },
+    "daily-leaderboard-ui": {
+      "status": "done",
+      "tags": [
+        "ui"
+      ],
+      "file": "tasks/daily-leaderboard-ui.md",
+      "updated_at": "2026-01-15T22:10:54.16825Z"
+    },
+    "daily-runs-ssh-only": {
+      "status": "done",
+      "tags": [
+        "ui"
+      ],
+      "file": "tasks/daily-runs-ssh-only.md",
+      "updated_at": "2026-01-15T22:11:58.929306Z"
+    },
+    "daily-seed-crypto-rand": {
+      "status": "done",
+      "tags": [
+        "security",
+        "database"
+      ],
+      "file": "tasks/daily-seed-crypto-rand.md",
+      "updated_at": "2026-01-15T21:59:52.33647Z"
+    },
     "dungeon-gen": {
       "status": "done",
       "priority": 1,
@@ -41,6 +82,22 @@
       "priority": 1,
       "file": "tasks/game-engine.md",
       "updated_at": "2026-01-14T01:02:47.928168Z"
+    },
+    "get-daily-seed-by-date": {
+      "status": "done",
+      "tags": [
+        "database"
+      ],
+      "file": "tasks/get-daily-seed-by-date.md",
+      "updated_at": "2026-01-15T22:00:45.051607Z"
+    },
+    "get-player-daily-rank": {
+      "status": "done",
+      "tags": [
+        "database"
+      ],
+      "file": "tasks/get-player-daily-rank.md",
+      "updated_at": "2026-01-15T22:06:03.029194Z"
     },
     "inventory-system": {
       "status": "done",
@@ -224,5 +281,5 @@
   "archived_count": 0,
   "learnings_count": 7,
   "decisions_count": 7,
-  "updated_at": "2026-01-15T03:01:36.22757Z"
+  "updated_at": "2026-01-15T22:13:42.068208Z"
 }

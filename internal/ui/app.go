@@ -35,6 +35,7 @@ const (
 	ViewShop
 	ViewUnlockShop
 	ViewLeaderboard
+	ViewDailyLeaderboard
 )
 
 // introTickMsg is sent to advance intro animation.
@@ -198,6 +199,14 @@ type Model struct {
 	leaderboardFetcher LeaderboardFetcher // Callback to fetch data (set by server)
 	leaderboardError   string             // Error message if fetch failed
 
+	// Daily leaderboard state (date-navigable)
+	dailyLeaderboardDate    time.Time               // Currently selected date
+	dailyLeaderboardEntries []LeaderboardEntry      // Top N entries for selected date
+	dailyPlayerRank         int                     // Player's rank (0 if not on board)
+	dailyPlayerEntry        *LeaderboardEntry       // Player's entry (nil if not on board)
+	dailyLeaderboardFetcher DailyLeaderboardFetcher // Callback to fetch daily data
+	dailyLeaderboardError   string                  // Error message if fetch failed
+
 	// Styles
 	styles *Styles
 }
@@ -254,6 +263,10 @@ type LeaderboardEntry struct {
 // LeaderboardFetcher is a callback function to fetch leaderboard data.
 // Returns entries and any error. Set by server for multiplayer mode.
 type LeaderboardFetcher func(runType string, limit int) ([]LeaderboardEntry, error)
+
+// DailyLeaderboardFetcher is a callback to fetch daily leaderboard for a specific date.
+// Returns top entries, player's rank, player's entry (if any), and any error.
+type DailyLeaderboardFetcher func(date time.Time, limit int, userID int) ([]LeaderboardEntry, int, *LeaderboardEntry, error)
 
 // SaveCallback is a callback function to save game state.
 // Called before returning to main menu in multiplayer mode.
@@ -415,6 +428,7 @@ func newModel(cfg *config.Config, renderer *lipgloss.Renderer) *Model {
 			"Daily Run",
 			"Continue",
 			"Leaderboard",
+			"Daily Leaderboard",
 			"Unlocks",
 			"Quit",
 		},
@@ -492,6 +506,12 @@ func (m *Model) SetMultiplayerMode(username string) {
 // This is typically set by the server for multiplayer sessions.
 func (m *Model) SetLeaderboardFetcher(fetcher LeaderboardFetcher) {
 	m.leaderboardFetcher = fetcher
+}
+
+// SetDailyLeaderboardFetcher sets the callback function for fetching daily leaderboard data.
+// This is typically set by the server for multiplayer sessions.
+func (m *Model) SetDailyLeaderboardFetcher(fetcher DailyLeaderboardFetcher) {
+	m.dailyLeaderboardFetcher = fetcher
 }
 
 // SetSaveCallback sets the callback function for saving game state.
@@ -577,6 +597,8 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateUnlockShop(msg)
 	case ViewLeaderboard:
 		return m.updateLeaderboard(msg)
+	case ViewDailyLeaderboard:
+		return m.updateDailyLeaderboard(msg)
 	}
 
 	return m, nil
@@ -657,6 +679,11 @@ func (m *Model) selectMenuItem() (tea.Model, tea.Cmd) {
 		m.currentView = ViewClassSelect
 		return m, nil
 	case "Daily Run":
+		// Daily runs are SSH-only (competitive feature requiring leaderboard)
+		if !m.isMultiplayer {
+			m.statusMsg = "Daily runs require SSH connection"
+			return m, nil
+		}
 		m.classCursor = 0
 		m.dailyRunMode = true
 		m.currentView = ViewClassSelect
@@ -671,6 +698,14 @@ func (m *Model) selectMenuItem() (tea.Model, tea.Cmd) {
 		return m, nil
 	case "Leaderboard":
 		m.openLeaderboard()
+		return m, nil
+	case "Daily Leaderboard":
+		// Daily leaderboards are SSH-only
+		if !m.isMultiplayer {
+			m.statusMsg = "Daily leaderboards require SSH connection"
+			return m, nil
+		}
+		m.showDailyLeaderboard()
 		return m, nil
 	case "Unlocks":
 		m.openUnlockShop()
@@ -1887,6 +1922,8 @@ func (m *Model) View() string {
 		return m.viewUnlockShop()
 	case ViewLeaderboard:
 		return m.viewLeaderboard()
+	case ViewDailyLeaderboard:
+		return m.viewDailyLeaderboard()
 	default:
 		return "Unknown view"
 	}
@@ -2003,8 +2040,22 @@ func (m *Model) viewMainMenu() string {
 		cursor := "  "
 		style := m.styles.MenuItem
 
-		// Gray out "Continue" if no valid save exists
-		isDisabled := option == "Continue" && !m.hasValidSave
+		// Gray out options that aren't available
+		isDisabled := false
+		disabledReason := ""
+		switch option {
+		case "Continue":
+			if !m.hasValidSave {
+				isDisabled = true
+				disabledReason = "no save"
+			}
+		case "Daily Run", "Daily Leaderboard":
+			if !m.isMultiplayer {
+				isDisabled = true
+				disabledReason = "SSH only"
+			}
+		}
+
 		if isDisabled {
 			style = m.styles.Muted
 		} else if i == m.menuCursor {
@@ -2014,7 +2065,7 @@ func (m *Model) viewMainMenu() string {
 
 		displayOption := option
 		if isDisabled {
-			displayOption = option + " (no save)"
+			displayOption = fmt.Sprintf("%s (%s)", option, disabledReason)
 		} else if option == "Daily Run" {
 			displayOption = fmt.Sprintf("Daily Run (%s)", dailySeedStr)
 		}
@@ -3659,5 +3710,157 @@ func (m *Model) viewLeaderboard() string {
 	footer := "\n" + m.styles.Muted.Render("[←/→] Filter  [↑/↓] Navigate  [R] Refresh  [Esc] Back")
 
 	result := m.styles.Container.Render(title + tabs + content + footer)
+	return m.centerContent(result)
+}
+
+// showDailyLeaderboard initializes and shows the daily leaderboard view.
+func (m *Model) showDailyLeaderboard() {
+	m.dailyLeaderboardDate = time.Now().UTC().Truncate(24 * time.Hour)
+	m.refreshDailyLeaderboard()
+	m.currentView = ViewDailyLeaderboard
+}
+
+// updateDailyLeaderboard handles daily leaderboard view input.
+func (m *Model) updateDailyLeaderboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		m.currentView = ViewMainMenu
+	case "left", "h", "a":
+		// Navigate to previous day (max 7 days back)
+		minDate := time.Now().UTC().Truncate(24 * time.Hour).AddDate(0, 0, -6)
+		newDate := m.dailyLeaderboardDate.AddDate(0, 0, -1)
+		if !newDate.Before(minDate) {
+			m.dailyLeaderboardDate = newDate
+			m.refreshDailyLeaderboard()
+		}
+	case "right", "l", "d":
+		// Navigate to next day (can't go past today)
+		today := time.Now().UTC().Truncate(24 * time.Hour)
+		newDate := m.dailyLeaderboardDate.AddDate(0, 0, 1)
+		if !newDate.After(today) {
+			m.dailyLeaderboardDate = newDate
+			m.refreshDailyLeaderboard()
+		}
+	case "r":
+		// Refresh leaderboard
+		m.refreshDailyLeaderboard()
+	}
+	return m, nil
+}
+
+// refreshDailyLeaderboard reloads the daily leaderboard data for the selected date.
+func (m *Model) refreshDailyLeaderboard() {
+	m.dailyLeaderboardError = ""
+	m.dailyLeaderboardEntries = nil
+	m.dailyPlayerRank = 0
+	m.dailyPlayerEntry = nil
+
+	if m.dailyLeaderboardFetcher != nil {
+		entries, rank, playerEntry, err := m.dailyLeaderboardFetcher(m.dailyLeaderboardDate, 10, 0)
+		if err != nil {
+			m.dailyLeaderboardError = "Failed to load leaderboard"
+		} else {
+			m.dailyLeaderboardEntries = entries
+			m.dailyPlayerRank = rank
+			m.dailyPlayerEntry = playerEntry
+		}
+	}
+}
+
+// viewDailyLeaderboard renders the date-navigable daily leaderboard.
+func (m *Model) viewDailyLeaderboard() string {
+	// Format the date for display
+	dateStr := m.dailyLeaderboardDate.Format("Jan 2, 2006")
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	minDate := today.AddDate(0, 0, -6)
+
+	// Navigation arrows
+	leftArrow := "←"
+	rightArrow := "→"
+	if m.dailyLeaderboardDate.Equal(minDate) || m.dailyLeaderboardDate.Before(minDate) {
+		leftArrow = " " // Can't go further back
+	}
+	if m.dailyLeaderboardDate.Equal(today) || m.dailyLeaderboardDate.After(today) {
+		rightArrow = " " // Can't go into future
+	}
+
+	title := m.styles.Title.Render(fmt.Sprintf(`
+    ╔═══════════════════════════════════════════╗
+    ║            DAILY LEADERBOARD              ║
+    ║       %s   %s   %s       ║
+    ╚═══════════════════════════════════════════╝
+	`, leftArrow, dateStr, rightArrow)) + "\n"
+
+	// Content
+	var content string
+	if !m.isMultiplayer {
+		// Local mode - no leaderboard access
+		content = m.styles.Muted.Render("  Daily leaderboards are only available via SSH.\n\n")
+		content += m.styles.Normal.Render("  Connect with:\n")
+		content += m.styles.Highlight.Render("  ssh player@dev-dungeon.com\n\n")
+	} else if m.dailyLeaderboardError != "" {
+		content = m.styles.Danger.Render("  " + m.dailyLeaderboardError + "\n\n")
+		content += m.styles.Muted.Render("  Press [R] to retry\n")
+	} else if len(m.dailyLeaderboardEntries) == 0 {
+		content = m.styles.Muted.Render("  No entries for this day.\n")
+		if m.dailyLeaderboardDate.Equal(today) {
+			content += m.styles.Normal.Render("\n  Be the first to complete today's daily run!\n")
+		}
+	} else {
+		// Header
+		content = m.styles.Muted.Render(fmt.Sprintf("  %-4s %-12s %-8s %-7s %-8s\n", "RANK", "PLAYER", "SCORE", "FLOORS", "CLASS"))
+		content += m.styles.Muted.Render("  ────────────────────────────────────────────\n")
+
+		// Top entries
+		for _, entry := range m.dailyLeaderboardEntries {
+			style := m.styles.MenuItem
+
+			// Highlight current user
+			if m.username != "" && entry.Username == m.username {
+				style = m.styles.Highlight
+			}
+
+			// Truncate username if too long
+			username := entry.Username
+			if len(username) > 10 {
+				username = username[:9] + "…"
+			}
+
+			line := fmt.Sprintf("  %-4d %-12s %-8d %-7d %-8s",
+				entry.Rank,
+				username,
+				entry.Score,
+				entry.FloorsCleared,
+				entry.Class,
+			)
+			content += style.Render(line) + "\n"
+		}
+
+		// Show player's position if not in top N
+		if m.dailyPlayerEntry != nil && m.dailyPlayerRank > len(m.dailyLeaderboardEntries) {
+			content += m.styles.Muted.Render("  ···\n")
+
+			username := m.dailyPlayerEntry.Username
+			if len(username) > 10 {
+				username = username[:9] + "…"
+			}
+
+			line := fmt.Sprintf("  %-4d %-12s %-8d %-7d %-8s  ← You",
+				m.dailyPlayerRank,
+				username,
+				m.dailyPlayerEntry.Score,
+				m.dailyPlayerEntry.FloorsCleared,
+				m.dailyPlayerEntry.Class,
+			)
+			content += m.styles.Highlight.Render(line) + "\n"
+		} else if m.dailyPlayerRank == 0 && m.dailyLeaderboardDate.Equal(today) {
+			// Player hasn't done today's daily yet
+			content += "\n" + m.styles.Muted.Render("  You haven't completed today's daily run yet.\n")
+		}
+	}
+
+	footer := "\n" + m.styles.Muted.Render("[←/→] Change Date  [R] Refresh  [Esc] Back")
+
+	result := m.styles.Container.Render(title + content + footer)
 	return m.centerContent(result)
 }

@@ -928,3 +928,305 @@ func TestMemoryRepository_AuthToken_UserDeleted(t *testing.T) {
 		t.Error("token for deleted user should not verify")
 	}
 }
+
+// === Daily Leaderboard Tests ===
+
+func TestMemoryRepository_GetDailySeed(t *testing.T) {
+	repo := NewMemoryRepository()
+	ctx := context.Background()
+
+	// Get seed for today (should not exist initially)
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	seed, err := repo.GetDailySeed(ctx, today)
+	if err != nil {
+		t.Fatalf("GetDailySeed failed: %v", err)
+	}
+	if seed != nil {
+		t.Error("expected nil for non-existent seed")
+	}
+
+	// Create seed via GetOrCreate
+	createdSeed, err := repo.GetOrCreateDailySeed(ctx)
+	if err != nil {
+		t.Fatalf("GetOrCreateDailySeed failed: %v", err)
+	}
+
+	// Now GetDailySeed should return it
+	seed, err = repo.GetDailySeed(ctx, today)
+	if err != nil {
+		t.Fatalf("GetDailySeed failed: %v", err)
+	}
+	if seed == nil {
+		t.Fatal("expected seed after creation")
+	}
+	if seed.Seed != createdSeed {
+		t.Errorf("expected seed %d, got %d", createdSeed, seed.Seed)
+	}
+}
+
+func TestMemoryRepository_DailySeedRandomness(t *testing.T) {
+	// Two different repositories should generate different seeds
+	// (demonstrating randomness, not date-based)
+	repo1 := NewMemoryRepository()
+	repo2 := NewMemoryRepository()
+	ctx := context.Background()
+
+	seed1, _ := repo1.GetOrCreateDailySeed(ctx)
+	seed2, _ := repo2.GetOrCreateDailySeed(ctx)
+
+	// Seeds should be different (with overwhelming probability)
+	// Note: there's a 1 in 2^64 chance they match, which is acceptable
+	if seed1 == seed2 {
+		t.Log("Warning: seeds matched (extremely unlikely if truly random)")
+	}
+
+	// Seeds should not be simple date-based values
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	dateSeed := today.UnixNano()
+	if seed1 == dateSeed {
+		t.Error("seed should not be simple date.UnixNano()")
+	}
+}
+
+func TestMemoryRepository_GetDailyLeaderboard(t *testing.T) {
+	repo := NewMemoryRepository()
+	ctx := context.Background()
+
+	// Create users
+	user1, _ := repo.CreateUser(ctx, "player1", "SHA256:key1")
+	user2, _ := repo.CreateUser(ctx, "player2", "SHA256:key2")
+	user3, _ := repo.CreateUser(ctx, "player3", "SHA256:key3")
+
+	// Get today's seed
+	seed, _ := repo.GetOrCreateDailySeed(ctx)
+
+	// Add daily leaderboard entries
+	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+		UserID:        user1.ID,
+		RunType:       "daily",
+		Seed:          seed,
+		Score:         5000,
+		FloorsCleared: 5,
+		Class:         "init",
+	})
+	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+		UserID:        user2.ID,
+		RunType:       "daily",
+		Seed:          seed,
+		Score:         8000,
+		FloorsCleared: 8,
+		Class:         "cron",
+	})
+	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+		UserID:        user3.ID,
+		RunType:       "daily",
+		Seed:          seed,
+		Score:         3000,
+		FloorsCleared: 3,
+		Class:         "bash",
+	})
+
+	// Get daily leaderboard
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	entries, nextCursor, err := repo.GetDailyLeaderboard(ctx, today, 10, nil)
+	if err != nil {
+		t.Fatalf("GetDailyLeaderboard failed: %v", err)
+	}
+
+	if len(entries) != 3 {
+		t.Errorf("expected 3 entries, got %d", len(entries))
+	}
+
+	// Should be sorted by score descending
+	if entries[0].Score != 8000 {
+		t.Errorf("expected first entry score 8000, got %d", entries[0].Score)
+	}
+	if entries[0].Rank != 1 {
+		t.Errorf("expected first entry rank 1, got %d", entries[0].Rank)
+	}
+	if entries[1].Score != 5000 {
+		t.Errorf("expected second entry score 5000, got %d", entries[1].Score)
+	}
+	if entries[2].Score != 3000 {
+		t.Errorf("expected third entry score 3000, got %d", entries[2].Score)
+	}
+
+	// No next cursor since we got all entries
+	if nextCursor != nil {
+		t.Error("expected no next cursor when all entries fit")
+	}
+}
+
+func TestMemoryRepository_GetDailyLeaderboard_Pagination(t *testing.T) {
+	repo := NewMemoryRepository()
+	ctx := context.Background()
+
+	// Create users and seed
+	seed, _ := repo.GetOrCreateDailySeed(ctx)
+
+	// Add 5 entries
+	for i := 1; i <= 5; i++ {
+		user, _ := repo.CreateUser(ctx, "player"+string(rune('0'+i)), "SHA256:key"+string(rune('0'+i)))
+		repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+			UserID:        user.ID,
+			RunType:       "daily",
+			Seed:          seed,
+			Score:         i * 1000, // 1000, 2000, 3000, 4000, 5000
+			FloorsCleared: i,
+			Class:         "init",
+		})
+	}
+
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+
+	// Get first page (limit 2)
+	entries, cursor, err := repo.GetDailyLeaderboard(ctx, today, 2, nil)
+	if err != nil {
+		t.Fatalf("GetDailyLeaderboard page 1 failed: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Errorf("expected 2 entries on page 1, got %d", len(entries))
+	}
+	if entries[0].Score != 5000 {
+		t.Errorf("expected first entry score 5000, got %d", entries[0].Score)
+	}
+	if cursor == nil {
+		t.Fatal("expected cursor for next page")
+	}
+
+	// Get second page
+	entries, cursor, err = repo.GetDailyLeaderboard(ctx, today, 2, cursor)
+	if err != nil {
+		t.Fatalf("GetDailyLeaderboard page 2 failed: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Errorf("expected 2 entries on page 2, got %d", len(entries))
+	}
+	if entries[0].Score != 3000 {
+		t.Errorf("expected page 2 first entry score 3000, got %d", entries[0].Score)
+	}
+}
+
+func TestMemoryRepository_GetDailyLeaderboard_NoSeed(t *testing.T) {
+	repo := NewMemoryRepository()
+	ctx := context.Background()
+
+	// Get leaderboard for a date with no seed
+	yesterday := time.Now().UTC().Truncate(24 * time.Hour).AddDate(0, 0, -1)
+	entries, cursor, err := repo.GetDailyLeaderboard(ctx, yesterday, 10, nil)
+	if err != nil {
+		t.Fatalf("GetDailyLeaderboard failed: %v", err)
+	}
+	if entries != nil {
+		t.Error("expected nil entries for non-existent seed")
+	}
+	if cursor != nil {
+		t.Error("expected nil cursor for non-existent seed")
+	}
+}
+
+func TestMemoryRepository_GetPlayerDailyRank(t *testing.T) {
+	repo := NewMemoryRepository()
+	ctx := context.Background()
+
+	// Create users
+	user1, _ := repo.CreateUser(ctx, "player1", "SHA256:key1")
+	user2, _ := repo.CreateUser(ctx, "player2", "SHA256:key2")
+	user3, _ := repo.CreateUser(ctx, "player3", "SHA256:key3")
+
+	seed, _ := repo.GetOrCreateDailySeed(ctx)
+
+	// Add entries with different scores
+	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+		UserID:  user1.ID,
+		RunType: "daily",
+		Seed:    seed,
+		Score:   5000,
+		Class:   "init",
+	})
+	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+		UserID:  user2.ID,
+		RunType: "daily",
+		Seed:    seed,
+		Score:   8000, // highest
+		Class:   "cron",
+	})
+	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+		UserID:  user3.ID,
+		RunType: "daily",
+		Seed:    seed,
+		Score:   3000,
+		Class:   "bash",
+	})
+
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+
+	// Check rank for user2 (should be #1)
+	rank, entry, err := repo.GetPlayerDailyRank(ctx, today, user2.ID)
+	if err != nil {
+		t.Fatalf("GetPlayerDailyRank failed: %v", err)
+	}
+	if rank != 1 {
+		t.Errorf("expected rank 1, got %d", rank)
+	}
+	if entry == nil {
+		t.Fatal("expected entry")
+	}
+	if entry.Score != 8000 {
+		t.Errorf("expected score 8000, got %d", entry.Score)
+	}
+
+	// Check rank for user1 (should be #2)
+	rank, entry, _ = repo.GetPlayerDailyRank(ctx, today, user1.ID)
+	if rank != 2 {
+		t.Errorf("expected rank 2, got %d", rank)
+	}
+
+	// Check rank for user3 (should be #3)
+	rank, entry, _ = repo.GetPlayerDailyRank(ctx, today, user3.ID)
+	if rank != 3 {
+		t.Errorf("expected rank 3, got %d", rank)
+	}
+}
+
+func TestMemoryRepository_GetPlayerDailyRank_NotOnBoard(t *testing.T) {
+	repo := NewMemoryRepository()
+	ctx := context.Background()
+
+	user, _ := repo.CreateUser(ctx, "player1", "SHA256:key1")
+	_, _ = repo.GetOrCreateDailySeed(ctx)
+
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+
+	// User hasn't submitted a score
+	rank, entry, err := repo.GetPlayerDailyRank(ctx, today, user.ID)
+	if err != nil {
+		t.Fatalf("GetPlayerDailyRank failed: %v", err)
+	}
+	if rank != 0 {
+		t.Errorf("expected rank 0 for player not on board, got %d", rank)
+	}
+	if entry != nil {
+		t.Error("expected nil entry for player not on board")
+	}
+}
+
+func TestMemoryRepository_GetPlayerDailyRank_NoSeed(t *testing.T) {
+	repo := NewMemoryRepository()
+	ctx := context.Background()
+
+	user, _ := repo.CreateUser(ctx, "player1", "SHA256:key1")
+
+	// Check rank for a date with no daily seed
+	yesterday := time.Now().UTC().Truncate(24 * time.Hour).AddDate(0, 0, -1)
+	rank, entry, err := repo.GetPlayerDailyRank(ctx, yesterday, user.ID)
+	if err != nil {
+		t.Fatalf("GetPlayerDailyRank failed: %v", err)
+	}
+	if rank != 0 {
+		t.Errorf("expected rank 0 for non-existent seed, got %d", rank)
+	}
+	if entry != nil {
+		t.Error("expected nil entry for non-existent seed")
+	}
+}

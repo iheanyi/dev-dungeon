@@ -68,6 +68,14 @@ type LeaderboardEntry struct {
 	TimeSeconds   int       `db:"time_seconds"`
 	Class         string    `db:"class"`
 	CreatedAt     time.Time `db:"created_at"`
+	Rank          int       `db:"-"` // Calculated field, not stored
+}
+
+// LeaderboardCursor enables stable cursor-based pagination for leaderboards.
+// Uses (Score, ID) tuple to handle ties and concurrent insertions.
+type LeaderboardCursor struct {
+	Score int // Last seen score
+	ID    int // Tiebreaker for equal scores
 }
 
 // WorldDrop represents an async drop (message or item) left by a player.
