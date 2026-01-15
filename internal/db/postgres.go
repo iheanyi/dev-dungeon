@@ -58,6 +58,12 @@ func (c *Client) Close() {
 	c.pool.Close()
 }
 
+// Pool returns the underlying connection pool.
+// Used for migrations and other low-level operations.
+func (c *Client) Pool() *pgxpool.Pool {
+	return c.pool
+}
+
 // --- User Operations ---
 
 // GetUserByFingerprint retrieves a user by their SSH public key fingerprint.
@@ -263,7 +269,7 @@ func (c *Client) GetTopScores(ctx context.Context, runType string, limit int) ([
 	}
 	defer rows.Close()
 
-	var entries []LeaderboardEntry
+	entries := []LeaderboardEntry{} // Initialize as empty slice, not nil
 	for rows.Next() {
 		var e LeaderboardEntry
 		err := rows.Scan(
@@ -629,7 +635,7 @@ func (c *Client) GetLeaderboard(ctx context.Context, runType string, limit int) 
 	}
 	defer rows.Close()
 
-	var entries []LeaderboardEntry
+	entries := []LeaderboardEntry{} // Initialize as empty slice, not nil
 	for rows.Next() {
 		var e LeaderboardEntry
 		err := rows.Scan(
