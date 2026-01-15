@@ -9,7 +9,6 @@ export interface ApiResponse<T> {
 }
 
 export interface LeaderboardEntry {
-	nanoid: string;
 	username: string;
 	run_type: string;
 	score: number;
@@ -17,21 +16,33 @@ export interface LeaderboardEntry {
 	time_seconds: number;
 	class: string;
 	created_at: string;
+	rank?: number;
 }
 
 export interface PlayerProfile {
 	username: string;
-	nanoid: string;
+	public_id: string;
 	created_at: string;
 	runs_completed: number;
 	deepest_floor: number;
 	total_deaths: number;
-	unlocked_classes: string[];
+	unlocked_classes?: string[];
 }
 
 export interface DailySeed {
 	date: string;
 	seed: number;
+}
+
+export interface User {
+	username: string;
+	public_id: string;
+	created_at: string;
+	runs_completed?: number;
+	deepest_floor?: number;
+	total_deaths?: number;
+	unlocked_classes?: string[];
+	total_exit_codes?: number;
 }
 
 export interface RegisterRequest {
@@ -41,7 +52,7 @@ export interface RegisterRequest {
 
 export interface RegisterResponse {
 	username: string;
-	nanoid: string;
+	public_id: string;
 	message: string;
 }
 
@@ -51,6 +62,7 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<Api
 			headers: {
 				'Content-Type': 'application/json',
 			},
+			credentials: 'include', // Include cookies for auth
 			...options,
 		});
 
@@ -69,8 +81,8 @@ export async function getLeaderboard(runType?: string): Promise<ApiResponse<Lead
 	return fetchApi<LeaderboardEntry[]>(endpoint);
 }
 
-export async function getPlayerProfile(nanoid: string): Promise<ApiResponse<PlayerProfile>> {
-	return fetchApi<PlayerProfile>(`/players/${nanoid}`);
+export async function getPlayerProfile(username: string): Promise<ApiResponse<PlayerProfile>> {
+	return fetchApi<PlayerProfile>(`/players/${username}`);
 }
 
 export async function getDailySeed(): Promise<ApiResponse<DailySeed>> {
@@ -114,4 +126,15 @@ export const FLOOR_NAMES = [
 
 export function getFloorName(floor: number): string {
 	return FLOOR_NAMES[floor] || `Floor ${floor}`;
+}
+
+// Auth functions
+export async function getCurrentUser(): Promise<ApiResponse<User>> {
+	return fetchApi<User>('/auth/me');
+}
+
+export async function logout(): Promise<ApiResponse<{ message: string }>> {
+	return fetchApi<{ message: string }>('/auth/logout', {
+		method: 'POST',
+	});
 }
