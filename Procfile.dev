@@ -2,5 +2,5 @@
 # Install: brew install overmind (or go install github.com/DarthSim/overmind/v2@latest)
 # Run: overmind start -f Procfile.dev
 
-server: set -a && source .env && set +a && air
+server: set -a && source .env && set +a && WEB_BASE_URL=http://localhost:8080 air
 web: cd web && npm run dev

@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish/bubbletea"
@@ -405,35 +407,59 @@ func (sw *sessionWrapper) View() string {
 
 // viewLinkModal renders the magic link modal.
 func (sw *sessionWrapper) viewLinkModal() string {
-	s := "\n\n"
-	s += "  ╔════════════════════════════════════════════════════════════════╗\n"
-	s += "  ║                    BROWSER AUTHENTICATION                      ║\n"
-	s += "  ╠════════════════════════════════════════════════════════════════╣\n"
-	s += "  ║                                                                ║\n"
+	var b strings.Builder
+
+	// Box styling with lipgloss
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("86")). // Cyan
+		Padding(0, 1)
+
+	errorStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("196")) // Red
+
+	hintStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")) // Gray
+
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("86")).
+		Padding(1, 2)
+
+	b.WriteString("\n\n")
+
+	var content strings.Builder
+	content.WriteString(titleStyle.Render("🔐 BROWSER AUTHENTICATION"))
+	content.WriteString("\n\n")
 
 	if sw.linkError != "" {
-		s += fmt.Sprintf("  ║  ERROR: %-54s ║\n", sw.linkError)
+		content.WriteString(errorStyle.Render("ERROR: " + sw.linkError))
 	} else {
-		s += "  ║  Open this link in your browser to authenticate:              ║\n"
-		s += "  ║                                                                ║\n"
-		// Truncate long URLs for display
-		url := sw.linkURL
-		if len(url) > 60 {
-			url = url[:57] + "..."
-		}
-		s += fmt.Sprintf("  ║  %-62s ║\n", url)
-		s += "  ║                                                                ║\n"
-		s += "  ║  This link expires in 5 minutes and can only be used once.    ║\n"
+		content.WriteString("Click or copy this link to authenticate in your browser:\n\n")
+
+		// OSC-8 hyperlink format: \x1b]8;;URL\x07DISPLAY_TEXT\x1b]8;;\x07
+		// This makes the URL clickable in supported terminals (iTerm2, Windows Terminal, etc.)
+		// IMPORTANT: Don't wrap with lipgloss - it breaks the OSC-8 escape sequence detection
+		// Apply color INSIDE the hyperlink using raw ANSI codes
+		colorStart := "\x1b[1;38;5;117m" // Bold + color 117 (light blue)
+		colorEnd := "\x1b[0m"
+		hyperlink := fmt.Sprintf("\x1b]8;;%s\x07%s%s%s\x1b]8;;\x07", sw.linkURL, colorStart, sw.linkURL, colorEnd)
+		content.WriteString(hyperlink)
+
+		content.WriteString("\n\n")
+		content.WriteString(hintStyle.Render("⏱  Expires in 5 minutes • Single use only"))
 	}
 
-	s += "  ║                                                                ║\n"
-	s += "  ║  [Enter] or [Esc] to close                                     ║\n"
-	s += "  ║                                                                ║\n"
-	s += "  ╚════════════════════════════════════════════════════════════════╝\n"
-	s += "\n"
-	s += "  Tip: Use Ctrl+L anytime to generate a new browser link.\n"
+	content.WriteString("\n\n")
+	content.WriteString(hintStyle.Render("[Enter] or [Esc] to close"))
 
-	return s
+	b.WriteString(boxStyle.Render(content.String()))
+	b.WriteString("\n\n")
+	b.WriteString(hintStyle.Render("  Tip: Press Ctrl+L anytime to generate a new link"))
+	b.WriteString("\n")
+
+	return b.String()
 }
 
 // registrationModel handles new player registration.
