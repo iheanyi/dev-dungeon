@@ -24,10 +24,23 @@ dev-web:
 	@echo "Starting Vite dev server with HMR..."
 	cd web && npm run dev
 
-# Build everything
+# Build everything (development - uses disk static files)
 build:
-	go build -o ./bin/devdungeon ./cmd/devdungeon
 	cd web && npm run build
+	go build -o ./bin/devdungeon ./cmd/devdungeon
+
+# Build for production (embedded static files in single binary)
+build-prod:
+	@echo "Building frontend..."
+	cd web && npm run build
+	@echo "Copying static files for embedding..."
+	rm -rf cmd/devdungeon/static && mkdir -p cmd/devdungeon/static
+	cp -r web/build/* cmd/devdungeon/static/
+	@echo "Building Go binary with embedded frontend..."
+	go build -o ./bin/devdungeon ./cmd/devdungeon
+	@echo "Restoring placeholder..."
+	rm -rf cmd/devdungeon/static && mkdir -p cmd/devdungeon/static && touch cmd/devdungeon/static/.gitkeep
+	@echo "Done! Binary at ./bin/devdungeon"
 
 # Run tests
 test:
@@ -75,16 +88,17 @@ server:
 # Help
 help:
 	@echo "Available commands:"
-	@echo "  make dev        - Start both server + frontend (requires overmind)"
-	@echo "  make dev-server - Start Go server with Air live reload"
-	@echo "  make dev-web    - Start Vite frontend dev server"
-	@echo "  make build      - Build Go binary and web frontend"
-	@echo "  make test       - Run Go unit tests"
+	@echo "  make dev          - Start both server + frontend (requires overmind)"
+	@echo "  make dev-server   - Start Go server with Air live reload"
+	@echo "  make dev-web      - Start Vite frontend dev server"
+	@echo "  make build        - Build Go binary and web frontend (dev mode)"
+	@echo "  make build-prod   - Build single binary with embedded frontend"
+	@echo "  make test         - Run Go unit tests"
 	@echo "  make test-integration - Run integration tests (requires Docker)"
-	@echo "  make play       - Play the game locally"
-	@echo "  make server     - Run server without live reload"
-	@echo "  make docker-up  - Start Docker containers"
-	@echo "  make docker-down - Stop Docker containers"
+	@echo "  make play         - Play the game locally"
+	@echo "  make server       - Run server without live reload"
+	@echo "  make docker-up    - Start Docker containers"
+	@echo "  make docker-down  - Stop Docker containers"
 	@echo ""
 	@echo "Development workflow:"
 	@echo "  make dev         (both services in one terminal - requires overmind)"

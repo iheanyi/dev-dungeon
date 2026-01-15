@@ -25,7 +25,10 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the binary
+# Copy frontend build for embedding
+COPY --from=frontend /app/web/build /app/cmd/devdungeon/static
+
+# Build the binary with embedded frontend
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /devdungeon ./cmd/devdungeon
 
 # Runtime stage
@@ -35,11 +38,8 @@ RUN apk add --no-cache ca-certificates openssh-keygen
 
 WORKDIR /app
 
-# Copy binary from backend builder
+# Copy binary from backend builder (includes embedded frontend)
 COPY --from=backend /devdungeon /app/devdungeon
-
-# Copy web frontend from frontend builder
-COPY --from=frontend /app/web/build /app/web/build
 
 # Copy entrypoint script
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh

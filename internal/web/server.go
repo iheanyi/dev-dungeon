@@ -5,7 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -20,7 +23,8 @@ const maxRequestBodySize = 4 * 1024 // 4KB max for API requests
 // Session cookie configuration
 const (
 	sessionCookieName   = "devdungeon_session"
-	sessionCookieMaxAge = 7 * 24 * 60 * 60 // 7 days in seconds
+	usernameCookieName  = "devdungeon_user" // Non-HttpOnly, readable by JS
+	sessionCookieMaxAge = 7 * 24 * 60 * 60  // 7 days in seconds
 )
 
 // Valid run types for leaderboards
@@ -34,7 +38,8 @@ var validRunTypes = map[string]bool{
 type Config struct {
 	Host        string
 	Port        string
-	StaticDir   string // Path to built frontend assets
+	StaticDir   string // Path to built frontend assets (for development)
+	StaticFS    fs.FS  // Embedded static files (for production)
 	DatabaseURL string
 }
 
@@ -97,7 +102,7 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("GET /api/leaderboard", s.handleLeaderboard)
 	s.mux.HandleFunc("GET /api/leaderboard/{runType}", s.handleLeaderboardByType)
 	s.mux.HandleFunc("GET /api/leaderboard/daily/{date}", s.handleDailyLeaderboard)
-	s.mux.HandleFunc("GET /api/players/{nanoid}", s.handlePlayerProfile)
+	s.mux.HandleFunc("GET /api/players/{username}", s.handlePlayerProfile)
 	s.mux.HandleFunc("GET /api/daily", s.handleDailySeed)
 
 	// Auth routes
@@ -105,10 +110,93 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
 	s.mux.HandleFunc("GET /api/auth/me", s.handleAuthMe) // Get current user
 
-	// Static files (SvelteKit build output)
-	if s.config.StaticDir != "" {
-		s.mux.Handle("/", http.FileServer(http.Dir(s.config.StaticDir)))
+	// Static files (SvelteKit build output) with SPA fallback
+	// Prefer embedded FS, fall back to disk if specified
+	if s.config.StaticFS != nil {
+		s.mux.Handle("/", s.spaHandlerFS(s.config.StaticFS))
+	} else if s.config.StaticDir != "" {
+		s.mux.Handle("/", s.spaHandlerDir(s.config.StaticDir))
 	}
+}
+
+// spaHandlerFS serves static files from an fs.FS with SPA fallback.
+func (s *Server) spaHandlerFS(staticFS fs.FS) http.Handler {
+	fileServer := http.FileServerFS(staticFS)
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/")
+		if path == "" {
+			path = "."
+		}
+
+		// Try to open the requested file
+		f, err := staticFS.Open(path)
+		if err == nil {
+			defer f.Close()
+			stat, err := f.Stat()
+			if err == nil {
+				if stat.IsDir() {
+					// Check for index.html in directory
+					indexPath := filepath.Join(path, "index.html")
+					if _, err := staticFS.Open(indexPath); err == nil {
+						fileServer.ServeHTTP(w, r)
+						return
+					}
+				} else {
+					fileServer.ServeHTTP(w, r)
+					return
+				}
+			}
+		}
+
+		// Serve index.html for SPA routing
+		indexContent, err := fs.ReadFile(staticFS, "index.html")
+		if err == nil {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Write(indexContent)
+			return
+		}
+
+		http.NotFound(w, r)
+	})
+}
+
+// spaHandlerDir serves static files from a directory with SPA fallback.
+func (s *Server) spaHandlerDir(staticDir string) http.Handler {
+	dirFS := http.Dir(staticDir)
+	fileServer := http.FileServer(dirFS)
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+
+		// Try to open the requested file
+		f, err := dirFS.Open(path)
+		if err == nil {
+			defer f.Close()
+			stat, err := f.Stat()
+			if err == nil {
+				if stat.IsDir() {
+					indexPath := filepath.Join(path, "index.html")
+					if _, err := dirFS.Open(indexPath); err == nil {
+						fileServer.ServeHTTP(w, r)
+						return
+					}
+				} else {
+					fileServer.ServeHTTP(w, r)
+					return
+				}
+			}
+		}
+
+		// Serve index.html for SPA routing
+		indexPath := filepath.Join(staticDir, "index.html")
+		if _, err := os.Stat(indexPath); err == nil {
+			http.ServeFile(w, r, indexPath)
+			return
+		}
+
+		http.NotFound(w, r)
+	})
 }
 
 // Run starts the HTTP server.
@@ -244,9 +332,9 @@ func (s *Server) handleDailyLeaderboard(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handlePlayerProfile(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	nanoid := r.PathValue("nanoid")
+	username := r.PathValue("username")
 
-	user, err := s.db.GetUserByNanoID(ctx, nanoid)
+	user, err := s.db.GetUserByUsername(ctx, username)
 	if err != nil {
 		s.jsonError(w, http.StatusInternalServerError, "Failed to fetch player")
 		return
@@ -265,7 +353,7 @@ func (s *Server) handlePlayerProfile(w http.ResponseWriter, r *http.Request) {
 
 	profile := map[string]interface{}{
 		"username":       user.Username,
-		"nanoid":         user.NanoID,
+		"public_id":      user.NanoID,
 		"created_at":     user.CreatedAt,
 		"runs_completed": 0,
 		"deepest_floor":  0,
@@ -335,8 +423,8 @@ func (s *Server) handleAuthVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set secure session cookie
-	s.setSessionCookie(w, r, sessionToken)
+	// Set secure session cookie and username cookie
+	s.setSessionCookie(w, r, sessionToken, user.Username)
 
 	log.Info("User authenticated via magic link", "user", user.Username)
 
@@ -395,7 +483,7 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 
 	response := map[string]interface{}{
 		"username":   user.Username,
-		"nanoid":     user.NanoID,
+		"public_id":  user.NanoID,
 		"created_at": user.CreatedAt,
 	}
 
@@ -410,10 +498,13 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 	s.jsonResponse(w, http.StatusOK, response)
 }
 
-// setSessionCookie sets a secure session cookie.
-func (s *Server) setSessionCookie(w http.ResponseWriter, r *http.Request, token string) {
+// setSessionCookie sets a secure session cookie and a username cookie.
+// The session cookie is HttpOnly (not accessible to JS) for security.
+// The username cookie is readable by JS for UI display without an API call.
+func (s *Server) setSessionCookie(w http.ResponseWriter, r *http.Request, token string, username string) {
 	secure := !strings.Contains(r.Host, "localhost") && !strings.Contains(r.Host, "127.0.0.1")
 
+	// Session token - HttpOnly for security
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    token,
@@ -423,9 +514,20 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, r *http.Request, token 
 		Secure:   secure,
 		SameSite: http.SameSiteStrictMode,
 	})
+
+	// Username - readable by JS for UI display (not sensitive)
+	http.SetCookie(w, &http.Cookie{
+		Name:     usernameCookieName,
+		Value:    username,
+		Path:     "/",
+		MaxAge:   sessionCookieMaxAge,
+		HttpOnly: false, // JS can read this
+		Secure:   secure,
+		SameSite: http.SameSiteStrictMode,
+	})
 }
 
-// clearSessionCookie removes the session cookie.
+// clearSessionCookie removes both the session and username cookies.
 func (s *Server) clearSessionCookie(w http.ResponseWriter, r *http.Request) {
 	secure := !strings.Contains(r.Host, "localhost") && !strings.Contains(r.Host, "127.0.0.1")
 
@@ -435,6 +537,16 @@ func (s *Server) clearSessionCookie(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   -1, // Delete immediately
 		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteStrictMode,
+	})
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     usernameCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: false,
 		Secure:   secure,
 		SameSite: http.SameSiteStrictMode,
 	})

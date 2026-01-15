@@ -1,5 +1,5 @@
 # Binaries
-devdungeon
+/devdungeon
 *.exe
 *.exe~
 *.dll
@@ -53,3 +53,7 @@ debug.log
 # Air live reload
 tmp/
 air.log
+
+# Embedded static files (copied during build-prod, keep placeholder)
+cmd/devdungeon/static/*
+!cmd/devdungeon/static/.gitkeep
