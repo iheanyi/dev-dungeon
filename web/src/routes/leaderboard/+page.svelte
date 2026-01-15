@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/stores';
+	import { goto } from '$app/navigation';
 	import { getLeaderboard, formatTime, formatDate, getFloorName, type LeaderboardEntry } from '$lib/api';
 
 	let entries = $state<LeaderboardEntry[]>([]);
@@ -23,10 +25,23 @@
 	}
 
 	onMount(() => {
+		// Read type from URL query param
+		const typeParam = $page.url.searchParams.get('type');
+		if (typeParam && ['standard', 'daily', 'seeded'].includes(typeParam)) {
+			runType = typeParam;
+		}
 		loadLeaderboard();
 	});
 
 	function handleTypeChange() {
+		// Update URL with query param
+		const url = new URL(window.location.href);
+		if (runType) {
+			url.searchParams.set('type', runType);
+		} else {
+			url.searchParams.delete('type');
+		}
+		goto(url.pathname + url.search, { replaceState: true, noScroll: true });
 		loadLeaderboard();
 	}
 </script>
@@ -94,7 +109,7 @@
 								</td>
 								<td>
 									<a
-										href="/players/{entry.nanoid}"
+										href="/players/{entry.username}"
 										class="hover:text-terminal-green-bright"
 									>
 										{entry.username}
