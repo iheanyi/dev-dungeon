@@ -140,6 +140,15 @@ func (s *Server) jsonError(w http.ResponseWriter, status int, message string) {
 	json.NewEncoder(w).Encode(apiResponse{Success: false, Error: message})
 }
 
+// limitRequestBody wraps a handler to limit request body size.
+// Use this for any POST/PUT endpoints that accept JSON.
+func (s *Server) limitRequestBody(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+		next(w, r)
+	}
+}
+
 // Handlers
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

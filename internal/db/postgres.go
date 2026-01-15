@@ -18,7 +18,27 @@ type Client struct {
 
 // NewClient creates a new database client.
 func NewClient(ctx context.Context, databaseURL string) (*Client, error) {
-	pool, err := pgxpool.New(ctx, databaseURL)
+	return NewClientWithOptions(ctx, databaseURL, false)
+}
+
+// NewClientWithOptions creates a new database client with SSL enforcement option.
+// When requireSSL is true, connections without SSL will be rejected.
+func NewClientWithOptions(ctx context.Context, databaseURL string, requireSSL bool) (*Client, error) {
+	config, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse database URL: %w", err)
+	}
+
+	// Check SSL configuration
+	if config.ConnConfig.TLSConfig == nil {
+		if requireSSL {
+			return nil, fmt.Errorf("SSL is required but sslmode=disable in connection string")
+		}
+		// Log warning for non-SSL connections
+		fmt.Println("[WARN] Database connection is NOT using SSL - do not use in production!")
+	}
+
+	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create connection pool: %w", err)
 	}

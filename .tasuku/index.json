@@ -88,6 +88,122 @@
       "file": "tasks/reality-mode.md",
       "updated_at": "2026-01-14T01:16:33.124386Z"
     },
+    "security-audit-logging": {
+      "status": "ready",
+      "priority": 3,
+      "tags": [
+        "security",
+        "low"
+      ],
+      "file": "tasks/security-audit-logging.md",
+      "updated_at": "2026-01-15T02:45:39.482321Z"
+    },
+    "security-context-guards": {
+      "status": "done",
+      "priority": 2,
+      "tags": [
+        "security",
+        "medium"
+      ],
+      "file": "tasks/security-context-guards.md",
+      "updated_at": "2026-01-15T03:01:35.821476Z"
+    },
+    "security-credentials-env": {
+      "status": "done",
+      "priority": 0,
+      "tags": [
+        "security",
+        "critical"
+      ],
+      "file": "tasks/security-credentials-env.md",
+      "updated_at": "2026-01-15T02:50:39.079853Z"
+    },
+    "security-http-headers": {
+      "status": "done",
+      "priority": 1,
+      "tags": [
+        "security",
+        "high",
+        "http"
+      ],
+      "file": "tasks/security-http-headers.md",
+      "updated_at": "2026-01-15T03:00:47.099747Z"
+    },
+    "security-leaderboard-validation": {
+      "status": "done",
+      "priority": 1,
+      "tags": [
+        "security",
+        "high",
+        "http"
+      ],
+      "file": "tasks/security-leaderboard-validation.md",
+      "updated_at": "2026-01-15T03:00:47.277588Z"
+    },
+    "security-request-size-limits": {
+      "status": "done",
+      "priority": 1,
+      "tags": [
+        "security",
+        "high",
+        "http"
+      ],
+      "file": "tasks/security-request-size-limits.md",
+      "updated_at": "2026-01-15T03:01:24.821747Z"
+    },
+    "security-ssh-key-validation": {
+      "status": "done",
+      "priority": 0,
+      "tags": [
+        "security",
+        "critical",
+        "ssh"
+      ],
+      "file": "tasks/security-ssh-key-validation.md",
+      "updated_at": "2026-01-15T02:49:49.865432Z"
+    },
+    "security-ssh-rate-limit": {
+      "status": "done",
+      "priority": 1,
+      "tags": [
+        "security",
+        "high",
+        "ssh"
+      ],
+      "file": "tasks/security-ssh-rate-limit.md",
+      "updated_at": "2026-01-15T03:00:28.850955Z"
+    },
+    "security-ssl-postgres": {
+      "status": "done",
+      "priority": 0,
+      "tags": [
+        "security",
+        "critical",
+        "database"
+      ],
+      "file": "tasks/security-ssl-postgres.md",
+      "updated_at": "2026-01-15T02:50:39.245009Z"
+    },
+    "security-username-enumeration": {
+      "status": "done",
+      "priority": 1,
+      "tags": [
+        "security",
+        "high"
+      ],
+      "file": "tasks/security-username-enumeration.md",
+      "updated_at": "2026-01-15T03:01:02.984548Z"
+    },
+    "security-username-validation": {
+      "status": "done",
+      "priority": 2,
+      "tags": [
+        "security",
+        "medium"
+      ],
+      "file": "tasks/security-username-validation.md",
+      "updated_at": "2026-01-15T03:01:36.227417Z"
+    },
     "ui-system": {
       "status": "done",
       "priority": 1,
@@ -108,5 +224,5 @@
   "archived_count": 0,
   "learnings_count": 7,
   "decisions_count": 7,
-  "updated_at": "2026-01-14T19:43:21.244922Z"
+  "updated_at": "2026-01-15T03:01:36.22757Z"
 }
