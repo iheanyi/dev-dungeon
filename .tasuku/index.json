@@ -24,6 +24,15 @@
       "file": "tasks/combat-system.md",
       "updated_at": "2026-01-14T01:44:29.950786Z"
     },
+    "daily-leaderboard-api-endpoint": {
+      "status": "done",
+      "tags": [
+        "api",
+        "http"
+      ],
+      "file": "tasks/daily-leaderboard-api-endpoint.md",
+      "updated_at": "2026-01-15T22:20:09.26585Z"
+    },
     "daily-leaderboard-cursor-pagination": {
       "status": "done",
       "tags": [
@@ -276,10 +285,19 @@
       ],
       "file": "tasks/unlockables-system.md",
       "updated_at": "2026-01-14T18:15:02.399045Z"
+    },
+    "wire-daily-leaderboard-fetcher": {
+      "status": "done",
+      "tags": [
+        "server",
+        "wiring"
+      ],
+      "file": "tasks/wire-daily-leaderboard-fetcher.md",
+      "updated_at": "2026-01-15T22:19:07.91984Z"
     }
   },
   "archived_count": 0,
   "learnings_count": 7,
-  "decisions_count": 7,
-  "updated_at": "2026-01-15T22:13:42.068208Z"
+  "decisions_count": 8,
+  "updated_at": "2026-01-15T22:20:09.266001Z"
 }

@@ -210,6 +210,53 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 
 	gameSession.Model = model
 
+	// Set up daily leaderboard fetcher (date-navigable)
+	model.SetDailyLeaderboardFetcher(func(date time.Time, limit int, _ int) ([]ui.LeaderboardEntry, int, *ui.LeaderboardEntry, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		// Get top entries for this date
+		dbEntries, _, err := s.db.GetDailyLeaderboard(ctx, date, limit, nil)
+		if err != nil {
+			return nil, 0, nil, err
+		}
+
+		// Convert db entries to ui entries
+		var entries []ui.LeaderboardEntry
+		for _, e := range dbEntries {
+			entries = append(entries, ui.LeaderboardEntry{
+				Rank:          e.Rank,
+				Username:      e.Username,
+				Score:         e.Score,
+				FloorsCleared: e.FloorsCleared,
+				Class:         e.Class,
+				Seed:          e.Seed,
+				RunType:       e.RunType,
+			})
+		}
+
+		// Get player's rank for this date
+		playerRank, dbPlayerEntry, err := s.db.GetPlayerDailyRank(ctx, date, user.ID)
+		if err != nil {
+			return entries, 0, nil, err
+		}
+
+		var playerEntry *ui.LeaderboardEntry
+		if dbPlayerEntry != nil {
+			playerEntry = &ui.LeaderboardEntry{
+				Rank:          playerRank,
+				Username:      dbPlayerEntry.Username,
+				Score:         dbPlayerEntry.Score,
+				FloorsCleared: dbPlayerEntry.FloorsCleared,
+				Class:         dbPlayerEntry.Class,
+				Seed:          dbPlayerEntry.Seed,
+				RunType:       dbPlayerEntry.RunType,
+			}
+		}
+
+		return entries, playerRank, playerEntry, nil
+	})
+
 	// If we have a save, restore it and enable Continue option
 	if gameSave != nil {
 		var saveData save.SaveData
@@ -544,6 +591,53 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 	})
 
 	gameSession.Model = model
+
+	// Set up daily leaderboard fetcher (date-navigable)
+	model.SetDailyLeaderboardFetcher(func(date time.Time, limit int, _ int) ([]ui.LeaderboardEntry, int, *ui.LeaderboardEntry, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		// Get top entries for this date
+		dbEntries, _, err := s.db.GetDailyLeaderboard(ctx, date, limit, nil)
+		if err != nil {
+			return nil, 0, nil, err
+		}
+
+		// Convert db entries to ui entries
+		var entries []ui.LeaderboardEntry
+		for _, e := range dbEntries {
+			entries = append(entries, ui.LeaderboardEntry{
+				Rank:          e.Rank,
+				Username:      e.Username,
+				Score:         e.Score,
+				FloorsCleared: e.FloorsCleared,
+				Class:         e.Class,
+				Seed:          e.Seed,
+				RunType:       e.RunType,
+			})
+		}
+
+		// Get player's rank for this date
+		playerRank, dbPlayerEntry, err := s.db.GetPlayerDailyRank(ctx, date, user.ID)
+		if err != nil {
+			return entries, 0, nil, err
+		}
+
+		var playerEntry *ui.LeaderboardEntry
+		if dbPlayerEntry != nil {
+			playerEntry = &ui.LeaderboardEntry{
+				Rank:          playerRank,
+				Username:      dbPlayerEntry.Username,
+				Score:         dbPlayerEntry.Score,
+				FloorsCleared: dbPlayerEntry.FloorsCleared,
+				Class:         dbPlayerEntry.Class,
+				Seed:          dbPlayerEntry.Seed,
+				RunType:       dbPlayerEntry.RunType,
+			}
+		}
+
+		return entries, playerRank, playerEntry, nil
+	})
 
 	s.sessions.Add(fingerprint, gameSession)
 

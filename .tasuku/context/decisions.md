@@ -35,3 +35,8 @@
 **Over**: E2E tests with real database, Mocking with testify/mock, Test containers with Dockerized PostgreSQL
 **Because**: In-memory repositories keep tests fast, isolated, and don't require external dependencies. The repository interface also improves code organization and makes the database layer more testable.
 
+## cursor-based-leaderboard-pagination - 2026-01-15T22:14:14Z
+**Chose**: Cursor-based pagination using (score, id) tuple for leaderboards
+**Over**: Offset/limit pagination, Page number pagination, Keyset pagination on ID only
+**Because**: Leaderboards can have concurrent score submissions while users browse. Offset/limit would cause duplicate entries or missed entries when new scores are inserted. The (score, id) cursor is stable because scores are immutable once submitted, and ID breaks ties for equal scores.
+

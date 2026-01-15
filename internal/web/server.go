@@ -96,6 +96,7 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/leaderboard", s.handleLeaderboard)
 	s.mux.HandleFunc("GET /api/leaderboard/{runType}", s.handleLeaderboardByType)
+	s.mux.HandleFunc("GET /api/leaderboard/daily/{date}", s.handleDailyLeaderboard)
 	s.mux.HandleFunc("GET /api/players/{nanoid}", s.handlePlayerProfile)
 	s.mux.HandleFunc("GET /api/daily", s.handleDailySeed)
 
@@ -190,6 +191,55 @@ func (s *Server) handleLeaderboardByType(w http.ResponseWriter, r *http.Request)
 	}
 
 	s.jsonResponse(w, http.StatusOK, entries)
+}
+
+func (s *Server) handleDailyLeaderboard(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	dateStr := r.PathValue("date")
+
+	// Parse date in YYYY-MM-DD format
+	date, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		s.jsonError(w, http.StatusBadRequest, "Invalid date format. Use YYYY-MM-DD")
+		return
+	}
+
+	// Validate date range (last 7 days only)
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	minDate := today.AddDate(0, 0, -6)
+	if date.After(today) {
+		s.jsonError(w, http.StatusBadRequest, "Cannot fetch future dates")
+		return
+	}
+	if date.Before(minDate) {
+		s.jsonError(w, http.StatusBadRequest, "Can only fetch last 7 days")
+		return
+	}
+
+	limit := 100
+	entries, _, err := s.db.GetDailyLeaderboard(ctx, date, limit, nil)
+	if err != nil {
+		s.jsonError(w, http.StatusInternalServerError, "Failed to fetch daily leaderboard")
+		return
+	}
+
+	// Get the seed for this date
+	seed, err := s.db.GetDailySeed(ctx, date)
+	if err != nil {
+		s.jsonError(w, http.StatusInternalServerError, "Failed to fetch daily seed")
+		return
+	}
+
+	response := map[string]interface{}{
+		"date":    date.Format("2006-01-02"),
+		"seed":    nil,
+		"entries": entries,
+	}
+	if seed != nil {
+		response["seed"] = seed.Seed
+	}
+
+	s.jsonResponse(w, http.StatusOK, response)
 }
 
 func (s *Server) handlePlayerProfile(w http.ResponseWriter, r *http.Request) {
