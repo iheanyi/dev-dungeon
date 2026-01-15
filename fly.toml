@@ -1,86 +1,23 @@
-# Fly.io configuration for /dev/dungeon
-# See https://fly.io/docs/reference/configuration/ for more information
+# fly.toml app configuration file generated for dev-dungeon on 2026-01-15T23:39:47Z
 #
-# Custom Domain Setup (dev-dungeon.com):
-#   1. fly certs add dev-dungeon.com
-#   2. Add DNS records at your registrar:
-#      - A record: @ -> <fly-ipv4> (from `fly ips list`)
-#      - AAAA record: @ -> <fly-ipv6>
-#      - CNAME record: www -> dev-dungeon.fly.dev
-#   3. For SSH on custom domain, add to DNS:
-#      - A record: ssh -> <fly-ipv4>
-#      - AAAA record: ssh -> <fly-ipv6>
-#      OR use the root domain directly
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
 
-app = "dev-dungeon"
-primary_region = "ord"
+app = 'dev-dungeon'
+primary_region = 'iad'
 
 [build]
-  dockerfile = "Dockerfile"
 
-[env]
-  # SSH host key will be stored on persistent volume
-  SSH_HOST_KEY_PATH = "/data/host_key"
-  SSH_HOST = "0.0.0.0"
-  SSH_PORT = "2222"
-  HTTP_HOST = "0.0.0.0"
-  HTTP_PORT = "8080"
-
-# Mount persistent volume for SSH host key
-# This prevents "HOST IDENTIFICATION HAS CHANGED" warnings
-# Create the volume first: fly volumes create devdungeon_data --region ord --size 1
-[mounts]
-  source = "devdungeon_data"
-  destination = "/data"
-
-# SSH server (primary)
-[[services]]
-  protocol = "tcp"
-  internal_port = 2222
-
-  [[services.ports]]
-    port = 22
-    handlers = []
-
-  [[services.ports]]
-    port = 2222
-    handlers = []
-
-  [services.concurrency]
-    type = "connections"
-    hard_limit = 100
-    soft_limit = 50
-
-# HTTP server for web UI and API
-[[services]]
-  protocol = "tcp"
+[http_service]
   internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
 
-  [[services.ports]]
-    port = 80
-    handlers = ["http"]
-
-  [[services.ports]]
-    port = 443
-    handlers = ["tls", "http"]
-
-  [services.concurrency]
-    type = "requests"
-    hard_limit = 250
-    soft_limit = 200
-
-  [[services.http_checks]]
-    interval = 10000
-    grace_period = "5s"
-    method = "GET"
-    path = "/health"
-    protocol = "http"
-    timeout = 2000
-
-[checks]
-  [checks.ssh]
-    port = 2222
-    type = "tcp"
-    interval = "15s"
-    timeout = "2s"
-    grace_period = "10s"
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 256
