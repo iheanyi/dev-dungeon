@@ -3774,22 +3774,28 @@ func (m *Model) viewDailyLeaderboard() string {
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 	minDate := today.AddDate(0, 0, -6)
 
-	// Navigation arrows
+	// Navigation arrows - always show but dim when disabled
+	canGoBack := !m.dailyLeaderboardDate.Equal(minDate) && !m.dailyLeaderboardDate.Before(minDate)
+	canGoForward := !m.dailyLeaderboardDate.Equal(today) && !m.dailyLeaderboardDate.After(today)
+
 	leftArrow := "←"
 	rightArrow := "→"
-	if m.dailyLeaderboardDate.Equal(minDate) || m.dailyLeaderboardDate.Before(minDate) {
-		leftArrow = " " // Can't go further back
+	if !canGoBack {
+		leftArrow = " "
 	}
-	if m.dailyLeaderboardDate.Equal(today) || m.dailyLeaderboardDate.After(today) {
-		rightArrow = " " // Can't go into future
+	if !canGoForward {
+		rightArrow = " "
 	}
 
-	title := m.styles.Title.Render(fmt.Sprintf(`
-    ╔═══════════════════════════════════════════╗
-    ║            DAILY LEADERBOARD              ║
-    ║       %s   %s   %s       ║
-    ╚═══════════════════════════════════════════╝
-	`, leftArrow, dateStr, rightArrow)) + "\n"
+	// Fixed-width date display (12 chars: "Jan 15, 2006")
+	datePadded := fmt.Sprintf("%-12s", dateStr)
+
+	title := m.styles.Title.Render(fmt.Sprintf(
+		"╔═══════════════════════════════════════════╗\n"+
+			"║            DAILY LEADERBOARD              ║\n"+
+			"║       %s   %s   %s      ║\n"+
+			"╚═══════════════════════════════════════════╝",
+		leftArrow, datePadded, rightArrow)) + "\n"
 
 	// Content
 	var content string
