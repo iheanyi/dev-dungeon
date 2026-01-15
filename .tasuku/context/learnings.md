@@ -18,3 +18,6 @@ Always implement regression tests when fixing bugs - bugs without tests will reg
 ## bb9090 - 2026-01-14T23:11:01Z
 Always use time.Now().UTC() when storing timestamps in PostgreSQL. Local time (e.g., CST) gets stored without timezone info, then retrieved as UTC, causing 6+ hour discrepancies. This breaks expiry checks where tokens appear expired immediately.
 
+## 84c08b - 2026-01-14T23:35:20Z
+Go 1.23 doesn't have the covdata tool required for -covermode=atomic. Use default coverage mode or upgrade to Go 1.24+ for atomic coverage in CI.
+
