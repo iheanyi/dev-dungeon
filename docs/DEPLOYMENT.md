@@ -336,14 +336,37 @@ fly config show
 fly postgres connect -a dev-dungeon-db
 ```
 
-### Run migrations
+### Migrations
 
-Migrations run automatically on first boot via the schema in `migrations/001_initial_schema.sql`.
+**Migrations run automatically on server startup.** No manual intervention needed - the server applies any pending migrations before starting.
 
-To run manually:
+The migration system uses [golang-migrate](https://github.com/golang-migrate/migrate) with embedded SQL files. Migration state is tracked in a `schema_migrations` table.
+
+### Manual migration commands (optional)
+
+For manual control, use the `migrate` CLI:
+
 ```bash
+# Check current migration version
+go run ./cmd/migrate version
+
+# Apply all pending migrations
+go run ./cmd/migrate up
+
+# Roll back last migration
+go run ./cmd/migrate down
+
+# Force a specific version (for fixing dirty state)
+go run ./cmd/migrate force 2
+```
+
+On Fly.io:
+```bash
+# SSH into the container
 fly ssh console -a dev-dungeon
-cat /app/migrations/001_initial_schema.sql | psql $DATABASE_URL
+
+# Check migration status (runs embedded binary)
+/app/devdungeon migrate version
 ```
 
 ### Backup database
