@@ -162,9 +162,10 @@ type Model struct {
 	showingHistory   bool     // Whether message history view is active
 
 	// Intro animation state
-	introFrame   int                // Current frame of intro
-	introSkipped bool               // User skipped intro
-	pendingClass entity.PlayerClass // Class to use after intro
+	introFrame    int                // Current frame of intro
+	introSkipped  bool               // User skipped intro
+	introFromMenu bool               // Viewing intro from menu (returns to menu, not game)
+	pendingClass  entity.PlayerClass // Class to use after intro
 
 	// Shop state
 	shopCursor int
@@ -436,6 +437,7 @@ func newModel(cfg *config.Config, renderer *lipgloss.Renderer) *Model {
 			"Leaderboard",
 			"Daily Leaderboard",
 			"Unlocks",
+			"How to Play",
 			"Quit",
 		},
 		menuCursor: 0,
@@ -590,19 +592,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 	case introTickMsg:
-		// Handle intro animation tick
-		if m.currentView == ViewIntro && !m.introSkipped {
-			m.introFrame++
-			if m.introFrame >= len(introFrames) {
-				// Intro complete, start the game
-				m.startNewGame(m.pendingClass)
-				return m, nil
-			}
-			// Continue to next frame
-			return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-				return introTickMsg{}
-			})
-		}
+		// No longer used - intro is now user-paced
 		return m, nil
 	}
 	return m, nil
@@ -758,6 +748,13 @@ func (m *Model) selectMenuItem() (tea.Model, tea.Cmd) {
 	case "Unlocks":
 		m.openUnlockShop()
 		return m, nil
+	case "How to Play":
+		// Show intro sequence without starting a game
+		m.introFrame = 0
+		m.introSkipped = false
+		m.introFromMenu = true // Flag to return to menu instead of starting game
+		m.currentView = ViewIntro
+		return m, nil
 	case "Quit":
 		return m, m.requestQuit()
 	}
@@ -784,14 +781,13 @@ func (m *Model) updateClassSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.statusMsg = fmt.Sprintf("Class '%s' is locked. Visit Unlocks from the main menu to purchase it.", selectedClass)
 			return m, nil
 		}
-		// Start intro sequence, then game
+		// Start intro sequence, then game (user-paced, no auto-advance)
 		m.pendingClass = selectedClass
 		m.introFrame = 0
 		m.introSkipped = false
+		m.introFromMenu = false // This leads to a game, not back to menu
 		m.currentView = ViewIntro
-		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-			return introTickMsg{}
-		})
+		return m, nil
 	case "esc", "q":
 		m.currentView = ViewMainMenu
 	}
@@ -1711,21 +1707,35 @@ func (m *Model) updateMessageHistory(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // updateIntro handles intro sequence input.
 func (m *Model) updateIntro(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "enter", " ", "esc", "q":
-		// Skip intro, start game immediately
+	case "esc", "q":
+		// Skip intro entirely
 		m.introSkipped = true
+		if m.introFromMenu {
+			m.introFromMenu = false
+			m.currentView = ViewMainMenu
+			return m, nil
+		}
 		m.startNewGame(m.pendingClass)
 		return m, nil
-	case "right", "d", "l":
-		// Advance to next frame manually
+	case "enter", " ", "right", "down", "d", "l", "j":
+		// Advance to next frame
 		m.introFrame++
 		if m.introFrame >= len(introFrames) {
+			if m.introFromMenu {
+				m.introFromMenu = false
+				m.currentView = ViewMainMenu
+				return m, nil
+			}
 			m.startNewGame(m.pendingClass)
 			return m, nil
 		}
-		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-			return introTickMsg{}
-		})
+		return m, nil
+	case "left", "up", "a", "h", "k":
+		// Go back to previous frame
+		if m.introFrame > 0 {
+			m.introFrame--
+		}
+		return m, nil
 	}
 	return m, nil
 }
@@ -2999,7 +3009,7 @@ func (m *Model) viewIntro() string {
 	// Progress indicator
 	progress := fmt.Sprintf("[%d/%d]", m.introFrame+1, len(introFrames))
 
-	footer := m.styles.Muted.Render("\n\n" + progress + "   [Enter/Space] Skip   [→] Next")
+	footer := m.styles.Muted.Render("\n\n" + progress + "   [Space/→] Next   [←] Back   [Esc] Skip")
 
 	content := m.styles.Container.Render(m.styles.Title.Render(frame) + footer)
 	return m.centerContent(content)
