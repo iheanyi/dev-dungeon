@@ -636,10 +636,30 @@ type registrationModel struct {
 }
 
 func (s *Server) newRegistrationModel(sess ssh.Session, fingerprint string) *registrationModel {
+	// Pre-fill username from SSH connection (e.g., "ssh iheanyi@server" -> "iheanyi")
+	// Sanitize to match allowed characters: lowercase alphanumeric and dashes
+	sshUser := sess.User()
+	prefilled := ""
+	for i, c := range sshUser {
+		// Convert uppercase to lowercase
+		if c >= 'A' && c <= 'Z' {
+			c = c + 32
+		}
+		// Allow: a-z, 0-9, dash (but dash can't be first char)
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || (c == '-' && i > 0) {
+			prefilled += string(c)
+		}
+		// Max 20 chars
+		if len(prefilled) >= 20 {
+			break
+		}
+	}
+
 	return &registrationModel{
 		server:      s,
 		sess:        sess,
 		fingerprint: fingerprint,
+		username:    prefilled,
 	}
 }
 
