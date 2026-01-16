@@ -112,28 +112,27 @@ func (sm *SessionManager) NotifyShutdown(message string) {
 		cyan   = "\033[36m"
 	)
 
-	// Pad message to fixed width (48 chars for content area)
+	// Pad message to fixed width (46 chars for content area)
 	paddedMsg := message
-	if len(paddedMsg) < 48 {
-		paddedMsg += strings.Repeat(" ", 48-len(paddedMsg))
-	} else if len(paddedMsg) > 48 {
-		paddedMsg = paddedMsg[:48]
+	if len(paddedMsg) < 46 {
+		paddedMsg += strings.Repeat(" ", 46-len(paddedMsg))
+	} else if len(paddedMsg) > 46 {
+		paddedMsg = paddedMsg[:46]
 	}
 
 	// Format message with terminal styling
-	// Box is 52 chars wide inside (between the ║ borders)
-	// Using ASCII markers instead of emojis for consistent width
+	// Box drawing with Unicode - emojis count as 2 display width
 	formattedMsg := "\r\n\r\n"
-	formattedMsg += fmt.Sprintf("%s%s+----------------------------------------------------+%s\r\n", bold, yellow, reset)
-	formattedMsg += fmt.Sprintf("%s%s|%s  %s[!] SERVER RESTARTING%s                             %s%s|%s\r\n", bold, yellow, reset, bold, reset, bold, yellow, reset)
-	formattedMsg += fmt.Sprintf("%s%s+----------------------------------------------------+%s\r\n", bold, yellow, reset)
-	formattedMsg += fmt.Sprintf("%s%s|%s                                                    %s%s|%s\r\n", bold, yellow, reset, bold, yellow, reset)
-	formattedMsg += fmt.Sprintf("%s%s|%s  %s%s%s  %s%s|%s\r\n", bold, yellow, reset, green, paddedMsg, reset, bold, yellow, reset)
-	formattedMsg += fmt.Sprintf("%s%s|%s                                                    %s%s|%s\r\n", bold, yellow, reset, bold, yellow, reset)
-	formattedMsg += fmt.Sprintf("%s%s|%s  %s> Your progress has been saved.%s                  %s%s|%s\r\n", bold, yellow, reset, cyan, reset, bold, yellow, reset)
-	formattedMsg += fmt.Sprintf("%s%s|%s  %s> Reconnect: ssh dev-dungeon.com%s                 %s%s|%s\r\n", bold, yellow, reset, cyan, reset, bold, yellow, reset)
-	formattedMsg += fmt.Sprintf("%s%s|%s                                                    %s%s|%s\r\n", bold, yellow, reset, bold, yellow, reset)
-	formattedMsg += fmt.Sprintf("%s%s+----------------------------------------------------+%s\r\n\r\n", bold, yellow, reset)
+	formattedMsg += fmt.Sprintf("%s%s╔══════════════════════════════════════════════════╗%s\r\n", bold, yellow, reset)
+	formattedMsg += fmt.Sprintf("%s%s║%s  %s🔄 SERVER RESTARTING%s                            %s%s║%s\r\n", bold, yellow, reset, bold, reset, bold, yellow, reset)
+	formattedMsg += fmt.Sprintf("%s%s╠══════════════════════════════════════════════════╣%s\r\n", bold, yellow, reset)
+	formattedMsg += fmt.Sprintf("%s%s║%s                                                  %s%s║%s\r\n", bold, yellow, reset, bold, yellow, reset)
+	formattedMsg += fmt.Sprintf("%s%s║%s  %s%s%s  %s%s║%s\r\n", bold, yellow, reset, green, paddedMsg, reset, bold, yellow, reset)
+	formattedMsg += fmt.Sprintf("%s%s║%s                                                  %s%s║%s\r\n", bold, yellow, reset, bold, yellow, reset)
+	formattedMsg += fmt.Sprintf("%s%s║%s  %s💾 Your progress has been saved.%s                %s%s║%s\r\n", bold, yellow, reset, cyan, reset, bold, yellow, reset)
+	formattedMsg += fmt.Sprintf("%s%s║%s  %s🔗 Reconnect: ssh dev-dungeon.com%s               %s%s║%s\r\n", bold, yellow, reset, cyan, reset, bold, yellow, reset)
+	formattedMsg += fmt.Sprintf("%s%s║%s                                                  %s%s║%s\r\n", bold, yellow, reset, bold, yellow, reset)
+	formattedMsg += fmt.Sprintf("%s%s╚══════════════════════════════════════════════════╝%s\r\n\r\n", bold, yellow, reset)
 
 	for _, session := range sm.sessions {
 		if session.Session != nil {
