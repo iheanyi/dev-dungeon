@@ -691,6 +691,43 @@ func TestLoadGamePreservesInventory(t *testing.T) {
 	}
 }
 
+func TestLoadGameInvalidPositionFallsBackToStairs(t *testing.T) {
+	cfg := config.DefaultConfig()
+	engine := NewEngine(cfg, 12345)
+
+	if err := engine.StartNewGame(entity.ClassBash); err != nil {
+		t.Fatalf("StartNewGame failed: %v", err)
+	}
+
+	// Get save data and set position to an invalid location (inside a wall)
+	saveData := engine.toSaveData()
+
+	// Set position to a known wall position (0,0 is always a wall in BSP generation)
+	saveData.Player.Position = types.Position{X: 0, Y: 0}
+
+	// Load the save
+	if err := engine.LoadGame(saveData); err != nil {
+		t.Fatalf("LoadGame failed: %v", err)
+	}
+
+	// Player should NOT be at the invalid position
+	playerPos := engine.Player().Position()
+	if playerPos.X == 0 && playerPos.Y == 0 {
+		t.Error("player should not be at invalid position (0,0)")
+	}
+
+	// Player should be at the stairs up position
+	stairsUp := engine.GetWorld().CurrentFloor.StairsUp
+	if playerPos != stairsUp {
+		t.Errorf("player should be at stairs up (%v), got %v", stairsUp, playerPos)
+	}
+
+	// Verify position is walkable
+	if !engine.GetWorld().CurrentFloor.IsWalkable(playerPos) {
+		t.Error("player position should be walkable")
+	}
+}
+
 func TestGatherNearbyEnemies(t *testing.T) {
 	cfg := config.DefaultConfig()
 	engine := NewEngine(cfg, 12345)

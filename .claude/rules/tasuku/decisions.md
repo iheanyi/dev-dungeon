@@ -66,3 +66,11 @@ _Auto-synced from .tasuku/context/decisions.md_
 
 **Because**: Leaderboards can have concurrent score submissions while users browse. Offset/limit would cause duplicate entries or missed entries when new scores are inserted. The (score, id) cursor is stable because scores are immutable once submitted, and ID breaks ties for equal scores.
 
+## fixed-dungeon-dimensions (2026-01-16)
+
+**Chose**: Fixed 100x50 dungeon dimensions regardless of terminal size
+
+**Over**: Terminal-based dimensions (dynamic), Save dungeon dimensions with save data, Clamp player position on load
+
+**Because**: Dynamic dimensions broke save/load when terminal size changed. Fixed dimensions ensure saves work across any terminal. The viewport already scrolls to show the visible portion, so smaller terminals just see less.
+

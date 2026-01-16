@@ -24,3 +24,6 @@ Go 1.23 doesn't have the covdata tool required for -covermode=atomic. Use defaul
 ## 4e3b27 - 2026-01-16T02:40:06Z
 When returning a new model from Bubble Tea's Update(), you must explicitly call Init() and return its result. Bubble Tea does NOT automatically call Init() on replacement models - only on the initial model. Failing to do this causes goroutine/resource leaks if Init() sets up background tasks.
 
+## 4ebf4d - 2026-01-16T03:04:57Z
+Always validate loaded player positions against current dungeon layout. Dungeon regeneration from seeds can produce different layouts when dimensions change, so saved positions may land in walls. Fallback to a known-safe position (like stairs) when loaded position is invalid.
+

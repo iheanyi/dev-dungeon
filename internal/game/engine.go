@@ -931,11 +931,19 @@ func (e *Engine) LoadGame(data *save.SaveData) error {
 		}
 	}
 
-	// Set player position (reset to stairs if we capped depth)
+	// Set player position (reset to stairs if we capped depth or position is invalid)
 	if loadDepth != data.CurrentDepth {
 		e.player.SetPosition(e.world.CurrentFloor.StairsUp)
 	} else {
-		e.player.SetPosition(data.Player.Position)
+		// Validate saved position is walkable (may be invalid due to dungeon size changes)
+		savedPos := data.Player.Position
+		if e.world.CurrentFloor.InBounds(savedPos) && e.world.CurrentFloor.IsWalkable(savedPos) {
+			e.player.SetPosition(savedPos)
+		} else {
+			// Fallback to stairs up if saved position is invalid
+			e.player.SetPosition(e.world.CurrentFloor.StairsUp)
+			e.addMessage("Position reset - your save was from a different dungeon layout.")
+		}
 	}
 
 	// Update visibility
