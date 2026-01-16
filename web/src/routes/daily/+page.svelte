@@ -1,3 +1,8 @@
+<svelte:head>
+	<title>Daily Challenge - /dev/dungeon</title>
+	<meta name="description" content="Today's /dev/dungeon daily challenge. Same seed for everyone, compete globally. Resets at midnight UTC. Can you top the leaderboard?" />
+</svelte:head>
+
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getDailySeed, getLeaderboard, formatTime, type LeaderboardEntry, type DailySeed } from '$lib/api';

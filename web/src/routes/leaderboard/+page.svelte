@@ -1,3 +1,8 @@
+<svelte:head>
+	<title>Leaderboard - /dev/dungeon High Scores</title>
+	<meta name="description" content="See who has descended the deepest in /dev/dungeon. Global leaderboard showing top players, their classes, floors cleared, and completion times." />
+</svelte:head>
+
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';

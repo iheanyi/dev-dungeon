@@ -1,0 +1,24 @@
+{
+  "name": "/dev/dungeon",
+  "short_name": "devdungeon",
+  "description": "A Unix-themed terminal roguelike played over SSH. Navigate the filesystem from /home to /dev/null.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#00ff00",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["games", "entertainment"]
+}

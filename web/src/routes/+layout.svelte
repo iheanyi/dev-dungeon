@@ -15,8 +15,8 @@
 </script>
 
 <svelte:head>
-	<title>/dev/dungeon</title>
-	<meta name="description" content="A Unix-themed terminal roguelike" />
+	<title>/dev/dungeon - A Unix-themed Terminal Roguelike</title>
+	<meta name="description" content="Navigate procedurally generated filesystem dungeons from /home to /dev/null. Battle rogue processes like zombies, daemons, and fork bombs. Free to play over SSH!" />
 	<link rel="preconnect" href="https://fonts.googleapis.com" />
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
 </svelte:head>

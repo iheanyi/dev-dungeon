@@ -1,3 +1,8 @@
+<svelte:head>
+	<title>About /dev/dungeon - Game Manual & Lore</title>
+	<meta name="description" content="Learn how to play /dev/dungeon. Discover the classes, explore the filesystem floors from /home to /dev/null, and master the Unix-themed combat system." />
+</svelte:head>
+
 <script lang="ts">
 	const classes = [
 		{ name: 'init', desc: 'Balanced starter. Jack of all trades.', stats: 'Balanced' },

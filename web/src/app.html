@@ -3,25 +3,77 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<meta name="theme-color" content="#0a0a0a" />
+		<meta name="theme-color" content="#00ff00" />
+		<meta name="color-scheme" content="dark" />
 
-		<!-- Favicon -->
+		<!-- SEO -->
+		<meta name="robots" content="index, follow" />
+		<meta name="author" content="Iheanyi Ekechukwu" />
+		<meta name="keywords" content="roguelike, terminal game, SSH game, Unix, Linux, dungeon crawler, ASCII game, retro gaming" />
+		<link rel="canonical" href="https://dev-dungeon.com" />
+
+		<!-- Favicon - multiple formats for compatibility -->
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<link rel="apple-touch-icon" href="/icon-192.svg" />
+		<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+		<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
 
-		<!-- Open Graph / Social -->
+		<!-- PWA Manifest -->
+		<link rel="manifest" href="/manifest.json" />
+
+		<!-- Open Graph / Social (PNG for compatibility) -->
 		<meta property="og:type" content="website" />
-		<meta property="og:title" content="/dev/dungeon" />
-		<meta property="og:description" content="Navigate the filesystem. Survive. A Unix-themed terminal roguelike played over SSH." />
-		<meta property="og:image" content="https://dev-dungeon.com/og-image.svg" />
+		<meta property="og:site_name" content="/dev/dungeon" />
+		<meta property="og:title" content="/dev/dungeon - A Unix-themed Terminal Roguelike" />
+		<meta property="og:description" content="Navigate the filesystem. Survive. Battle rogue processes from /home to /dev/null. Play over SSH!" />
+		<meta property="og:image" content="https://dev-dungeon.com/og-image.png" />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta property="og:image:alt" content="/dev/dungeon terminal roguelike game" />
 		<meta property="og:url" content="https://dev-dungeon.com" />
+		<meta property="og:locale" content="en_US" />
 
 		<!-- Twitter -->
 		<meta name="twitter:card" content="summary_large_image" />
-		<meta name="twitter:title" content="/dev/dungeon" />
-		<meta name="twitter:description" content="Navigate the filesystem. Survive. A Unix-themed terminal roguelike played over SSH." />
-		<meta name="twitter:image" content="https://dev-dungeon.com/og-image.svg" />
+		<meta name="twitter:site" content="@kwuchu" />
 		<meta name="twitter:creator" content="@kwuchu" />
+		<meta name="twitter:title" content="/dev/dungeon - A Unix-themed Terminal Roguelike" />
+		<meta name="twitter:description" content="Navigate the filesystem. Survive. Battle rogue processes from /home to /dev/null. Play over SSH!" />
+		<meta name="twitter:image" content="https://dev-dungeon.com/og-image.png" />
+		<meta name="twitter:image:alt" content="/dev/dungeon terminal roguelike game" />
+
+		<!-- JSON-LD Structured Data -->
+		<script type="application/ld+json">
+		{
+			"@context": "https://schema.org",
+			"@type": "VideoGame",
+			"name": "/dev/dungeon",
+			"alternateName": "devdungeon",
+			"description": "A Unix-themed terminal roguelike where you navigate procedurally generated filesystem dungeons, battling rogue processes like zombies, daemons, and fork bombs. Play over SSH!",
+			"url": "https://dev-dungeon.com",
+			"image": "https://dev-dungeon.com/og-image.png",
+			"genre": ["Roguelike", "Terminal Game", "ASCII Game"],
+			"gamePlatform": ["SSH", "Terminal", "Command Line"],
+			"applicationCategory": "Game",
+			"operatingSystem": "Any (SSH client required)",
+			"offers": {
+				"@type": "Offer",
+				"price": "0",
+				"priceCurrency": "USD"
+			},
+			"author": {
+				"@type": "Person",
+				"name": "Iheanyi Ekechukwu",
+				"url": "https://twitter.com/kwuchu"
+			},
+			"aggregateRating": {
+				"@type": "AggregateRating",
+				"ratingValue": "5",
+				"ratingCount": "1",
+				"bestRating": "5",
+				"worstRating": "1"
+			}
+		}
+		</script>
 
 		<style>
 			/* Critical CSS to prevent FOUC - matches terminal theme */
@@ -30,6 +82,7 @@
 				color: #00ff00;
 			}
 		</style>
+
 		<!-- Fathom Analytics -->
 		<script src="https://cdn.usefathom.com/script.js" data-spa="auto" data-site="PXRPXEFW" defer></script>
 
