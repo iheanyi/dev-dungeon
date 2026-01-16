@@ -290,6 +290,12 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 	return wrapper, []tea.ProgramOption{tea.WithAltScreen()}
 }
 
+// Auto-save interval
+const autoSaveInterval = 30 * time.Second
+
+// autoSaveMsg is sent periodically to trigger auto-save.
+type autoSaveMsg struct{}
+
 // sessionWrapper wraps the game UI to handle session lifecycle.
 type sessionWrapper struct {
 	model       *ui.Model
@@ -302,10 +308,37 @@ type sessionWrapper struct {
 }
 
 func (sw *sessionWrapper) Init() tea.Cmd {
-	return sw.model.Init()
+	// Start both the model and the auto-save ticker
+	return tea.Batch(
+		sw.model.Init(),
+		sw.tickAutoSave(),
+	)
+}
+
+// tickAutoSave returns a command that triggers auto-save after the interval.
+func (sw *sessionWrapper) tickAutoSave() tea.Cmd {
+	return tea.Tick(autoSaveInterval, func(t time.Time) tea.Msg {
+		return autoSaveMsg{}
+	})
 }
 
 func (sw *sessionWrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle auto-save tick
+	if _, ok := msg.(autoSaveMsg); ok {
+		// Save in the background
+		if sw.session.User != nil && sw.session.Model != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), dbSaveTimeout)
+			if err := saveSessionToDatabase(ctx, sw.server.db, sw.session); err != nil {
+				log.Error("Auto-save failed", "error", err, "user", sw.session.User.Username)
+			} else {
+				log.Debug("Auto-saved game", "user", sw.session.User.Username)
+			}
+			cancel()
+		}
+		// Schedule next auto-save
+		return sw, sw.tickAutoSave()
+	}
+
 	// Handle link modal dismissal first
 	if sw.showingLink {
 		switch msg := msg.(type) {
