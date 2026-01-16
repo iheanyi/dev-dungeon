@@ -3,14 +3,36 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<meta name="theme-color" content="#0a0f0a" />
+		<meta name="theme-color" content="#0a0a0a" />
+
+		<!-- Favicon -->
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<link rel="apple-touch-icon" href="/icon-192.svg" />
+
+		<!-- Open Graph / Social -->
+		<meta property="og:type" content="website" />
+		<meta property="og:title" content="/dev/dungeon" />
+		<meta property="og:description" content="Navigate the filesystem. Survive. A Unix-themed terminal roguelike played over SSH." />
+		<meta property="og:image" content="https://dev-dungeon.com/og-image.svg" />
+		<meta property="og:url" content="https://dev-dungeon.com" />
+
+		<!-- Twitter -->
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="twitter:title" content="/dev/dungeon" />
+		<meta name="twitter:description" content="Navigate the filesystem. Survive. A Unix-themed terminal roguelike played over SSH." />
+		<meta name="twitter:image" content="https://dev-dungeon.com/og-image.svg" />
+		<meta name="twitter:creator" content="@kwuchu" />
+
 		<style>
 			/* Critical CSS to prevent FOUC - matches terminal theme */
 			html, body {
-				background-color: #0a0f0a;
+				background-color: #0a0a0a;
 				color: #00ff00;
 			}
 		</style>
+		<!-- Fathom Analytics -->
+		<script src="https://cdn.usefathom.com/script.js" data-spa="auto" data-site="PXRPXEFW" defer></script>
+
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
