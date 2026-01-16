@@ -45,6 +45,22 @@ const (
 	blockDuration   = 5 * time.Minute
 )
 
+// SSH banner shown during connection
+const sshBanner = `
+╔═══════════════════════════════════════════════════════╗
+║                    /dev/dungeon                       ║
+║           A Unix-themed terminal roguelike            ║
+╠═══════════════════════════════════════════════════════╣
+║  Supported SSH keys:                                  ║
+║    • Ed25519 (recommended)                            ║
+║    • ECDSA (P-256, P-384, P-521)                      ║
+║    • RSA (2048+ bits)                                 ║
+║                                                       ║
+║  Generate a key: ssh-keygen -t ed25519                ║
+╚═══════════════════════════════════════════════════════╝
+
+`
+
 func newRateLimiter() *rateLimiter {
 	rl := &rateLimiter{
 		attempts: make(map[string]*attemptInfo),
@@ -160,6 +176,7 @@ func New(cfg Config) (*Server, error) {
 	sshSrv, err := wish.NewServer(
 		wish.WithAddress(net.JoinHostPort(cfg.Host, cfg.Port)),
 		wish.WithHostKeyPath(cfg.HostKeyPath),
+		wish.WithBanner(sshBanner),
 		wish.WithPublicKeyAuth(s.publicKeyAuth),
 		wish.WithMiddleware(
 			s.gameMiddleware(),
