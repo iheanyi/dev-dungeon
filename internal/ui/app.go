@@ -2079,7 +2079,9 @@ func (m *Model) viewMainMenu() string {
 		footer = m.styles.Danger.Render(m.statusMsg) + "\n" + footer
 	}
 
-	content := m.styles.Container.Render(title + "\n" + greeting + menu + "\n" + footer)
+	attribution := m.styles.Muted.Render("\n\nBuilt by @kwuchu  •  dev-dungeon.com")
+
+	content := m.styles.Container.Render(title + "\n" + greeting + menu + "\n" + footer + attribution)
 	return m.centerContent(content)
 }
 
