@@ -33,6 +33,7 @@ type GameSession struct {
 	User        *db.User
 	Fingerprint string
 	Model       *ui.Model
+	Session     ssh.Session // SSH session for direct writes
 	mu          sync.Mutex
 }
 
@@ -94,6 +95,41 @@ func (sm *SessionManager) SaveAll(ctx context.Context, dbClient *db.Client) {
 // Call this during shutdown before closing the database.
 func (sm *SessionManager) WaitForAutoSaves() {
 	sm.wg.Wait()
+}
+
+// NotifyShutdown sends a shutdown message to all connected sessions.
+// Call this before shutting down the SSH server to inform users.
+func (sm *SessionManager) NotifyShutdown(message string) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	// ANSI escape codes for styling
+	const (
+		reset  = "\033[0m"
+		bold   = "\033[1m"
+		yellow = "\033[33m"
+		green  = "\033[32m"
+		cyan   = "\033[36m"
+	)
+
+	// Format message with terminal styling
+	formattedMsg := fmt.Sprintf("\r\n\r\n%s%s╔════════════════════════════════════════════════════╗%s\r\n", bold, yellow, reset)
+	formattedMsg += fmt.Sprintf("%s%s║%s  %s🔄 SERVER RESTARTING%s                               %s%s║%s\r\n", bold, yellow, reset, bold, reset, bold, yellow, reset)
+	formattedMsg += fmt.Sprintf("%s%s╠════════════════════════════════════════════════════╣%s\r\n", bold, yellow, reset)
+	formattedMsg += fmt.Sprintf("%s%s║%s                                                    %s%s║%s\r\n", bold, yellow, reset, bold, yellow, reset)
+	formattedMsg += fmt.Sprintf("%s%s║%s  %s%s%s  %s%s║%s\r\n", bold, yellow, reset, green, message, reset, bold, yellow, reset)
+	formattedMsg += fmt.Sprintf("%s%s║%s                                                    %s%s║%s\r\n", bold, yellow, reset, bold, yellow, reset)
+	formattedMsg += fmt.Sprintf("%s%s║%s  %s💾 Your progress has been saved.%s                  %s%s║%s\r\n", bold, yellow, reset, cyan, reset, bold, yellow, reset)
+	formattedMsg += fmt.Sprintf("%s%s║%s  %sReconnect: ssh dev-dungeon.com%s                    %s%s║%s\r\n", bold, yellow, reset, cyan, reset, bold, yellow, reset)
+	formattedMsg += fmt.Sprintf("%s%s║%s                                                    %s%s║%s\r\n", bold, yellow, reset, bold, yellow, reset)
+	formattedMsg += fmt.Sprintf("%s%s╚════════════════════════════════════════════════════╝%s\r\n\r\n", bold, yellow, reset)
+
+	for _, session := range sm.sessions {
+		if session.Session != nil {
+			// Write directly to SSH session - ignore errors as session may be closing
+			_, _ = session.Session.Write([]byte(formattedMsg))
+		}
+	}
 }
 
 // saveSessionToDatabase persists the game state.
@@ -164,6 +200,7 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 	gameSession := &GameSession{
 		User:        user,
 		Fingerprint: fingerprint,
+		Session:     sess,
 	}
 
 	// Try to load existing save from database
@@ -667,6 +704,7 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 	gameSession := &GameSession{
 		User:        user,
 		Fingerprint: fingerprint,
+		Session:     sess,
 	}
 
 	model := ui.NewWithRenderer(cfg, renderer)

@@ -218,6 +218,12 @@ func (s *Server) Run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// Notify all connected users before disconnecting
+	s.sessions.NotifyShutdown("New deploy detected, please reconnect!")
+
+	// Give users a moment to see the message
+	time.Sleep(500 * time.Millisecond)
+
 	// Save all active sessions
 	s.sessions.SaveAll(ctx, s.db)
 
