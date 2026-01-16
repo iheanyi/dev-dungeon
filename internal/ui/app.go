@@ -41,78 +41,82 @@ const (
 // introTickMsg is sent to advance intro animation.
 type introTickMsg struct{}
 
-// introFrames contains the animated intro sequence.
+// introFrames contains the intro sequence frames (52 chars wide for compatibility).
 var introFrames = []string{
 	`
-      ╔══════════════════════════════════════════════════════════════╗
-      ║                                                              ║
-      ║    ██████╗ ███████╗██╗   ██╗   ██████╗ ██╗   ██╗███╗   ██╗   ║
-      ║    ██╔══██╗██╔════╝██║   ██║   ██╔══██╗██║   ██║████╗  ██║   ║
-      ║    ██║  ██║█████╗  ██║   ██║   ██║  ██║██║   ██║██╔██╗ ██║   ║
-      ║    ██║  ██║██╔══╝  ╚██╗ ██╔╝   ██║  ██║██║   ██║██║╚██╗██║   ║
-      ║    ██████╔╝███████╗ ╚████╔╝    ██████╔╝╚██████╔╝██║ ╚████║   ║
-      ║    ╚═════╝ ╚══════╝  ╚═══╝     ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝   ║
-      ║                                                              ║
-      ╚══════════════════════════════════════════════════════════════╝
+  ╔════════════════════════════════════════════════╗
+  ║     /dev/dungeon                               ║
+  ║                                                ║
+  ║     ██████╗ ███████╗██╗   ██╗                  ║
+  ║     ██╔══██╗██╔════╝██║   ██║                  ║
+  ║     ██║  ██║█████╗  ██║   ██║                  ║
+  ║     ██║  ██║██╔══╝  ╚██╗ ██╔╝                  ║
+  ║     ██████╔╝███████╗ ╚████╔╝                   ║
+  ║     ╚═════╝ ╚══════╝  ╚═══╝                    ║
+  ║                                                ║
+  ║     A Unix-themed terminal roguelike           ║
+  ║                                                ║
+  ╚════════════════════════════════════════════════╝
 `,
 	`
-      ╔══════════════════════════════════════════════════════════════╗
-      ║                                                              ║
-      ║                    >>> SYSTEM ALERT <<<                      ║
-      ║                                                              ║
-      ║                    ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓                        ║
-      ║                    ▓  KERNEL PANIC  ▓                        ║
-      ║                    ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓                        ║
-      ║                                                              ║
-      ║           The system has been compromised.                   ║
-      ║                                                              ║
-      ╚══════════════════════════════════════════════════════════════╝
+  ╔════════════════════════════════════════════════╗
+  ║                                                ║
+  ║          >>> SYSTEM ALERT <<<                  ║
+  ║                                                ║
+  ║          ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓                    ║
+  ║          ▓  KERNEL PANIC  ▓                    ║
+  ║          ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓                    ║
+  ║                                                ║
+  ║     The system has been compromised.           ║
+  ║                                                ║
+  ╚════════════════════════════════════════════════╝
 `,
 	`
-      ╔══════════════════════════════════════════════════════════════╗
-      ║                                                              ║
-      ║  Something has gone wrong deep in /dev/null.                 ║
-      ║                                                              ║
-      ║  Rogue processes have escaped.                               ║
-      ║  Zombie processes walk the directories.                      ║
-      ║  Daemons have turned hostile.                                ║
-      ║  Fork bombs multiply unchecked.                              ║
-      ║                                                              ║
-      ║  And at the heart of it all...                               ║
-      ║  The KERNEL PANIC awaits.                                    ║
-      ║                                                              ║
-      ╚══════════════════════════════════════════════════════════════╝
+  ╔════════════════════════════════════════════════╗
+  ║                                                ║
+  ║  Something went wrong deep in /dev/null.       ║
+  ║                                                ║
+  ║  Rogue processes have escaped.                 ║
+  ║  Zombie processes walk the directories.        ║
+  ║  Daemons have turned hostile.                  ║
+  ║  Fork bombs multiply unchecked.                ║
+  ║                                                ║
+  ║  And at the heart of it all...                 ║
+  ║  The KERNEL PANIC awaits.                      ║
+  ║                                                ║
+  ╚════════════════════════════════════════════════╝
 `,
 	`
-      ╔══════════════════════════════════════════════════════════════╗
-      ║                                                              ║
-      ║  You are a newly spawned process.                            ║
-      ║                                                              ║
-      ║  Your mission: Navigate from /home through the filesystem,   ║
-      ║  descending ever deeper into the system.                     ║
-      ║                                                              ║
-      ║  /home → /tmp → /var → /etc → /usr → /bin → /sys → /dev/null ║
-      ║                                                              ║
-      ║  Fight. Survive. Find the KERNEL PANIC.                      ║
-      ║  And end this madness.                                       ║
-      ║                                                              ║
-      ╚══════════════════════════════════════════════════════════════╝
+  ╔════════════════════════════════════════════════╗
+  ║                                                ║
+  ║  You are a newly spawned process.              ║
+  ║                                                ║
+  ║  Navigate from /home through the filesystem,   ║
+  ║  descending ever deeper into the system.       ║
+  ║                                                ║
+  ║  /home → /tmp → /var → /etc →                  ║
+  ║  /usr → /bin → /sys → /dev/null                ║
+  ║                                                ║
+  ║  Fight. Survive. Find the KERNEL PANIC.        ║
+  ║  And end this madness.                         ║
+  ║                                                ║
+  ╚════════════════════════════════════════════════╝
 `,
 	`
-      ╔══════════════════════════════════════════════════════════════╗
-      ║                                                              ║
-      ║               YOUR STATS EXPLAINED:                          ║
-      ║                                                              ║
-      ║    RAM   - Health. Reach 0 = OOM killed.                     ║
-      ║    CPU   - Attack power. Kill processes faster.              ║
-      ║    FD    - File descriptors. Fuel your abilities.            ║
-      ║    NICE  - Priority. Lower = faster + more crits.            ║
-      ║    UID   - User ID. 0 = root = ultimate power.               ║
-      ║                                                              ║
-      ║               Good luck, process.                            ║
-      ║               The system depends on you.                     ║
-      ║                                                              ║
-      ╚══════════════════════════════════════════════════════════════╝
+  ╔════════════════════════════════════════════════╗
+  ║                                                ║
+  ║         YOUR STATS EXPLAINED:                  ║
+  ║                                                ║
+  ║  RAM  - Health. 0 = OOM killed.                ║
+  ║  CPU  - Attack power. Kill faster.             ║
+  ║  FD   - File descriptors. Fuel abilities.      ║
+  ║  NICE - Priority. Lower = faster + crits.      ║
+  ║  UID  - User ID. 0 = root = god mode.          ║
+  ║                                                ║
+  ║         Good luck, process.                    ║
+  ║         The system depends on you.             ║
+  ║                                                ║
+  ╚════════════════════════════════════════════════╝
 `,
 }
 
