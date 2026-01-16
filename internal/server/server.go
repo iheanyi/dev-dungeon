@@ -50,14 +50,22 @@ const sshBanner = `
 ╔═══════════════════════════════════════════════════════╗
 ║                    /dev/dungeon                       ║
 ║           A Unix-themed terminal roguelike            ║
+╚═══════════════════════════════════════════════════════╝
+
+`
+
+// SSH key help shown when auth fails due to unsupported key type
+const sshKeyHelp = `
+╔═══════════════════════════════════════════════════════╗
+║              Unsupported SSH Key Type                 ║
 ╠═══════════════════════════════════════════════════════╣
-║  Supported SSH keys:                                  ║
+║  Supported keys:                                      ║
 ║    • Ed25519 (recommended)                            ║
 ║    • ECDSA (P-256, P-384, P-521)                      ║
 ║    • RSA (2048+ bits)                                 ║
 ║    • Security Keys (YubiKey, etc.)                    ║
 ║                                                       ║
-║  No key? Generate one:                                ║
+║  Generate a new key:                                  ║
 ║    ssh-keygen -t ed25519                              ║
 ╚═══════════════════════════════════════════════════════╝
 
@@ -281,9 +289,11 @@ func (s *Server) publicKeyAuth(ctx ssh.Context, key ssh.PublicKey) bool {
 	log.Debug("Auth attempt", "user", username, "fingerprint", fingerprint, "ip", ip, "key_type", key.Type())
 
 	// Validate key type - only allow secure algorithms
+	// If unsupported, we still accept to show a helpful error message in middleware
 	if !isKeyTypeSupported(key) {
-		log.Warn("Unsupported key type rejected", "type", key.Type(), "fingerprint", fingerprint)
-		return false
+		log.Warn("Unsupported key type", "type", key.Type(), "fingerprint", fingerprint)
+		ctx.SetValue("unsupported_key_type", key.Type())
+		return true
 	}
 
 	// Look up user by fingerprint with timeout

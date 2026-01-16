@@ -188,6 +188,13 @@ func saveSessionToDatabase(ctx context.Context, dbClient *db.Client, session *Ga
 func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOption) {
 	ctx := sess.Context()
 
+	// Check for unsupported key type - show helpful error and disconnect
+	if keyType, ok := ctx.Value("unsupported_key_type").(string); ok && keyType != "" {
+		log.Warn("Disconnecting session with unsupported key type", "type", keyType)
+		sess.Write([]byte(sshKeyHelp))
+		return nil, nil
+	}
+
 	// Safe type assertions with validation
 	fingerprint, ok := ctx.Value("fingerprint").(string)
 	if !ok || fingerprint == "" {
