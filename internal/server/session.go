@@ -39,6 +39,7 @@ type GameSession struct {
 // SessionManager tracks active game sessions.
 type SessionManager struct {
 	sessions map[string]*GameSession // fingerprint -> session
+	wg       sync.WaitGroup          // tracks auto-save goroutines
 	mu       sync.RWMutex
 }
 
@@ -87,6 +88,12 @@ func (sm *SessionManager) SaveAll(ctx context.Context, dbClient *db.Client) {
 			}
 		}
 	}
+}
+
+// WaitForAutoSaves waits for all auto-save goroutines to complete.
+// Call this during shutdown before closing the database.
+func (sm *SessionManager) WaitForAutoSaves() {
+	sm.wg.Wait()
 }
 
 // saveSessionToDatabase persists the game state.
@@ -285,13 +292,14 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 		server:      s,
 		session:     gameSession,
 		fingerprint: fingerprint,
+		sessCtx:     ctx, // SSH session context for disconnect detection
 	}
 
 	return wrapper, []tea.ProgramOption{tea.WithAltScreen()}
 }
 
-// Auto-save interval
-const autoSaveInterval = 30 * time.Second
+// Auto-save interval - aggressive to minimize progress loss on disconnect/deploy
+const autoSaveInterval = 5 * time.Second
 
 // sessionWrapper wraps the game UI to handle session lifecycle.
 type sessionWrapper struct {
@@ -299,9 +307,10 @@ type sessionWrapper struct {
 	server       *Server
 	session      *GameSession
 	fingerprint  string
-	showingLink  bool   // Whether the link modal is currently displayed
-	linkURL      string // The generated magic link URL
-	linkError    string // Error message if link generation failed
+	sessCtx      context.Context // SSH session context - cancelled on disconnect
+	showingLink  bool            // Whether the link modal is currently displayed
+	linkURL      string          // The generated magic link URL
+	linkError    string          // Error message if link generation failed
 	stopAutoSave chan struct{}
 	autoSaveDone chan struct{}
 }
@@ -310,6 +319,9 @@ func (sw *sessionWrapper) Init() tea.Cmd {
 	// Start background auto-save goroutine
 	sw.stopAutoSave = make(chan struct{})
 	sw.autoSaveDone = make(chan struct{})
+
+	// Track goroutine in WaitGroup for clean shutdown
+	sw.server.sessions.wg.Add(1)
 	go sw.autoSaveLoop()
 
 	return sw.model.Init()
@@ -320,14 +332,22 @@ func (sw *sessionWrapper) autoSaveLoop() {
 	ticker := time.NewTicker(autoSaveInterval)
 	defer ticker.Stop()
 	defer close(sw.autoSaveDone)
+	defer sw.server.sessions.wg.Done() // Signal goroutine completion
 
 	for {
 		select {
 		case <-ticker.C:
 			sw.performAutoSave()
 		case <-sw.stopAutoSave:
-			// Final save before shutdown
+			// Final save before clean shutdown
 			sw.performAutoSave()
+			return
+		case <-sw.sessCtx.Done():
+			// SSH session ended (disconnect, network drop, etc.)
+			// Perform final save and clean up
+			log.Info("SSH session ended, performing final save", "user", sw.session.User.Username)
+			sw.performAutoSave()
+			sw.server.sessions.Remove(sw.fingerprint)
 			return
 		}
 	}
@@ -717,6 +737,7 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 		server:      s,
 		session:     gameSession,
 		fingerprint: fingerprint,
+		sessCtx:     sess.Context(), // SSH session context for disconnect detection
 	}
 
 	return wrapper, nil

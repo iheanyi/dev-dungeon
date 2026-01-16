@@ -221,9 +221,14 @@ func (s *Server) Run() error {
 	// Save all active sessions
 	s.sessions.SaveAll(ctx, s.db)
 
+	// Shutdown SSH server (cancels session contexts)
 	if err := s.sshSrv.Shutdown(ctx); err != nil && !errors.Is(err, ssh.ErrServerClosed) {
 		log.Error("Shutdown error", "error", err)
 	}
+
+	// Wait for all auto-save goroutines to complete before closing DB
+	log.Info("Waiting for auto-save goroutines to complete...")
+	s.sessions.WaitForAutoSaves()
 
 	s.db.Close()
 	log.Info("Server stopped")
