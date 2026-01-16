@@ -119,6 +119,11 @@ func (m *MemoryRepository) CreateUser(ctx context.Context, username, fingerprint
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// Check if username already exists
+	if _, exists := m.usersByUsername[strings.ToLower(username)]; exists {
+		return nil, ErrUsernameTaken
+	}
+
 	now := time.Now()
 	user := &User{
 		ID:                   m.nextUserID,

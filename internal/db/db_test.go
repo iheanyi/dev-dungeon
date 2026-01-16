@@ -89,6 +89,35 @@ func TestMemoryRepository_CreateUser(t *testing.T) {
 	}
 }
 
+func TestMemoryRepository_CreateUser_DuplicateUsername(t *testing.T) {
+	repo := NewMemoryRepository()
+	ctx := context.Background()
+
+	// Create first user
+	_, err := repo.CreateUser(ctx, "testuser", "SHA256:abc123")
+	if err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
+	}
+
+	// Try to create second user with same username (different fingerprint)
+	_, err = repo.CreateUser(ctx, "testuser", "SHA256:different456")
+	if err == nil {
+		t.Fatal("expected error for duplicate username")
+	}
+	if err != ErrUsernameTaken {
+		t.Errorf("expected ErrUsernameTaken, got %v", err)
+	}
+
+	// Case-insensitive check
+	_, err = repo.CreateUser(ctx, "TestUser", "SHA256:another789")
+	if err == nil {
+		t.Fatal("expected error for duplicate username (case-insensitive)")
+	}
+	if err != ErrUsernameTaken {
+		t.Errorf("expected ErrUsernameTaken for case-insensitive match, got %v", err)
+	}
+}
+
 func TestMemoryRepository_GetUserByFingerprint(t *testing.T) {
 	repo := NewMemoryRepository()
 	ctx := context.Background()
