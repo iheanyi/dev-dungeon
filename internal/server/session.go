@@ -848,5 +848,8 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 		sessCtx:     sess.Context(), // SSH session context for disconnect detection
 	}
 
-	return wrapper, nil
+	// IMPORTANT: Must call Init() to start the auto-save goroutine.
+	// When returning a new model from Update(), Bubble Tea does NOT
+	// automatically call Init() on it - we must do it explicitly.
+	return wrapper, wrapper.Init()
 }
