@@ -183,9 +183,10 @@ type Model struct {
 	runExitCodesBreakdown []string
 
 	// Multiplayer session info
-	isMultiplayer bool   // True when connected via SSH (disables cheats)
-	username      string // Authenticated username for display
-	dailyRunMode  bool   // True when starting a daily run (uses fixed seed)
+	isMultiplayer  bool   // True when connected via SSH (disables cheats)
+	username       string // Authenticated username for display
+	dailyRunMode   bool   // True when starting a daily run (uses fixed seed)
+	currentRunType string // "standard", "daily", or "seeded" for current game
 
 	// Save state
 	hasValidSave  bool         // True if a valid save file exists
@@ -193,11 +194,12 @@ type Model struct {
 	saveCallback  SaveCallback // Callback to save game (set by server for multiplayer)
 
 	// Leaderboard state
-	leaderboardEntries []LeaderboardEntry
-	leaderboardCursor  int
-	leaderboardRunType string             // "all", "standard", "daily"
-	leaderboardFetcher LeaderboardFetcher // Callback to fetch data (set by server)
-	leaderboardError   string             // Error message if fetch failed
+	leaderboardEntries   []LeaderboardEntry
+	leaderboardCursor    int
+	leaderboardRunType   string               // "all", "standard", "daily"
+	leaderboardFetcher   LeaderboardFetcher   // Callback to fetch data (set by server)
+	leaderboardSubmitter LeaderboardSubmitter // Callback to submit score (set by server)
+	leaderboardError     string               // Error message if fetch failed
 
 	// Daily leaderboard state (date-navigable)
 	dailyLeaderboardDate    time.Time               // Currently selected date
@@ -271,6 +273,10 @@ type DailyLeaderboardFetcher func(date time.Time, limit int, userID int) ([]Lead
 // SaveCallback is a callback function to save game state.
 // Called before returning to main menu in multiplayer mode.
 type SaveCallback func() error
+
+// LeaderboardSubmitter is a callback to submit a score to the leaderboard.
+// Called on death or victory. Parameters: score, floorsCleared, class, seed, runType, victory.
+type LeaderboardSubmitter func(score, floorsCleared int, class string, seed int64, runType string, victory bool) error
 
 // Styles holds all UI styles.
 type Styles struct {
@@ -514,6 +520,12 @@ func (m *Model) SetDailyLeaderboardFetcher(fetcher DailyLeaderboardFetcher) {
 	m.dailyLeaderboardFetcher = fetcher
 }
 
+// SetLeaderboardSubmitter sets the callback for submitting scores to the leaderboard.
+// This is called on player death or victory.
+func (m *Model) SetLeaderboardSubmitter(submitter LeaderboardSubmitter) {
+	m.leaderboardSubmitter = submitter
+}
+
 // SetSaveCallback sets the callback function for saving game state.
 // This is typically set by the server for multiplayer sessions.
 func (m *Model) SetSaveCallback(callback SaveCallback) {
@@ -524,6 +536,42 @@ func (m *Model) SetSaveCallback(callback SaveCallback) {
 // This is used by the server for multiplayer sessions where saves are stored in the database.
 func (m *Model) SetHasValidSave(hasValidSave bool) {
 	m.hasValidSave = hasValidSave
+}
+
+// submitToLeaderboard submits the current run's score to the leaderboard.
+// Called on death or victory in multiplayer mode.
+func (m *Model) submitToLeaderboard(victory bool) {
+	if m.leaderboardSubmitter == nil || !m.isMultiplayer {
+		return // No submitter set or not in multiplayer mode
+	}
+
+	if m.player == nil || m.engine == nil {
+		return // No game state
+	}
+
+	// Calculate score: base on floors cleared + level + bonus for victory
+	floorsCleared := m.engine.CurrentDepth()
+	score := floorsCleared * 100 // Base score from depth
+	score += m.player.Level * 50 // Bonus for level
+	if victory {
+		score += 1000 // Victory bonus
+	}
+
+	// Get game info
+	class := string(m.player.Class)
+	seed := m.engine.MasterSeed()
+	runType := m.currentRunType
+	if runType == "" {
+		runType = "standard"
+	}
+
+	// Submit asynchronously (don't block the UI)
+	go func() {
+		if err := m.leaderboardSubmitter(score, floorsCleared, class, seed, runType, victory); err != nil {
+			// Log error but don't disrupt the game
+			// The error is already logged in the server callback
+		}
+	}()
 }
 
 // Init implements tea.Model.
@@ -827,11 +875,13 @@ func (m *Model) startNewGame(playerClass entity.PlayerClass) {
 	m.currentView = ViewGame
 	m.gameState = types.StateExploring
 
-	// Set status message - indicate if this is a daily run
+	// Set run type and status message
 	if seed != 0 {
+		m.currentRunType = "daily"
 		dateStr := time.Now().UTC().Format("2006-01-02")
 		m.statusMsg = fmt.Sprintf("DAILY RUN (%s) - Spawned as %s. Welcome to %s.", dateStr, playerClass, m.engine.CurrentFloorType().FloorName())
 	} else {
+		m.currentRunType = "standard"
 		m.statusMsg = fmt.Sprintf("Spawned as %s. Welcome to %s.", playerClass, m.engine.CurrentFloorType().FloorName())
 	}
 }
@@ -1154,6 +1204,7 @@ func (m *Model) executeCombatAction(key string) (tea.Model, tea.Cmd) {
 				} else {
 					m.endCombat(false)
 					m.awardRunExitCodes(false) // Award exit codes on death
+					m.submitToLeaderboard(false) // Submit score on death
 					m.currentView = ViewGameOver
 					m.gameState = types.StateGameOver
 					return m, nil
@@ -1206,6 +1257,7 @@ func (m *Model) executeSkill(skillIdx int) (tea.Model, tea.Cmd) {
 				} else {
 					m.endCombat(false)
 					m.awardRunExitCodes(false) // Award exit codes on death
+					m.submitToLeaderboard(false) // Submit score on death
 					m.currentView = ViewGameOver
 					m.gameState = types.StateGameOver
 					return m, nil
@@ -1236,6 +1288,7 @@ func (m *Model) endCombat(victory bool) {
 	// Check for game victory (boss killed)
 	if bossKilled {
 		m.awardRunExitCodes(true) // Award exit codes on victory
+		m.submitToLeaderboard(true) // Submit score on victory
 		m.currentView = ViewVictory
 		m.gameState = types.StateVictory
 		m.statusMsg = "KERNEL PANIC DEFEATED! You saved the system!"

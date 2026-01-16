@@ -217,6 +217,36 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 		return saveSessionToDatabase(ctx, s.db, gameSession)
 	})
 
+	// Set up leaderboard submitter - called on death or victory
+	model.SetLeaderboardSubmitter(func(score, floorsCleared int, class string, seed int64, runType string, victory bool) error {
+		ctx, cancel := context.WithTimeout(context.Background(), dbSaveTimeout)
+		defer cancel()
+
+		entry := &db.LeaderboardEntry{
+			UserID:        user.ID,
+			Username:      user.Username,
+			Score:         score,
+			FloorsCleared: floorsCleared,
+			Class:         class,
+			Seed:          seed,
+			RunType:       runType,
+		}
+
+		if err := s.db.AddLeaderboardEntry(ctx, entry); err != nil {
+			log.Error("Failed to submit leaderboard entry", "error", err, "user", user.Username)
+			return err
+		}
+
+		log.Info("Leaderboard entry submitted",
+			"user", user.Username,
+			"score", score,
+			"floors", floorsCleared,
+			"class", class,
+			"runType", runType,
+			"victory", victory)
+		return nil
+	})
+
 	gameSession.Model = model
 
 	// Set up daily leaderboard fetcher (date-navigable)
@@ -679,6 +709,36 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 		ctx, cancel := context.WithTimeout(context.Background(), dbSaveTimeout)
 		defer cancel()
 		return saveSessionToDatabase(ctx, s.db, gameSession)
+	})
+
+	// Set up leaderboard submitter - called on death or victory
+	model.SetLeaderboardSubmitter(func(score, floorsCleared int, class string, seed int64, runType string, victory bool) error {
+		ctx, cancel := context.WithTimeout(context.Background(), dbSaveTimeout)
+		defer cancel()
+
+		entry := &db.LeaderboardEntry{
+			UserID:        user.ID,
+			Username:      user.Username,
+			Score:         score,
+			FloorsCleared: floorsCleared,
+			Class:         class,
+			Seed:          seed,
+			RunType:       runType,
+		}
+
+		if err := s.db.AddLeaderboardEntry(ctx, entry); err != nil {
+			log.Error("Failed to submit leaderboard entry", "error", err, "user", user.Username)
+			return err
+		}
+
+		log.Info("Leaderboard entry submitted",
+			"user", user.Username,
+			"score", score,
+			"floors", floorsCleared,
+			"class", class,
+			"runType", runType,
+			"victory", victory)
+		return nil
 	})
 
 	gameSession.Model = model

@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <!-- Scanline pattern -->
+    <pattern id="scanlines" width="100%" height="4" patternUnits="userSpaceOnUse">
+      <rect width="100%" height="2" fill="rgba(0,0,0,0)"/>
+      <rect y="2" width="100%" height="2" fill="rgba(0,0,0,0.15)"/>
+    </pattern>
+    <!-- Glow filter -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- Strong glow for title -->
+    <filter id="strongGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- Vignette gradient -->
+    <radialGradient id="vignette" cx="50%" cy="50%" r="70%" fx="50%" fy="50%">
+      <stop offset="0%" style="stop-color:rgba(0,255,0,0.03)"/>
+      <stop offset="100%" style="stop-color:rgba(0,0,0,0.4)"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="#0a0a0a"/>
+
+  <!-- Vignette overlay -->
+  <rect width="1200" height="630" fill="url(#vignette)"/>
+
+  <!-- Terminal box -->
+  <rect x="60" y="60" width="1080" height="510" fill="rgba(0,0,0,0.5)" stroke="#00ff00" stroke-opacity="0.4" stroke-width="2" rx="4"/>
+
+  <!-- Title bar -->
+  <rect x="60" y="60" width="1080" height="40" fill="rgba(0,255,0,0.1)" rx="4"/>
+  <rect x="60" y="96" width="1080" height="4" fill="#0a0a0a"/>
+
+  <!-- Window controls -->
+  <circle cx="90" cy="80" r="8" fill="#ff5f56"/>
+  <circle cx="115" cy="80" r="8" fill="#ffbd2e"/>
+  <circle cx="140" cy="80" r="8" fill="#27ca40"/>
+
+  <!-- Title bar text -->
+  <text x="600" y="85" text-anchor="middle" fill="#00ff00" font-family="monospace" font-size="14" opacity="0.7">player@dev-dungeon ~ ssh</text>
+
+  <!-- Main title -->
+  <text x="600" y="220" text-anchor="middle" fill="#00ff00" font-family="monospace" font-size="72" font-weight="bold" filter="url(#strongGlow)">/dev/dungeon</text>
+
+  <!-- Subtitle -->
+  <text x="600" y="290" text-anchor="middle" fill="#00cc00" font-family="monospace" font-size="28" filter="url(#glow)">Navigate the filesystem. Survive.</text>
+
+  <!-- Decorative command line -->
+  <text x="100" y="380" fill="#00ff00" font-family="monospace" font-size="20" opacity="0.8">
+    <tspan fill="#ffb000">$</tspan> ssh player@dev-dungeon.com
+  </text>
+
+  <!-- ASCII decoration -->
+  <text x="100" y="440" fill="#00ff00" font-family="monospace" font-size="16" opacity="0.5" filter="url(#glow)">
+    <tspan x="100" dy="0">+------------------+</tspan>
+    <tspan x="100" dy="22">|  z - zombie      |</tspan>
+    <tspan x="100" dy="22">|  d - daemon      |</tspan>
+    <tspan x="100" dy="22">|  K - KERNEL PANIC|</tspan>
+    <tspan x="100" dy="22">+------------------+</tspan>
+  </text>
+
+  <!-- Stats decoration -->
+  <text x="400" y="440" fill="#00ff00" font-family="monospace" font-size="16" opacity="0.5" filter="url(#glow)">
+    <tspan x="400" dy="0">RAM [##########] 100%</tspan>
+    <tspan x="400" dy="22">CPU [########--]  80%</tspan>
+    <tspan x="400" dy="22">FD  [#####-----]  50%</tspan>
+  </text>
+
+  <!-- Floor path -->
+  <text x="750" y="440" fill="#00ff00" font-family="monospace" font-size="16" opacity="0.5" filter="url(#glow)">
+    <tspan x="750" dy="0">/home -&gt; /tmp -&gt; /var</tspan>
+    <tspan x="750" dy="22">/etc -&gt; /usr -&gt; /sys</tspan>
+    <tspan x="750" dy="22">/dev -&gt; <tspan fill="#ff3333">/dev/null</tspan></tspan>
+  </text>
+
+  <!-- Website URL -->
+  <text x="600" y="545" text-anchor="middle" fill="#9a9a9a" font-family="monospace" font-size="18">dev-dungeon.com</text>
+
+  <!-- Scanlines overlay -->
+  <rect width="1200" height="630" fill="url(#scanlines)" opacity="0.5"/>
+</svg>

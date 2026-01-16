@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+  <defs>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <radialGradient id="bgGrad" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" style="stop-color:#121212"/>
+      <stop offset="100%" style="stop-color:#0a0a0a"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="192" height="192" fill="url(#bgGrad)" rx="24"/>
+
+  <!-- Border -->
+  <rect x="4" y="4" width="184" height="184" fill="none" stroke="#00ff00" stroke-opacity="0.3" stroke-width="2" rx="20"/>
+
+  <!-- Inner glow ring -->
+  <rect x="12" y="12" width="168" height="168" fill="none" stroke="#00ff00" stroke-opacity="0.1" stroke-width="1" rx="16"/>
+
+  <!-- dd text -->
+  <text x="96" y="118" text-anchor="middle" fill="#00ff00" font-family="monospace" font-size="80" font-weight="bold" filter="url(#glow)">dd</text>
+
+  <!-- Subtle scanline hint -->
+  <g opacity="0.1">
+    <line x1="20" y1="50" x2="172" y2="50" stroke="#00ff00" stroke-width="1"/>
+    <line x1="20" y1="142" x2="172" y2="142" stroke="#00ff00" stroke-width="1"/>
+  </g>
+</svg>
