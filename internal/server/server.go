@@ -59,8 +59,6 @@ const sshBanner = `
 ║                                                       ║
 ║  No key? Generate one:                                ║
 ║    ssh-keygen -t ed25519                              ║
-║                                                       ║
-║  Passphrase is optional (local protection only).      ║
 ╚═══════════════════════════════════════════════════════╝
 
 `
