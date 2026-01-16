@@ -293,52 +293,71 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 // Auto-save interval
 const autoSaveInterval = 30 * time.Second
 
-// autoSaveMsg is sent periodically to trigger auto-save.
-type autoSaveMsg struct{}
-
 // sessionWrapper wraps the game UI to handle session lifecycle.
 type sessionWrapper struct {
-	model       *ui.Model
-	server      *Server
-	session     *GameSession
-	fingerprint string
-	showingLink bool   // Whether the link modal is currently displayed
-	linkURL     string // The generated magic link URL
-	linkError   string // Error message if link generation failed
+	model        *ui.Model
+	server       *Server
+	session      *GameSession
+	fingerprint  string
+	showingLink  bool   // Whether the link modal is currently displayed
+	linkURL      string // The generated magic link URL
+	linkError    string // Error message if link generation failed
+	stopAutoSave chan struct{}
+	autoSaveDone chan struct{}
 }
 
 func (sw *sessionWrapper) Init() tea.Cmd {
-	// Start both the model and the auto-save ticker
-	return tea.Batch(
-		sw.model.Init(),
-		sw.tickAutoSave(),
-	)
+	// Start background auto-save goroutine
+	sw.stopAutoSave = make(chan struct{})
+	sw.autoSaveDone = make(chan struct{})
+	go sw.autoSaveLoop()
+
+	return sw.model.Init()
 }
 
-// tickAutoSave returns a command that triggers auto-save after the interval.
-func (sw *sessionWrapper) tickAutoSave() tea.Cmd {
-	return tea.Tick(autoSaveInterval, func(t time.Time) tea.Msg {
-		return autoSaveMsg{}
-	})
+// autoSaveLoop runs in a background goroutine and saves periodically.
+func (sw *sessionWrapper) autoSaveLoop() {
+	ticker := time.NewTicker(autoSaveInterval)
+	defer ticker.Stop()
+	defer close(sw.autoSaveDone)
+
+	for {
+		select {
+		case <-ticker.C:
+			sw.performAutoSave()
+		case <-sw.stopAutoSave:
+			// Final save before shutdown
+			sw.performAutoSave()
+			return
+		}
+	}
+}
+
+// performAutoSave saves the game state in the background.
+func (sw *sessionWrapper) performAutoSave() {
+	if sw.session.User == nil || sw.session.Model == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), dbSaveTimeout)
+	defer cancel()
+
+	if err := saveSessionToDatabase(ctx, sw.server.db, sw.session); err != nil {
+		log.Error("Auto-save failed", "error", err, "user", sw.session.User.Username)
+	} else {
+		log.Debug("Auto-saved game", "user", sw.session.User.Username)
+	}
+}
+
+// stopAutoSaveGoroutine signals the auto-save goroutine to stop and waits for it.
+func (sw *sessionWrapper) stopAutoSaveGoroutine() {
+	if sw.stopAutoSave != nil {
+		close(sw.stopAutoSave)
+		<-sw.autoSaveDone // Wait for final save to complete
+	}
 }
 
 func (sw *sessionWrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Handle auto-save tick
-	if _, ok := msg.(autoSaveMsg); ok {
-		// Save in the background
-		if sw.session.User != nil && sw.session.Model != nil {
-			ctx, cancel := context.WithTimeout(context.Background(), dbSaveTimeout)
-			if err := saveSessionToDatabase(ctx, sw.server.db, sw.session); err != nil {
-				log.Error("Auto-save failed", "error", err, "user", sw.session.User.Username)
-			} else {
-				log.Debug("Auto-saved game", "user", sw.session.User.Username)
-			}
-			cancel()
-		}
-		// Schedule next auto-save
-		return sw, sw.tickAutoSave()
-	}
-
 	// Handle link modal dismissal first
 	if sw.showingLink {
 		switch msg := msg.(type) {
@@ -359,11 +378,8 @@ func (sw *sessionWrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
-			// Save before quitting
-			ctx := context.Background()
-			if err := saveSessionToDatabase(ctx, sw.server.db, sw.session); err != nil {
-				log.Error("Failed to save on quit", "error", err)
-			}
+			// Stop auto-save goroutine (triggers final save)
+			sw.stopAutoSaveGoroutine()
 			sw.server.sessions.Remove(sw.fingerprint)
 			return sw, tea.Quit
 
@@ -382,12 +398,8 @@ func (sw *sessionWrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Check if the model wants to quit - save before exiting
 		if m.WantsToQuit() {
-			ctx := context.Background()
-			if err := saveSessionToDatabase(ctx, sw.server.db, sw.session); err != nil {
-				log.Error("Failed to save on quit", "error", err)
-			} else {
-				log.Info("Game saved on quit", "user", sw.session.User.Username)
-			}
+			// Stop auto-save goroutine (triggers final save)
+			sw.stopAutoSaveGoroutine()
 			sw.server.sessions.Remove(sw.fingerprint)
 			m.ClearQuitRequest()
 		}
