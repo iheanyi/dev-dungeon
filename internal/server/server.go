@@ -55,8 +55,12 @@ const sshBanner = `
 ║    • Ed25519 (recommended)                            ║
 ║    • ECDSA (P-256, P-384, P-521)                      ║
 ║    • RSA (2048+ bits)                                 ║
+║    • Security Keys (YubiKey, etc.)                    ║
 ║                                                       ║
-║  Generate a key: ssh-keygen -t ed25519                ║
+║  No key? Generate one:                                ║
+║    ssh-keygen -t ed25519                              ║
+║                                                       ║
+║  Passphrase is optional (local protection only).      ║
 ╚═══════════════════════════════════════════════════════╝
 
 `
