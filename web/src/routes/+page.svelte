@@ -20,9 +20,9 @@
 	});
 </script>
 
-<div class="text-center mb-12">
-	<!-- ASCII Logo -->
-	<pre class="ascii-art text-terminal-green glow inline-block text-left">
+<div class="text-center mb-8 md:mb-12">
+	<!-- ASCII Logo - Desktop -->
+	<pre class="ascii-art text-terminal-green glow hidden md:inline-block text-left text-xs lg:text-sm">
 ██████╗ ███████╗██╗   ██╗██████╗ ██╗   ██╗███╗   ██╗ ██████╗ ███████╗ ██████╗ ███╗   ██╗
 ██╔══██╗██╔════╝██║   ██║██╔══██╗██║   ██║████╗  ██║██╔════╝ ██╔════╝██╔═══██╗████╗  ██║
 ██║  ██║█████╗  ██║   ██║██║  ██║██║   ██║██╔██╗ ██║██║  ███╗█████╗  ██║   ██║██╔██╗ ██║
@@ -31,29 +31,32 @@
 ╚═════╝ ╚══════╝  ╚═══╝  ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝ ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═══╝
 	</pre>
 
-	<p class="text-terminal-green-dim text-xl mt-4 font-mono">
+	<!-- Mobile Logo -->
+	<h1 class="md:hidden text-terminal-green glow text-3xl font-bold tracking-wider">/dev/dungeon</h1>
+
+	<p class="text-terminal-green-dim text-lg md:text-xl mt-4 font-mono">
 		<span class="text-terminal-gray">&gt;</span> {typedText}<span class="cursor"></span>
 	</p>
 </div>
 
 <!-- Quick Connect -->
-<div class="terminal-box p-6 mb-8">
-	<h2 class="text-terminal-amber text-lg mb-4">$ ssh player@dev-dungeon.com</h2>
-	<p class="text-terminal-green-dim mb-4">
+<div class="terminal-box p-4 md:p-6 mb-6 md:mb-8">
+	<h2 class="text-terminal-amber text-base md:text-lg mb-4">$ ssh player@dev-dungeon.com</h2>
+	<p class="text-terminal-green-dim mb-4 text-sm md:text-base">
 		Connect via SSH to play. Your public key is your identity.
 	</p>
-	<div class="bg-terminal-bg p-4 font-mono text-sm">
+	<div class="bg-terminal-bg p-3 md:p-4 font-mono text-xs md:text-sm overflow-x-auto">
 		<p class="text-terminal-gray"># Generate a key (if needed)</p>
-		<p class="text-terminal-green">ssh-keygen -t ed25519 -f ~/.ssh/id_devdungeon</p>
+		<p class="text-terminal-green whitespace-nowrap">ssh-keygen -t ed25519</p>
 		<p class="text-terminal-gray mt-2"># Connect to play</p>
-		<p class="text-terminal-green">ssh -p 2222 player@dev-dungeon.com</p>
+		<p class="text-terminal-green whitespace-nowrap">ssh player@dev-dungeon.com</p>
 	</div>
 </div>
 
 <!-- Main Grid -->
-<div class="grid md:grid-cols-2 gap-6 mb-8">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-6 md:mb-8">
 	<!-- Register Card -->
-	<a href="/register" class="terminal-box p-6 block transition-all hover:border-terminal-green">
+	<a href="/register" class="terminal-box p-4 md:p-6 block transition-all hover:border-terminal-green">
 		<h3 class="text-terminal-amber mb-2 flex items-center gap-2">
 			<span class="text-terminal-green">[</span>
 			Register
@@ -65,7 +68,7 @@
 	</a>
 
 	<!-- Leaderboard Card -->
-	<a href="/leaderboard" class="terminal-box p-6 block transition-all hover:border-terminal-green">
+	<a href="/leaderboard" class="terminal-box p-4 md:p-6 block transition-all hover:border-terminal-green">
 		<h3 class="text-terminal-amber mb-2 flex items-center gap-2">
 			<span class="text-terminal-green">[</span>
 			Leaderboard
@@ -77,7 +80,7 @@
 	</a>
 
 	<!-- Daily Run Card -->
-	<a href="/daily" class="terminal-box p-6 block transition-all hover:border-terminal-green">
+	<a href="/daily" class="terminal-box p-4 md:p-6 block transition-all hover:border-terminal-green">
 		<h3 class="text-terminal-amber mb-2 flex items-center gap-2">
 			<span class="text-terminal-green">[</span>
 			Daily Run
@@ -89,7 +92,7 @@
 	</a>
 
 	<!-- About Card -->
-	<a href="/about" class="terminal-box p-6 block transition-all hover:border-terminal-green">
+	<a href="/about" class="terminal-box p-4 md:p-6 block transition-all hover:border-terminal-green">
 		<h3 class="text-terminal-amber mb-2 flex items-center gap-2">
 			<span class="text-terminal-green">[</span>
 			man devdungeon
@@ -102,9 +105,9 @@
 </div>
 
 <!-- Game Info -->
-<div class="terminal-box p-6">
-	<h2 class="text-terminal-amber mb-4">$ cat /etc/motd</h2>
-	<div class="grid md:grid-cols-3 gap-6 text-sm">
+<div class="terminal-box p-4 md:p-6">
+	<h2 class="text-terminal-amber mb-4 text-base md:text-lg">$ cat /etc/motd</h2>
+	<div class="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 text-xs md:text-sm">
 		<div>
 			<h4 class="text-terminal-green-bright mb-2">STATS</h4>
 			<ul class="text-terminal-green-dim space-y-1">

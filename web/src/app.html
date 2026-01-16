@@ -1,8 +1,16 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="theme-color" content="#0a0f0a" />
+		<style>
+			/* Critical CSS to prevent FOUC - matches terminal theme */
+			html, body {
+				background-color: #0a0f0a;
+				color: #00ff00;
+			}
+		</style>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
