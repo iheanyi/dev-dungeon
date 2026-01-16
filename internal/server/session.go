@@ -103,6 +103,14 @@ func (sm *SessionManager) NotifyShutdown(message string) {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 
+	sessionCount := len(sm.sessions)
+	log.Info("Notifying connected sessions of shutdown", "session_count", sessionCount, "message", message)
+
+	if sessionCount == 0 {
+		log.Info("No active sessions to notify")
+		return
+	}
+
 	// ANSI escape codes for styling
 	const (
 		reset  = "\033[0m"
@@ -134,12 +142,23 @@ func (sm *SessionManager) NotifyShutdown(message string) {
 	formattedMsg += fmt.Sprintf("%s%s║%s                                                  %s%s║%s\r\n", bold, yellow, reset, bold, yellow, reset)
 	formattedMsg += fmt.Sprintf("%s%s╚══════════════════════════════════════════════════╝%s\r\n\r\n", bold, yellow, reset)
 
-	for _, session := range sm.sessions {
+	notified := 0
+	for fingerprint, session := range sm.sessions {
 		if session.Session != nil {
 			// Write directly to SSH session - ignore errors as session may be closing
-			_, _ = session.Session.Write([]byte(formattedMsg))
+			if _, err := session.Session.Write([]byte(formattedMsg)); err != nil {
+				log.Warn("Failed to notify session of shutdown", "fingerprint", fingerprint[:16]+"...", "error", err)
+			} else {
+				notified++
+				username := "unknown"
+				if session.User != nil {
+					username = session.User.Username
+				}
+				log.Info("Notified session of shutdown", "user", username)
+			}
 		}
 	}
+	log.Info("Shutdown notification complete", "notified", notified, "total", sessionCount)
 }
 
 // saveSessionToDatabase persists the game state.
