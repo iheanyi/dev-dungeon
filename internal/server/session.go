@@ -343,20 +343,15 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 		return entries, playerRank, playerEntry, nil
 	})
 
-	// If we have a save, restore it and enable Continue option
+	// If we have a save, store it for loading when user selects Continue
 	if gameSave != nil {
 		var saveData save.SaveData
 		if err := json.Unmarshal(gameSave.SaveData, &saveData); err != nil {
 			log.Error("Failed to unmarshal save data", "error", err)
 		} else {
-			model.SetHasValidSave(true) // Enable Continue option in menu
-			if engine := model.GetEngine(); engine != nil {
-				if err := engine.LoadGame(&saveData); err != nil {
-					log.Error("Failed to load game state", "error", err)
-				} else {
-					log.Info("Restored game from save", "user", user.Username)
-				}
-			}
+			// Pass save data to model - it will be loaded when Continue is selected
+			model.SetHasValidSave(true, &saveData)
+			log.Info("Save data available for continue", "user", user.Username)
 		}
 	}
 

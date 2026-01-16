@@ -194,9 +194,10 @@ type Model struct {
 	currentRunType string // "standard", "daily", or "seeded" for current game
 
 	// Save state
-	hasValidSave  bool         // True if a valid save file exists
-	quitRequested bool         // True when user wants to quit (for sessionWrapper to intercept)
-	saveCallback  SaveCallback // Callback to save game (set by server for multiplayer)
+	hasValidSave  bool           // True if a valid save file exists
+	pendingSave   *save.SaveData // Pending save data from DB (multiplayer) to load on Continue
+	quitRequested bool           // True when user wants to quit (for sessionWrapper to intercept)
+	saveCallback  SaveCallback   // Callback to save game (set by server for multiplayer)
 
 	// Leaderboard state
 	leaderboardEntries   []LeaderboardEntry
@@ -538,10 +539,14 @@ func (m *Model) SetSaveCallback(callback SaveCallback) {
 	m.saveCallback = callback
 }
 
-// SetHasValidSave sets whether a valid save exists.
+// SetHasValidSave sets whether a valid save exists and optionally stores the save data.
 // This is used by the server for multiplayer sessions where saves are stored in the database.
-func (m *Model) SetHasValidSave(hasValidSave bool) {
+// The save data will be loaded when the user selects Continue.
+func (m *Model) SetHasValidSave(hasValidSave bool, saveData ...*save.SaveData) {
 	m.hasValidSave = hasValidSave
+	if len(saveData) > 0 {
+		m.pendingSave = saveData[0]
+	}
 }
 
 // submitToLeaderboard submits the current run's score to the leaderboard.
@@ -800,7 +805,7 @@ func (m *Model) updateClassSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // continueGame loads and continues a saved game.
 func (m *Model) continueGame() {
-	// Create a temporary engine to check for saves
+	// Create engine if needed
 	if m.engine == nil {
 		m.engine = game.NewEngine(m.config, 0)
 
@@ -816,10 +821,19 @@ func (m *Model) continueGame() {
 		m.engine.SetUnlockedItems(m.metaProgress.UnlockedItems)
 	}
 
-	// Try to load the latest save
-	if err := m.engine.LoadLatestSave(); err != nil {
-		m.statusMsg = err.Error()
-		return
+	// Load save data - prefer pending save from DB (multiplayer), fallback to local files
+	if m.pendingSave != nil {
+		// Load from database save (multiplayer mode)
+		if err := m.engine.LoadGame(m.pendingSave); err != nil {
+			m.statusMsg = err.Error()
+			return
+		}
+	} else {
+		// Try to load from local files (single player mode)
+		if err := m.engine.LoadLatestSave(); err != nil {
+			m.statusMsg = err.Error()
+			return
+		}
 	}
 
 	// Get the player from the engine

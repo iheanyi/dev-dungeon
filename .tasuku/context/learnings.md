@@ -21,3 +21,6 @@ Always use time.Now().UTC() when storing timestamps in PostgreSQL. Local time (e
 ## 84c08b - 2026-01-14T23:35:20Z
 Go 1.23 doesn't have the covdata tool required for -covermode=atomic. Use default coverage mode or upgrade to Go 1.24+ for atomic coverage in CI.
 
+## 4e3b27 - 2026-01-16T02:40:06Z
+When returning a new model from Bubble Tea's Update(), you must explicitly call Init() and return its result. Bubble Tea does NOT automatically call Init() on replacement models - only on the initial model. Failing to do this causes goroutine/resource leaks if Init() sets up background tasks.
+
