@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -680,7 +681,11 @@ func (m *registrationModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				user, err := m.server.db.CreateUser(createCtx, m.username, m.fingerprint)
 				cancel()
 				if err != nil {
-					m.err = "Registration failed - please try again"
+					if errors.Is(err, db.ErrUsernameTaken) {
+						m.err = "Username already taken - try another"
+					} else {
+						m.err = "Registration failed - please try again"
+					}
 				} else {
 					// Success! Store user and transition to game
 					m.sess.Context().SetValue("user", user)

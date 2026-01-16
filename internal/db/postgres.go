@@ -10,8 +10,12 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// ErrUsernameTaken is returned when attempting to create a user with a username that already exists.
+var ErrUsernameTaken = errors.New("username already taken")
 
 // Client provides database operations for /dev/dungeon.
 type Client struct {
@@ -121,6 +125,11 @@ func (c *Client) CreateUser(ctx context.Context, username, fingerprint string) (
 		&user.CreatedAt, &user.LastLogin, &user.IsBanned,
 	)
 	if err != nil {
+		// Check for unique constraint violation (username already taken)
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, ErrUsernameTaken
+		}
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
