@@ -197,9 +197,6 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 
 	needsRegistration, _ := ctx.Value("needs_registration").(bool)
 
-	// Get PTY info
-	pty, _, _ := sess.Pty()
-
 	// Create renderer for this session
 	renderer := bubbletea.MakeRenderer(sess)
 
@@ -221,9 +218,11 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 	}
 
 	// Load game config
+	// Use fixed dungeon dimensions for save compatibility across different terminal sizes.
+	// The viewport will scroll to show whatever portion fits the user's terminal.
 	cfg := config.DefaultConfig()
-	cfg.Display.MapWidth = pty.Window.Width - 30  // Leave room for stats panel
-	cfg.Display.MapHeight = pty.Window.Height - 8 // Leave room for messages
+	cfg.Display.MapWidth = 100 // Fixed dungeon width
+	cfg.Display.MapHeight = 50 // Fixed dungeon height
 
 	// Create game session
 	gameSession := &GameSession{
@@ -718,12 +717,12 @@ func (m *registrationModel) View() string {
 
 // createGameModel creates the actual game model after registration.
 func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint string) (tea.Model, tea.Cmd) {
-	pty, _, _ := sess.Pty()
 	renderer := bubbletea.MakeRenderer(sess)
 
+	// Use fixed dungeon dimensions for save compatibility across different terminal sizes.
 	cfg := config.DefaultConfig()
-	cfg.Display.MapWidth = pty.Window.Width - 30
-	cfg.Display.MapHeight = pty.Window.Height - 8
+	cfg.Display.MapWidth = 100 // Fixed dungeon width
+	cfg.Display.MapHeight = 50 // Fixed dungeon height
 
 	gameSession := &GameSession{
 		User:        user,
