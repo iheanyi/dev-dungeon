@@ -1203,7 +1203,7 @@ func (m *Model) executeCombatAction(key string) (tea.Model, tea.Cmd) {
 					m.combatLog = append(m.combatLog, "[GOD MODE] Damage negated!")
 				} else {
 					m.endCombat(false)
-					m.awardRunExitCodes(false) // Award exit codes on death
+					m.awardRunExitCodes(false)   // Award exit codes on death
 					m.submitToLeaderboard(false) // Submit score on death
 					m.currentView = ViewGameOver
 					m.gameState = types.StateGameOver
@@ -1256,7 +1256,7 @@ func (m *Model) executeSkill(skillIdx int) (tea.Model, tea.Cmd) {
 					m.combatLog = append(m.combatLog, "[GOD MODE] Damage negated!")
 				} else {
 					m.endCombat(false)
-					m.awardRunExitCodes(false) // Award exit codes on death
+					m.awardRunExitCodes(false)   // Award exit codes on death
 					m.submitToLeaderboard(false) // Submit score on death
 					m.currentView = ViewGameOver
 					m.gameState = types.StateGameOver
@@ -1287,7 +1287,7 @@ func (m *Model) endCombat(victory bool) {
 
 	// Check for game victory (boss killed)
 	if bossKilled {
-		m.awardRunExitCodes(true) // Award exit codes on victory
+		m.awardRunExitCodes(true)   // Award exit codes on victory
 		m.submitToLeaderboard(true) // Submit score on victory
 		m.currentView = ViewVictory
 		m.gameState = types.StateVictory
@@ -3782,7 +3782,7 @@ func (m *Model) updateDailyLeaderboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.currentView = ViewMainMenu
 	case "left", "h", "a":
 		// Navigate to previous day (max 7 days back)
-		minDate := time.Now().UTC().Truncate(24 * time.Hour).AddDate(0, 0, -6)
+		minDate := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -6)
 		newDate := m.dailyLeaderboardDate.AddDate(0, 0, -1)
 		if !newDate.Before(minDate) {
 			m.dailyLeaderboardDate = newDate

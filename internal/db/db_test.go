@@ -1112,7 +1112,7 @@ func TestMemoryRepository_GetDailyLeaderboard_NoSeed(t *testing.T) {
 	ctx := context.Background()
 
 	// Get leaderboard for a date with no seed
-	yesterday := time.Now().UTC().Truncate(24 * time.Hour).AddDate(0, 0, -1)
+	yesterday := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -1)
 	entries, cursor, err := repo.GetDailyLeaderboard(ctx, yesterday, 10, nil)
 	if err != nil {
 		t.Fatalf("GetDailyLeaderboard failed: %v", err)
@@ -1218,7 +1218,7 @@ func TestMemoryRepository_GetPlayerDailyRank_NoSeed(t *testing.T) {
 	user, _ := repo.CreateUser(ctx, "player1", "SHA256:key1")
 
 	// Check rank for a date with no daily seed
-	yesterday := time.Now().UTC().Truncate(24 * time.Hour).AddDate(0, 0, -1)
+	yesterday := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -1)
 	rank, entry, err := repo.GetPlayerDailyRank(ctx, yesterday, user.ID)
 	if err != nil {
 		t.Fatalf("GetPlayerDailyRank failed: %v", err)
