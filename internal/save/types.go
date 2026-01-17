@@ -20,6 +20,7 @@ type SaveData struct {
 	CurrentDepth int          `json:"current_depth"`
 	FloorStates  []FloorState `json:"floor_states"`
 	MetaProgress MetaProgress `json:"meta_progress"`
+	RunType      string       `json:"run_type,omitempty"` // "standard", "daily", or "seeded"
 }
 
 // PlayerData represents saved player state.

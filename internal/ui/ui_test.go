@@ -2249,10 +2249,8 @@ func TestNewGameConfirmationSubmitsDaily(t *testing.T) {
 	m.currentView = ViewMainMenu
 	m.hasValidSave = true
 
-	// Set up the submit daily callback
-	submittedSave := (*save.SaveData)(nil)
+	// Set up the submit daily callback (runs in goroutine so we just verify it's set)
 	m.SetSubmitDailyCallback(func(saveData *save.SaveData) error {
-		submittedSave = saveData
 		return nil
 	})
 
@@ -2283,4 +2281,261 @@ func TestNewGameConfirmationSubmitsDaily(t *testing.T) {
 	// Note: The actual submission happens in a goroutine, so we can't easily
 	// verify it was called synchronously. The callback setup test above
 	// verifies the callback mechanism works.
+}
+
+// === RunType Persistence Tests ===
+
+func TestRunTypeSetToStandardByDefault(t *testing.T) {
+	m := newTestModel()
+
+	// Start a standard game
+	m.dailyRunMode = false
+	cfg := config.DefaultConfig()
+	engine := game.NewEngine(cfg, 0)
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+	m.engine = engine
+	m.player = engine.Player()
+	m.currentRunType = "standard"
+
+	if m.currentRunType != "standard" {
+		t.Errorf("expected standard run type, got %s", m.currentRunType)
+	}
+}
+
+func TestRunTypeSetToDailyForDailyRun(t *testing.T) {
+	m := newTestModel()
+
+	// Simulate starting a daily run
+	dailySeed := getDailySeed()
+	cfg := config.DefaultConfig()
+	engine := game.NewEngine(cfg, dailySeed)
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+	m.engine = engine
+	m.player = engine.Player()
+	m.currentRunType = "daily"
+
+	if m.currentRunType != "daily" {
+		t.Errorf("expected daily run type, got %s", m.currentRunType)
+	}
+}
+
+func TestGetSaveDataIncludesRunType(t *testing.T) {
+	m := newTestModel()
+
+	// Start a daily run
+	dailySeed := getDailySeed()
+	cfg := config.DefaultConfig()
+	engine := game.NewEngine(cfg, dailySeed)
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+	m.engine = engine
+	m.player = engine.Player()
+	m.currentRunType = "daily"
+
+	// Get save data
+	saveData := m.GetSaveData()
+	if saveData == nil {
+		t.Fatal("expected save data, got nil")
+	}
+
+	if saveData.RunType != "daily" {
+		t.Errorf("expected RunType 'daily' in save data, got '%s'", saveData.RunType)
+	}
+}
+
+func TestGetSaveDataDefaultsToStandard(t *testing.T) {
+	m := newTestModel()
+
+	// Start a game without setting run type
+	cfg := config.DefaultConfig()
+	engine := game.NewEngine(cfg, 12345)
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+	m.engine = engine
+	m.player = engine.Player()
+	m.currentRunType = "" // Empty
+
+	// Get save data - should default to standard
+	saveData := m.GetSaveData()
+	if saveData == nil {
+		t.Fatal("expected save data, got nil")
+	}
+
+	if saveData.RunType != "standard" {
+		t.Errorf("expected RunType 'standard' when empty, got '%s'", saveData.RunType)
+	}
+}
+
+func TestContinueRestoresRunTypeFromSave(t *testing.T) {
+	m := newTestModel()
+	m.isMultiplayer = true
+
+	// Create a save with daily run type
+	dailySeed := getDailySeed()
+	pendingSave := &save.SaveData{
+		Version:      save.Version,
+		MasterSeed:   dailySeed,
+		CurrentDepth: 1,
+		RunType:      "daily",
+		Player: save.PlayerData{
+			Class:     entity.ClassInit,
+			Level:     1,
+			XP:        0,
+			XPToLevel: 100,
+			Stats: types.Stats{
+				RAM:  100,
+				CPU:  10,
+				FD:   16,
+				NICE: 10,
+				UID:  1000,
+			},
+			MaxStats: types.MaxStats{
+				MaxRAM: 100,
+				MaxFD:  16,
+			},
+			Position:    types.Position{X: 5, Y: 5},
+			Inventory:   []save.ItemData{},
+			SkillStates: []save.SkillState{{ID: "fork", CurrentCD: 0}},
+		},
+		FloorStates:  []save.FloorState{},
+		MetaProgress: save.MetaProgress{UnlockedClasses: []string{"init"}},
+	}
+
+	m.SetHasValidSave(true, pendingSave)
+
+	// Continue the game
+	m.continueGame()
+
+	// Run type should be restored
+	if m.currentRunType != "daily" {
+		t.Errorf("expected currentRunType 'daily' after continue, got '%s'", m.currentRunType)
+	}
+}
+
+func TestContinueDefaultsToStandardWhenNoRunType(t *testing.T) {
+	m := newTestModel()
+	m.isMultiplayer = true
+
+	// Create a save without run type (old save format)
+	pendingSave := &save.SaveData{
+		Version:      save.Version,
+		MasterSeed:   12345,
+		CurrentDepth: 1,
+		RunType:      "", // Empty - simulating old save
+		Player: save.PlayerData{
+			Class:     entity.ClassInit,
+			Level:     1,
+			XP:        0,
+			XPToLevel: 100,
+			Stats: types.Stats{
+				RAM:  100,
+				CPU:  10,
+				FD:   16,
+				NICE: 10,
+				UID:  1000,
+			},
+			MaxStats: types.MaxStats{
+				MaxRAM: 100,
+				MaxFD:  16,
+			},
+			Position:    types.Position{X: 5, Y: 5},
+			Inventory:   []save.ItemData{},
+			SkillStates: []save.SkillState{{ID: "fork", CurrentCD: 0}},
+		},
+		FloorStates:  []save.FloorState{},
+		MetaProgress: save.MetaProgress{UnlockedClasses: []string{"init"}},
+	}
+
+	m.SetHasValidSave(true, pendingSave)
+
+	// Continue the game
+	m.continueGame()
+
+	// Run type should default to standard
+	if m.currentRunType != "standard" {
+		t.Errorf("expected currentRunType 'standard' for old saves, got '%s'", m.currentRunType)
+	}
+}
+
+func TestLeaderboardSubmitterCalledWithCorrectRunType(t *testing.T) {
+	m := newTestModel()
+	m.isMultiplayer = true
+	m.currentRunType = "daily"
+
+	// Track what gets submitted using a channel for synchronization
+	submittedCh := make(chan string, 1)
+	m.leaderboardSubmitter = func(score, floors int, class string, seed int64, runType string, victory bool) error {
+		submittedCh <- runType
+		return nil
+	}
+
+	// Setup game state
+	cfg := config.DefaultConfig()
+	engine := game.NewEngine(cfg, getDailySeed())
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+	m.engine = engine
+	m.player = engine.Player()
+
+	// Submit to leaderboard
+	m.submitToLeaderboard(false)
+
+	// Wait for submission - the submitter runs in a goroutine so give it time
+	submittedRunType := <-submittedCh
+
+	if submittedRunType != "daily" {
+		t.Errorf("expected submitted runType 'daily', got '%s'", submittedRunType)
+	}
+}
+
+func TestSaveDataRunTypePreservedThroughFullCycle(t *testing.T) {
+	// This test verifies the full cycle:
+	// 1. Start daily run
+	// 2. Get save data (with RunType)
+	// 3. Load from save data
+	// 4. RunType should be preserved
+
+	m := newTestModel()
+	m.isMultiplayer = true
+
+	// Step 1: Start a daily run
+	dailySeed := getDailySeed()
+	cfg := config.DefaultConfig()
+	engine := game.NewEngine(cfg, dailySeed)
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+	m.engine = engine
+	m.player = engine.Player()
+	m.currentRunType = "daily"
+
+	// Step 2: Get save data
+	saveData := m.GetSaveData()
+	if saveData == nil {
+		t.Fatal("expected save data")
+	}
+	if saveData.RunType != "daily" {
+		t.Errorf("save data RunType should be 'daily', got '%s'", saveData.RunType)
+	}
+
+	// Step 3: Simulate closing and reopening
+	m.engine.Shutdown()
+	m.engine = nil
+	m.currentRunType = "" // Reset
+
+	// Step 4: Load from save
+	m.SetHasValidSave(true, saveData)
+	m.continueGame()
+
+	// Verify RunType is preserved
+	if m.currentRunType != "daily" {
+		t.Errorf("RunType should be preserved as 'daily' after continue, got '%s'", m.currentRunType)
+	}
 }

@@ -57,3 +57,4 @@ air.log
 # Embedded static files (copied during build-prod, keep placeholder)
 cmd/devdungeon/static/*
 !cmd/devdungeon/static/.gitkeep
+.worktrees/

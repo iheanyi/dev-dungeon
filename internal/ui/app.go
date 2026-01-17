@@ -598,6 +598,36 @@ func (m *Model) SetSubmitDailyCallback(cb SubmitDailyCallback) {
 	m.submitDailyCallback = cb
 }
 
+// handleMenuSelection is a test helper that simulates selecting a menu option.
+// It finds the option in menuOptions and triggers the selection logic.
+func (m *Model) handleMenuSelection(option string) {
+	// Find the option in menuOptions
+	for i, opt := range m.menuOptions {
+		if opt == option {
+			m.menuCursor = i
+			m.selectMenuItem()
+			return
+		}
+	}
+	// If option not found, just set up the menu and call selectMenuItem
+	// This handles cases where menuOptions isn't fully set up
+	m.menuOptions = []string{option}
+	m.menuCursor = 0
+	m.selectMenuItem()
+}
+
+// handleConfirmDialogKey is a test helper that simulates a key press in the confirm dialog.
+func (m *Model) handleConfirmDialogKey(key string) {
+	switch key {
+	case "y", "Y", "enter":
+		if m.confirmAction != nil {
+			m.confirmAction()
+		}
+	case "n", "N", "esc", "q":
+		m.currentView = m.confirmReturnView
+	}
+}
+
 // showConfirmDialog displays a yes/no confirmation dialog.
 func (m *Model) showConfirmDialog(message string, onConfirm func(), returnView ViewType) {
 	m.confirmMessage = message
