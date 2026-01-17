@@ -278,7 +278,8 @@ type DailyLeaderboardFetcher func(date time.Time, limit int, userID int) ([]Lead
 
 // SaveCallback is a callback function to save game state.
 // Called before returning to main menu in multiplayer mode.
-type SaveCallback func() error
+// Returns the save data that was persisted, for updating pendingSave.
+type SaveCallback func() (*save.SaveData, error)
 
 // LeaderboardSubmitter is a callback to submit a score to the leaderboard.
 // Called on death or victory. Parameters: score, floorsCleared, class, seed, runType, victory.
@@ -938,15 +939,12 @@ func (m *Model) updateGame(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.engine != nil {
 			// Call save callback BEFORE destroying the engine
 			if m.saveCallback != nil {
-				// Get fresh save data BEFORE calling callback
-				// This ensures Continue uses updated data if we save again in same session
-				freshSave := m.engine.GetSaveData()
-				if err := m.saveCallback(); err != nil {
+				if savedData, err := m.saveCallback(); err != nil {
 					m.statusMsg = "Failed to save game."
 				} else {
 					m.statusMsg = "Game saved."
 					m.hasValidSave = true     // Enable Continue option
-					m.pendingSave = freshSave // Update for next Continue in same session
+					m.pendingSave = savedData // Update for next Continue in same session
 				}
 			} else {
 				m.statusMsg = "Returned to menu."
@@ -1647,15 +1645,12 @@ func (m *Model) updatePause(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.engine != nil {
 			// Call save callback BEFORE destroying the engine
 			if m.saveCallback != nil {
-				// Get fresh save data BEFORE calling callback
-				// This ensures Continue uses updated data if we save again in same session
-				freshSave := m.engine.GetSaveData()
-				if err := m.saveCallback(); err != nil {
+				if savedData, err := m.saveCallback(); err != nil {
 					m.statusMsg = "Failed to save game."
 				} else {
 					m.statusMsg = "Game saved."
 					m.hasValidSave = true     // Enable Continue option
-					m.pendingSave = freshSave // Update for next Continue in same session
+					m.pendingSave = savedData // Update for next Continue in same session
 				}
 			} else {
 				m.statusMsg = "Returned to menu."

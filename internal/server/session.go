@@ -81,7 +81,7 @@ func (sm *SessionManager) SaveAll(ctx context.Context, dbClient *db.Client) {
 	for fp, session := range sm.sessions {
 		if session.User != nil && session.Model != nil {
 			// Get save data from the model's engine
-			if err := saveSessionToDatabase(ctx, dbClient, session); err != nil {
+			if _, err := saveSessionToDatabase(ctx, dbClient, session); err != nil {
 				log.Error("Failed to save session", "fingerprint", fp, "error", err)
 				monitoring.CaptureException(err, map[string]string{
 					"operation":   "save_all_sessions",
@@ -162,27 +162,30 @@ func (sm *SessionManager) NotifyShutdown(message string) {
 	log.Info("Shutdown notification complete", "notified", notified, "total", sessionCount)
 }
 
-// saveSessionToDatabase persists the game state.
-func saveSessionToDatabase(ctx context.Context, dbClient *db.Client, session *GameSession) error {
+// saveSessionToDatabase persists the game state and returns the saved data.
+func saveSessionToDatabase(ctx context.Context, dbClient *db.Client, session *GameSession) (*save.SaveData, error) {
 	session.mu.Lock()
 	defer session.mu.Unlock()
 
 	if session.Model == nil || session.User == nil {
-		return nil
+		return nil, nil
 	}
 
 	// Get the current save data from the engine
 	engine := session.Model.GetEngine()
 	if engine == nil {
-		return nil
+		return nil, nil
 	}
 
 	saveData := engine.GetSaveData()
 	if saveData == nil {
-		return nil
+		return nil, nil
 	}
 
-	return dbClient.UpsertGameSave(ctx, session.User.ID, saveData)
+	if err := dbClient.UpsertGameSave(ctx, session.User.ID, saveData); err != nil {
+		return nil, err
+	}
+	return saveData, nil
 }
 
 // newGameSession creates a new Bubble Tea model for a game session.
@@ -284,7 +287,7 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 	})
 
 	// Set up save callback - this is called when user presses Q to return to menu
-	model.SetSaveCallback(func() error {
+	model.SetSaveCallback(func() (*save.SaveData, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), dbSaveTimeout)
 		defer cancel()
 		return saveSessionToDatabase(ctx, s.db, gameSession)
@@ -460,7 +463,7 @@ func (sw *sessionWrapper) performAutoSave() {
 	ctx, cancel := context.WithTimeout(context.Background(), dbSaveTimeout)
 	defer cancel()
 
-	if err := saveSessionToDatabase(ctx, sw.server.db, sw.session); err != nil {
+	if _, err := saveSessionToDatabase(ctx, sw.server.db, sw.session); err != nil {
 		log.Error("Auto-save failed", "error", err, "user", sw.session.User.Username)
 	} else {
 		log.Debug("Auto-saved game", "user", sw.session.User.Username)
@@ -798,7 +801,7 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 	})
 
 	// Set up save callback - this is called when user presses Q to return to menu
-	model.SetSaveCallback(func() error {
+	model.SetSaveCallback(func() (*save.SaveData, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), dbSaveTimeout)
 		defer cancel()
 		return saveSessionToDatabase(ctx, s.db, gameSession)
