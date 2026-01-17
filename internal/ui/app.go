@@ -3758,22 +3758,16 @@ func (m *Model) viewLeaderboard() string {
 	} else if len(m.leaderboardEntries) == 0 {
 		content = m.styles.Muted.Render("  No entries yet. Be the first to make the board!\n")
 	} else {
-		// Header
-		content = m.styles.Muted.Render(fmt.Sprintf("  %-4s %-12s %-8s %-7s %-8s\n", "RANK", "PLAYER", "SCORE", "FLOORS", "CLASS"))
-		content += m.styles.Muted.Render("  ────────────────────────────────────────────\n")
+		// Header - format columns consistently
+		header := fmt.Sprintf("   %-4s %-12s %8s %7s %-8s", "RANK", "PLAYER", "SCORE", "FLOORS", "CLASS")
+		content = m.styles.Muted.Render(header) + "\n"
+		content += m.styles.Muted.Render("   ─────────────────────────────────────────") + "\n"
 
 		// Entries
 		for i, entry := range m.leaderboardEntries {
-			cursor := "  "
-			style := m.styles.MenuItem
+			cursor := "   "
 			if i == m.leaderboardCursor {
-				cursor = "> "
-				style = m.styles.MenuSelected
-			}
-
-			// Highlight current user
-			if m.username != "" && entry.Username == m.username {
-				style = m.styles.Highlight
+				cursor = " > "
 			}
 
 			// Truncate username if too long
@@ -3782,14 +3776,25 @@ func (m *Model) viewLeaderboard() string {
 				username = username[:9] + "…"
 			}
 
-			line := fmt.Sprintf("%-4d %-12s %-8d %-7d %-8s",
+			// Build the row with consistent formatting
+			line := fmt.Sprintf("%-4d %-12s %8d %7d %-8s",
 				entry.Rank,
 				username,
 				entry.Score,
 				entry.FloorsCleared,
 				entry.Class,
 			)
-			content += style.Render(cursor+line) + "\n"
+
+			// Apply style based on selection/highlight
+			var styledLine string
+			if m.username != "" && entry.Username == m.username {
+				styledLine = m.styles.Highlight.Render(cursor + line)
+			} else if i == m.leaderboardCursor {
+				styledLine = m.styles.MenuSelected.Render(cursor + line)
+			} else {
+				styledLine = cursor + line
+			}
+			content += styledLine + "\n"
 		}
 	}
 
@@ -3899,45 +3904,45 @@ func (m *Model) viewDailyLeaderboard() string {
 			content += m.styles.Normal.Render("\n  Be the first to complete today's daily run!\n")
 		}
 	} else {
-		// Header
-		content = m.styles.Muted.Render(fmt.Sprintf("  %-4s %-12s %-8s %-7s %-8s\n", "RANK", "PLAYER", "SCORE", "FLOORS", "CLASS"))
-		content += m.styles.Muted.Render("  ────────────────────────────────────────────\n")
+		// Header - format columns consistently
+		header := fmt.Sprintf("   %-4s %-12s %8s %7s %-8s", "RANK", "PLAYER", "SCORE", "FLOORS", "CLASS")
+		content = m.styles.Muted.Render(header) + "\n"
+		content += m.styles.Muted.Render("   ─────────────────────────────────────────") + "\n"
 
 		// Top entries
 		for _, entry := range m.dailyLeaderboardEntries {
-			style := m.styles.MenuItem
-
-			// Highlight current user
-			if m.username != "" && entry.Username == m.username {
-				style = m.styles.Highlight
-			}
-
 			// Truncate username if too long
 			username := entry.Username
 			if len(username) > 10 {
 				username = username[:9] + "…"
 			}
 
-			line := fmt.Sprintf("  %-4d %-12s %-8d %-7d %-8s",
+			line := fmt.Sprintf("   %-4d %-12s %8d %7d %-8s",
 				entry.Rank,
 				username,
 				entry.Score,
 				entry.FloorsCleared,
 				entry.Class,
 			)
-			content += style.Render(line) + "\n"
+
+			// Highlight current user
+			if m.username != "" && entry.Username == m.username {
+				content += m.styles.Highlight.Render(line) + "\n"
+			} else {
+				content += line + "\n"
+			}
 		}
 
 		// Show player's position if not in top N
 		if m.dailyPlayerEntry != nil && m.dailyPlayerRank > len(m.dailyLeaderboardEntries) {
-			content += m.styles.Muted.Render("  ···\n")
+			content += m.styles.Muted.Render("   ···") + "\n"
 
 			username := m.dailyPlayerEntry.Username
 			if len(username) > 10 {
 				username = username[:9] + "…"
 			}
 
-			line := fmt.Sprintf("  %-4d %-12s %-8d %-7d %-8s  ← You",
+			line := fmt.Sprintf("   %-4d %-12s %8d %7d %-8s  ← You",
 				m.dailyPlayerRank,
 				username,
 				m.dailyPlayerEntry.Score,
@@ -3947,7 +3952,7 @@ func (m *Model) viewDailyLeaderboard() string {
 			content += m.styles.Highlight.Render(line) + "\n"
 		} else if m.dailyPlayerRank == 0 && m.dailyLeaderboardDate.Equal(today) {
 			// Player hasn't done today's daily yet
-			content += "\n" + m.styles.Muted.Render("  You haven't completed today's daily run yet.\n")
+			content += "\n" + m.styles.Muted.Render("   You haven't completed today's daily run yet.") + "\n"
 		}
 	}
 
