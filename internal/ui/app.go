@@ -509,6 +509,25 @@ func (m *Model) GetEngine() *game.Engine {
 	return m.engine
 }
 
+// GetSaveData returns the current save data with run type included.
+// This wraps the engine's GetSaveData and adds UI-level state like RunType.
+func (m *Model) GetSaveData() *save.SaveData {
+	if m.engine == nil {
+		return nil
+	}
+	saveData := m.engine.GetSaveData()
+	if saveData == nil {
+		return nil
+	}
+	// Include run type in save data
+	runType := m.currentRunType
+	if runType == "" {
+		runType = "standard"
+	}
+	saveData.RunType = runType
+	return saveData
+}
+
 // SetMultiplayerMode configures the model for multiplayer (SSH) sessions.
 // This disables admin console and godmode cheats.
 func (m *Model) SetMultiplayerMode(username string) {
@@ -829,12 +848,19 @@ func (m *Model) continueGame() {
 			m.statusMsg = err.Error()
 			return
 		}
+		// Restore run type from save (so daily runs stay as daily runs after continue)
+		if m.pendingSave.RunType != "" {
+			m.currentRunType = m.pendingSave.RunType
+		} else {
+			m.currentRunType = "standard"
+		}
 	} else {
 		// Try to load from local files (single player mode)
 		if err := m.engine.LoadLatestSave(); err != nil {
 			m.statusMsg = err.Error()
 			return
 		}
+		m.currentRunType = "standard" // Local saves don't track run type
 	}
 
 	// Get the player from the engine

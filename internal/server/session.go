@@ -171,13 +171,8 @@ func saveSessionToDatabase(ctx context.Context, dbClient *db.Client, session *Ga
 		return nil, nil
 	}
 
-	// Get the current save data from the engine
-	engine := session.Model.GetEngine()
-	if engine == nil {
-		return nil, nil
-	}
-
-	saveData := engine.GetSaveData()
+	// Get the current save data from the model (includes UI-level state like RunType)
+	saveData := session.Model.GetSaveData()
 	if saveData == nil {
 		return nil, nil
 	}
