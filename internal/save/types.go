@@ -24,17 +24,33 @@ type SaveData struct {
 
 // PlayerData represents saved player state.
 type PlayerData struct {
-	Class     entity.PlayerClass `json:"class"`
-	Stats     types.Stats        `json:"stats"`
-	MaxStats  types.MaxStats     `json:"max_stats"`
-	Level     int                `json:"level"`
-	XP        int                `json:"xp"`
-	XPToLevel int                `json:"xp_to_level"`
-	Position  types.Position     `json:"position"`
-	Inventory []ItemData         `json:"inventory"`
-	Equipment EquipmentData      `json:"equipment"`
-	Skills    []string           `json:"skills"`
-	ExitCodes int                `json:"exit_codes"`
+	Class       entity.PlayerClass `json:"class"`
+	Stats       types.Stats        `json:"stats"`
+	MaxStats    types.MaxStats     `json:"max_stats"`
+	Level       int                `json:"level"`
+	XP          int                `json:"xp"`
+	XPToLevel   int                `json:"xp_to_level"`
+	Position    types.Position     `json:"position"`
+	Inventory   []ItemData         `json:"inventory"`
+	Equipment   EquipmentData      `json:"equipment"`
+	Skills      []string           `json:"skills"`       // Deprecated: use SkillStates
+	SkillStates []SkillState       `json:"skill_states"` // Skill IDs with cooldown state
+	ActiveBuffs []BuffState        `json:"active_buffs"` // Active buff effects
+	ExitCodes   int                `json:"exit_codes"`
+}
+
+// SkillState represents a saved skill with cooldown state.
+type SkillState struct {
+	ID        string `json:"id"`
+	CurrentCD int    `json:"current_cd"`
+}
+
+// BuffState represents a saved active buff.
+type BuffState struct {
+	Type     string `json:"type"`
+	Name     string `json:"name"`
+	Duration int    `json:"duration"`
+	Value    int    `json:"value"`
 }
 
 // ItemData represents a saved item.

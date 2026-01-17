@@ -138,7 +138,7 @@ func (m *Manager) doSave(data *SaveData, trigger SaveTrigger) error {
 	m.lastSave = time.Now()
 	m.mu.Unlock()
 
-	data.Timestamp = time.Now()
+	data.Timestamp = time.Now().UTC()
 
 	// Determine filename
 	filename := m.getRunSavePath(data.MasterSeed)

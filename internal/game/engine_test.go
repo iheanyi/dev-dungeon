@@ -1091,6 +1091,7 @@ func TestSaveLoadE2E_FileSystem(t *testing.T) {
 	// Set player to known state
 	engine.Player().Level = 7
 	engine.Player().XP = 350
+	engine.Player().MaxStats.MaxRAM = 200 // Must set max before current stat
 	engine.Player().Stats.RAM = 150
 	engine.Player().Stats.CPU = 25
 	engine.Player().ExitCodes = 42

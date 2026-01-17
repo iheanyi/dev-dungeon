@@ -856,14 +856,52 @@ func (e *Engine) LoadGame(data *save.SaveData) error {
 		return errors.New("corrupted save: invalid player stats")
 	}
 
+	// Validate player class is valid
+	validClasses := []entity.PlayerClass{
+		entity.ClassInit, entity.ClassCron, entity.ClassBash,
+		entity.ClassVim, entity.ClassSudo,
+	}
+	classValid := false
+	for _, vc := range validClasses {
+		if data.Player.Class == vc {
+			classValid = true
+			break
+		}
+	}
+	if !classValid {
+		return fmt.Errorf("corrupted save: invalid player class '%s'", data.Player.Class)
+	}
+
 	// Set the master seed from save
 	e.masterSeed = data.MasterSeed
 	e.rng = rand.New(rand.NewSource(e.masterSeed))
 
 	// Recreate player from save data
 	e.player = entity.NewPlayer(data.Player.Class)
-	e.player.Stats = data.Player.Stats
-	e.player.MaxStats = data.Player.MaxStats
+
+	// Validate and bound stats before applying
+	stats := data.Player.Stats
+	maxStats := data.Player.MaxStats
+
+	// Ensure stats are non-negative and bounded
+	if stats.RAM < 0 {
+		stats.RAM = 0
+	}
+	if stats.RAM > maxStats.MaxRAM {
+		stats.RAM = maxStats.MaxRAM
+	}
+	if stats.FD < 0 {
+		stats.FD = 0
+	}
+	if stats.FD > maxStats.MaxFD {
+		stats.FD = maxStats.MaxFD
+	}
+	if stats.CPU < 1 {
+		stats.CPU = 1
+	}
+
+	e.player.Stats = stats
+	e.player.MaxStats = maxStats
 	e.player.Level = data.Player.Level
 	e.player.XP = data.Player.XP
 	e.player.XPToLevel = data.Player.XPToLevel
@@ -876,39 +914,73 @@ func (e *Engine) LoadGame(data *save.SaveData) error {
 	e.player.Equipment.Utility1 = nil
 	e.player.Equipment.Utility2 = nil
 
-	// Load inventory
+	// Load inventory with quantity validation
 	for _, itemData := range data.Player.Inventory {
 		item := entity.NewItem(itemData.TemplateID, itemData.TemplateID, types.Position{})
 		if item != nil {
-			item.Quantity = itemData.Quantity
+			// Validate and bound quantity
+			quantity := itemData.Quantity
+			if quantity < 1 {
+				continue // Skip invalid items
+			}
+			if quantity > item.MaxStack {
+				quantity = item.MaxStack
+				e.addMessage("Warning: item quantity capped at max stack")
+			}
+			item.Quantity = quantity
 			e.player.Inventory.AddItem(item)
+		} else {
+			e.addMessage("Warning: item template '%s' no longer exists", itemData.TemplateID)
 		}
 	}
 
-	// Load equipment
+	// Load equipment - use direct assignment to avoid auto-fill logic issues
 	if data.Player.Equipment.Weapon != "" {
 		weapon := entity.NewItem(data.Player.Equipment.Weapon, "weapon", types.Position{})
 		if weapon != nil {
-			e.player.Equipment.Equip(weapon)
+			e.player.Equipment.Weapon = weapon
 		}
 	}
 	if data.Player.Equipment.Armor != "" {
 		armor := entity.NewItem(data.Player.Equipment.Armor, "armor", types.Position{})
 		if armor != nil {
-			e.player.Equipment.Equip(armor)
+			e.player.Equipment.Armor = armor
 		}
 	}
 	if data.Player.Equipment.Utility1 != "" {
 		util := entity.NewItem(data.Player.Equipment.Utility1, "utility1", types.Position{})
 		if util != nil {
-			e.player.Equipment.Equip(util)
+			e.player.Equipment.Utility1 = util
 		}
 	}
 	if data.Player.Equipment.Utility2 != "" {
 		util := entity.NewItem(data.Player.Equipment.Utility2, "utility2", types.Position{})
 		if util != nil {
-			e.player.Equipment.Equip(util)
+			e.player.Equipment.Utility2 = util
 		}
+	}
+
+	// Restore skill cooldowns from save
+	if len(data.Player.SkillStates) > 0 {
+		for _, skillState := range data.Player.SkillStates {
+			for i := range e.player.Skills {
+				if e.player.Skills[i].ID == skillState.ID {
+					e.player.Skills[i].CurrentCD = skillState.CurrentCD
+					break
+				}
+			}
+		}
+	}
+
+	// Restore active buffs from save
+	e.player.ActiveBuffs = nil // Clear default buffs
+	for _, buffState := range data.Player.ActiveBuffs {
+		e.player.ActiveBuffs = append(e.player.ActiveBuffs, entity.Buff{
+			Type:     entity.BuffType(buffState.Type),
+			Name:     buffState.Name,
+			Duration: buffState.Duration,
+			Value:    buffState.Value,
+		})
 	}
 
 	// Cap depth at max floor (8 = boss floor)
@@ -1026,21 +1098,43 @@ func (e *Engine) toSaveData() *save.SaveData {
 	// Build floor states
 	floorStates := e.buildFloorStates()
 
+	// Convert skill states (including cooldowns)
+	var skillStates []save.SkillState
+	for _, skill := range e.player.Skills {
+		skillStates = append(skillStates, save.SkillState{
+			ID:        skill.ID,
+			CurrentCD: skill.CurrentCD,
+		})
+	}
+
+	// Convert active buffs
+	var buffStates []save.BuffState
+	for _, buff := range e.player.ActiveBuffs {
+		buffStates = append(buffStates, save.BuffState{
+			Type:     string(buff.Type),
+			Name:     buff.Name,
+			Duration: buff.Duration,
+			Value:    buff.Value,
+		})
+	}
+
 	return &save.SaveData{
 		Version:      save.Version,
 		MasterSeed:   e.masterSeed,
 		CurrentDepth: e.world.CurrentDepth,
 		Player: save.PlayerData{
-			Class:     e.player.Class,
-			Stats:     e.player.Stats,
-			MaxStats:  e.player.MaxStats,
-			Level:     e.player.Level,
-			XP:        e.player.XP,
-			XPToLevel: e.player.XPToLevel,
-			Position:  e.player.Position(),
-			Inventory: invData,
-			Equipment: eqData,
-			ExitCodes: e.player.ExitCodes,
+			Class:       e.player.Class,
+			Stats:       e.player.Stats,
+			MaxStats:    e.player.MaxStats,
+			Level:       e.player.Level,
+			XP:          e.player.XP,
+			XPToLevel:   e.player.XPToLevel,
+			Position:    e.player.Position(),
+			Inventory:   invData,
+			Equipment:   eqData,
+			SkillStates: skillStates,
+			ActiveBuffs: buffStates,
+			ExitCodes:   e.player.ExitCodes,
 		},
 		FloorStates: floorStates,
 	}
