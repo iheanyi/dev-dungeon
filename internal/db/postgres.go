@@ -248,7 +248,8 @@ func (c *Client) UpdateMetaProgress(ctx context.Context, meta *MetaProgress) err
 
 // --- Leaderboard Operations ---
 
-// AddLeaderboardEntry adds a new score entry.
+// AddLeaderboardEntry adds or updates a score entry.
+// Uses UPSERT: if (user_id, seed) already exists, only update if new score is higher.
 func (c *Client) AddLeaderboardEntry(ctx context.Context, entry *LeaderboardEntry) error {
 	entry.NanoID = GenerateNanoID()
 	entry.CreatedAt = time.Now().UTC()
@@ -257,6 +258,13 @@ func (c *Client) AddLeaderboardEntry(ctx context.Context, entry *LeaderboardEntr
 		INSERT INTO leaderboard_entries
 		(nanoid, user_id, run_type, seed, score, floors_cleared, time_seconds, class, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		ON CONFLICT (user_id, seed) DO UPDATE SET
+			score = EXCLUDED.score,
+			floors_cleared = EXCLUDED.floors_cleared,
+			time_seconds = EXCLUDED.time_seconds,
+			class = EXCLUDED.class,
+			created_at = EXCLUDED.created_at
+		WHERE EXCLUDED.score > leaderboard_entries.score
 	`, entry.NanoID, entry.UserID, entry.RunType, entry.Seed, entry.Score,
 		entry.FloorsCleared, entry.TimeSeconds, entry.Class, entry.CreatedAt)
 	return err

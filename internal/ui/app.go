@@ -3910,7 +3910,7 @@ func (m *Model) viewDailyLeaderboard() string {
 	title := m.styles.Title.Render(fmt.Sprintf(
 		"╔═══════════════════════════════════════════╗\n"+
 			"║            DAILY LEADERBOARD              ║\n"+
-			"║       %s   %s   %s      ║\n"+
+			"║           %s   %s   %s            ║\n"+
 			"╚═══════════════════════════════════════════╝",
 		leftArrow, datePadded, rightArrow)) + "\n"
 
