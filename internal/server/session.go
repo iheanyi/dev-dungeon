@@ -171,13 +171,8 @@ func saveSessionToDatabase(ctx context.Context, dbClient *db.Client, session *Ga
 		return nil, nil
 	}
 
-	// Get the current save data from the engine
-	engine := session.Model.GetEngine()
-	if engine == nil {
-		return nil, nil
-	}
-
-	saveData := engine.GetSaveData()
+	// Get the current save data from the model (includes UI-level state like RunType)
+	saveData := session.Model.GetSaveData()
 	if saveData == nil {
 		return nil, nil
 	}
@@ -372,17 +367,83 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 		return entries, playerRank, playerEntry, nil
 	})
 
+	// Get today's daily seed for comparison
+	dailySeedCtx, dailySeedCancel := context.WithTimeout(context.Background(), dbLoadTimeout)
+	defer dailySeedCancel()
+	todaysDailySeed, err := s.db.GetOrCreateDailySeed(dailySeedCtx)
+	if err != nil {
+		log.Error("Failed to get daily seed", "error", err)
+		todaysDailySeed = 0 // Fallback - daily features won't work but game continues
+	}
+
+	// Check daily run status
+	var dailyRunCompleted, dailyRunInProgress bool
+	var saveData save.SaveData
+
+	// Check if player completed today's daily (has leaderboard entry)
+	if todaysDailySeed != 0 {
+		rankCtx, rankCancel := context.WithTimeout(context.Background(), dbLoadTimeout)
+		defer rankCancel()
+		rank, entry, err := s.db.GetPlayerDailyRank(rankCtx, time.Now().UTC(), user.ID)
+		if err != nil {
+			log.Error("Failed to check daily rank", "error", err)
+		} else if rank > 0 && entry != nil {
+			dailyRunCompleted = true
+		}
+	}
+
 	// If we have a save, store it for loading when user selects Continue
 	if gameSave != nil {
-		var saveData save.SaveData
 		if err := json.Unmarshal(gameSave.SaveData, &saveData); err != nil {
 			log.Error("Failed to unmarshal save data", "error", err)
 		} else {
 			// Pass save data to model - it will be loaded when Continue is selected
 			model.SetHasValidSave(true, &saveData)
 			log.Info("Save data available for continue", "user", user.Username)
+
+			// Check if save is an in-progress daily run
+			if saveData.MasterSeed == todaysDailySeed && todaysDailySeed != 0 && !dailyRunCompleted {
+				dailyRunInProgress = true
+			}
 		}
 	}
+
+	// Set up callback for submitting abandoned daily runs
+	model.SetSubmitDailyCallback(func(abandonedSave *save.SaveData) error {
+		if abandonedSave == nil {
+			return fmt.Errorf("no save data to submit")
+		}
+
+		submitCtx, submitCancel := context.WithTimeout(context.Background(), dbSaveTimeout)
+		defer submitCancel()
+
+		// Calculate score from save data (same formula as normal submission)
+		floorsCleared := abandonedSave.CurrentDepth
+		score := floorsCleared * 100
+		score += abandonedSave.Player.Level * 50
+		// No victory bonus - they abandoned
+
+		entry := &db.LeaderboardEntry{
+			UserID:        user.ID,
+			Username:      user.Username,
+			RunType:       "daily",
+			Seed:          abandonedSave.MasterSeed,
+			Score:         score,
+			FloorsCleared: floorsCleared,
+			TimeSeconds:   0, // Not tracked in saves
+			Class:         string(abandonedSave.Player.Class),
+		}
+
+		if err := s.db.AddLeaderboardEntry(submitCtx, entry); err != nil {
+			log.Error("Failed to submit abandoned daily run", "error", err, "user", user.Username)
+			return err
+		}
+		log.Info("Submitted abandoned daily run", "user", user.Username, "score", score)
+		return nil
+	})
+
+	// Set daily run status for menu gating
+	model.SetDailyRunStatus(dailyRunCompleted, dailyRunInProgress, todaysDailySeed)
 
 	// Register session
 	s.sessions.Add(fingerprint, gameSession)
