@@ -973,15 +973,15 @@ func TestSaveCallbackSetsHasValidSave(t *testing.T) {
 
 	// Set up save callback that succeeds
 	callbackCalled := false
-	m.SetSaveCallback(func() error {
+	m.SetSaveCallback(func() (*save.SaveData, error) {
 		callbackCalled = true
-		return nil
+		return nil, nil
 	})
 
 	// Simulate pressing Q to return to menu (manually invoke the logic)
 	if m.engine != nil {
 		if m.saveCallback != nil {
-			if err := m.saveCallback(); err != nil {
+			if _, err := m.saveCallback(); err != nil {
 				m.statusMsg = "Failed to save game."
 			} else {
 				m.statusMsg = "Game saved."
@@ -1028,14 +1028,14 @@ func TestSaveCallbackFailureDoesNotSetHasValidSave(t *testing.T) {
 	m.hasValidSave = false
 
 	// Set up save callback that fails
-	m.SetSaveCallback(func() error {
-		return fmt.Errorf("simulated save failure")
+	m.SetSaveCallback(func() (*save.SaveData, error) {
+		return nil, fmt.Errorf("simulated save failure")
 	})
 
 	// Simulate pressing Q to return to menu
 	if m.engine != nil {
 		if m.saveCallback != nil {
-			if err := m.saveCallback(); err != nil {
+			if _, err := m.saveCallback(); err != nil {
 				m.statusMsg = "Failed to save game."
 			} else {
 				m.statusMsg = "Game saved."
@@ -1074,20 +1074,20 @@ func TestSaveCallbackCalledBeforeEngineDestroyed(t *testing.T) {
 
 	// Track whether engine was available during callback
 	engineAvailableDuringCallback := false
-	m.SetSaveCallback(func() error {
+	m.SetSaveCallback(func() (*save.SaveData, error) {
 		// The engine should still be available at this point
 		// (save callback must be called BEFORE engine destruction)
 		if m.GetEngine() != nil {
 			engineAvailableDuringCallback = true
 		}
-		return nil
+		return nil, nil
 	})
 
 	// Simulate the Q key handler logic
 	if m.engine != nil {
 		// Call save callback BEFORE destroying the engine
 		if m.saveCallback != nil {
-			_ = m.saveCallback()
+			_, _ = m.saveCallback()
 		}
 		m.engine.Shutdown()
 		m.engine = nil
@@ -1117,7 +1117,7 @@ func TestNoSaveCallbackShowsReturnedToMenu(t *testing.T) {
 	// Simulate Q key handler
 	if m.engine != nil {
 		if m.saveCallback != nil {
-			if err := m.saveCallback(); err != nil {
+			if _, err := m.saveCallback(); err != nil {
 				m.statusMsg = "Failed to save game."
 			} else {
 				m.statusMsg = "Game saved."
