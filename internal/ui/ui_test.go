@@ -1915,3 +1915,372 @@ func TestIntroScreenSetup(t *testing.T) {
 		t.Error("pending class should be set")
 	}
 }
+
+// === Daily Run Gating Tests ===
+
+func TestDailyRunBlockedWhenCompleted(t *testing.T) {
+	m := newTestModel()
+	m.isMultiplayer = true
+	m.dailyRunCompleted = true
+	m.currentView = ViewMainMenu
+	m.menuCursor = 0
+	m.menuOptions = []string{"Daily Run"}
+
+	// Simulate selecting "Daily Run" menu option
+	m.handleMenuSelection("Daily Run")
+
+	// Should stay on main menu with error message
+	if m.currentView != ViewMainMenu {
+		t.Errorf("should stay on main menu when daily completed, got %v", m.currentView)
+	}
+	if m.statusMsg != "You've already completed today's daily run" {
+		t.Errorf("wrong status message: %s", m.statusMsg)
+	}
+}
+
+func TestDailyRunRedirectsWhenInProgress(t *testing.T) {
+	m := newTestModel()
+	m.isMultiplayer = true
+	m.dailyRunInProgress = true
+	m.currentView = ViewMainMenu
+	m.menuCursor = 0
+	m.menuOptions = []string{"Daily Run"}
+
+	// Simulate selecting "Daily Run" menu option
+	m.handleMenuSelection("Daily Run")
+
+	// Should stay on main menu with message to use Continue
+	if m.currentView != ViewMainMenu {
+		t.Errorf("should stay on main menu when daily in progress, got %v", m.currentView)
+	}
+	if m.statusMsg != "You have a daily run in progress - use Continue" {
+		t.Errorf("wrong status message: %s", m.statusMsg)
+	}
+}
+
+func TestDailyRunAllowedWhenNoActiveDailyRun(t *testing.T) {
+	m := newTestModel()
+	m.isMultiplayer = true
+	m.dailyRunCompleted = false
+	m.dailyRunInProgress = false
+	m.currentView = ViewMainMenu
+	m.menuCursor = 0
+	m.menuOptions = []string{"Daily Run"}
+
+	// Simulate selecting "Daily Run" menu option
+	m.handleMenuSelection("Daily Run")
+
+	// Should transition to class select for daily run
+	if m.currentView != ViewClassSelect {
+		t.Errorf("should transition to class select, got %v", m.currentView)
+	}
+	if !m.dailyRunMode {
+		t.Error("dailyRunMode should be true")
+	}
+}
+
+func TestDailyRunRequiresMultiplayer(t *testing.T) {
+	m := newTestModel()
+	m.isMultiplayer = false
+	m.dailyRunCompleted = false
+	m.dailyRunInProgress = false
+	m.currentView = ViewMainMenu
+
+	// Simulate selecting "Daily Run" menu option
+	m.handleMenuSelection("Daily Run")
+
+	// Should stay on main menu with error
+	if m.currentView != ViewMainMenu {
+		t.Errorf("should stay on main menu when not multiplayer, got %v", m.currentView)
+	}
+	if m.statusMsg != "Daily runs require SSH connection" {
+		t.Errorf("wrong status message: %s", m.statusMsg)
+	}
+}
+
+func TestNewGameWarnsWithInProgressDaily(t *testing.T) {
+	m := newTestModel()
+	m.dailyRunInProgress = true
+	m.pendingSave = &save.SaveData{CurrentDepth: 3}
+	m.currentView = ViewMainMenu
+	m.menuCursor = 0
+	m.menuOptions = []string{"New Game"}
+
+	// Simulate selecting "New Game" menu option
+	m.handleMenuSelection("New Game")
+
+	// Should show confirmation dialog
+	if m.currentView != ViewConfirmDialog {
+		t.Errorf("expected ViewConfirmDialog, got %v", m.currentView)
+	}
+
+	// Confirm message should mention the floor depth
+	if m.confirmMessage == "" {
+		t.Error("confirm message should be set")
+	}
+
+	// Confirm action should be set
+	if m.confirmAction == nil {
+		t.Error("confirm action should be set")
+	}
+
+	// Return view should be main menu
+	if m.confirmReturnView != ViewMainMenu {
+		t.Errorf("confirm return view should be ViewMainMenu, got %v", m.confirmReturnView)
+	}
+}
+
+func TestNewGameProceedsWithoutInProgressDaily(t *testing.T) {
+	m := newTestModel()
+	m.dailyRunInProgress = false
+	m.pendingSave = nil
+	m.currentView = ViewMainMenu
+	m.menuCursor = 0
+	m.menuOptions = []string{"New Game"}
+
+	// Simulate selecting "New Game" menu option
+	m.handleMenuSelection("New Game")
+
+	// Should go directly to class select (no confirmation dialog)
+	if m.currentView != ViewClassSelect {
+		t.Errorf("expected ViewClassSelect, got %v", m.currentView)
+	}
+}
+
+func TestConfirmDialogYesExecutesAction(t *testing.T) {
+	m := newTestModel()
+	m.currentView = ViewConfirmDialog
+
+	// Set up confirmation state
+	actionExecuted := false
+	m.confirmMessage = "Test confirmation"
+	m.confirmAction = func() {
+		actionExecuted = true
+	}
+	m.confirmReturnView = ViewMainMenu
+
+	// Simulate pressing 'y'
+	m.handleConfirmDialogKey("y")
+
+	// Action should have been executed
+	if !actionExecuted {
+		t.Error("confirm action should have been executed")
+	}
+}
+
+func TestConfirmDialogEnterExecutesAction(t *testing.T) {
+	m := newTestModel()
+	m.currentView = ViewConfirmDialog
+
+	// Set up confirmation state
+	actionExecuted := false
+	m.confirmMessage = "Test confirmation"
+	m.confirmAction = func() {
+		actionExecuted = true
+	}
+	m.confirmReturnView = ViewMainMenu
+
+	// Simulate pressing 'enter'
+	m.handleConfirmDialogKey("enter")
+
+	// Action should have been executed
+	if !actionExecuted {
+		t.Error("confirm action should have been executed on enter")
+	}
+}
+
+func TestConfirmDialogNoReturnsToMenu(t *testing.T) {
+	m := newTestModel()
+	m.currentView = ViewConfirmDialog
+
+	// Set up confirmation state
+	actionExecuted := false
+	m.confirmMessage = "Test confirmation"
+	m.confirmAction = func() {
+		actionExecuted = true
+	}
+	m.confirmReturnView = ViewMainMenu
+
+	// Simulate pressing 'n'
+	m.handleConfirmDialogKey("n")
+
+	// Should return to the return view
+	if m.currentView != ViewMainMenu {
+		t.Errorf("should return to main menu, got %v", m.currentView)
+	}
+
+	// Action should NOT have been executed
+	if actionExecuted {
+		t.Error("confirm action should not have been executed on 'n'")
+	}
+}
+
+func TestConfirmDialogEscReturnsToMenu(t *testing.T) {
+	m := newTestModel()
+	m.currentView = ViewConfirmDialog
+
+	// Set up confirmation state
+	actionExecuted := false
+	m.confirmMessage = "Test confirmation"
+	m.confirmAction = func() {
+		actionExecuted = true
+	}
+	m.confirmReturnView = ViewGame
+
+	// Simulate pressing 'esc'
+	m.handleConfirmDialogKey("esc")
+
+	// Should return to the return view (ViewGame in this case)
+	if m.currentView != ViewGame {
+		t.Errorf("should return to game view, got %v", m.currentView)
+	}
+
+	// Action should NOT have been executed
+	if actionExecuted {
+		t.Error("confirm action should not have been executed on esc")
+	}
+}
+
+func TestShowConfirmDialog(t *testing.T) {
+	m := newTestModel()
+	m.currentView = ViewMainMenu
+
+	// Set up a confirmation dialog
+	actionExecuted := false
+	m.showConfirmDialog(
+		"Test message",
+		func() { actionExecuted = true },
+		ViewMainMenu,
+	)
+
+	// Should transition to confirm dialog view
+	if m.currentView != ViewConfirmDialog {
+		t.Errorf("expected ViewConfirmDialog, got %v", m.currentView)
+	}
+
+	// Message should be set
+	if m.confirmMessage != "Test message" {
+		t.Errorf("expected message 'Test message', got '%s'", m.confirmMessage)
+	}
+
+	// Return view should be set
+	if m.confirmReturnView != ViewMainMenu {
+		t.Errorf("expected return view ViewMainMenu, got %v", m.confirmReturnView)
+	}
+
+	// Execute the action
+	m.confirmAction()
+	if !actionExecuted {
+		t.Error("action should have been executed")
+	}
+}
+
+func TestSetDailyRunStatus(t *testing.T) {
+	m := newTestModel()
+
+	// Initially all should be default values
+	if m.dailyRunCompleted {
+		t.Error("dailyRunCompleted should initially be false")
+	}
+	if m.dailyRunInProgress {
+		t.Error("dailyRunInProgress should initially be false")
+	}
+	if m.dailySeed != 0 {
+		t.Error("dailySeed should initially be 0")
+	}
+
+	// Set daily run status
+	m.SetDailyRunStatus(true, false, 12345)
+
+	if !m.dailyRunCompleted {
+		t.Error("dailyRunCompleted should be true after SetDailyRunStatus")
+	}
+	if m.dailyRunInProgress {
+		t.Error("dailyRunInProgress should be false")
+	}
+	if m.dailySeed != 12345 {
+		t.Errorf("dailySeed should be 12345, got %d", m.dailySeed)
+	}
+
+	// Update to different status
+	m.SetDailyRunStatus(false, true, 67890)
+
+	if m.dailyRunCompleted {
+		t.Error("dailyRunCompleted should be false")
+	}
+	if !m.dailyRunInProgress {
+		t.Error("dailyRunInProgress should be true")
+	}
+	if m.dailySeed != 67890 {
+		t.Errorf("dailySeed should be 67890, got %d", m.dailySeed)
+	}
+}
+
+func TestSetSubmitDailyCallback(t *testing.T) {
+	m := newTestModel()
+
+	// Initially nil
+	if m.submitDailyCallback != nil {
+		t.Error("submitDailyCallback should initially be nil")
+	}
+
+	// Set a callback
+	callbackCalled := false
+	m.SetSubmitDailyCallback(func(saveData *save.SaveData) error {
+		callbackCalled = true
+		return nil
+	})
+
+	if m.submitDailyCallback == nil {
+		t.Error("submitDailyCallback should be set")
+	}
+
+	// Call the callback
+	_ = m.submitDailyCallback(nil)
+	if !callbackCalled {
+		t.Error("callback should have been called")
+	}
+}
+
+func TestNewGameConfirmationSubmitsDaily(t *testing.T) {
+	m := newTestModel()
+	m.dailyRunInProgress = true
+	m.pendingSave = &save.SaveData{CurrentDepth: 5, MasterSeed: 12345}
+	m.currentView = ViewMainMenu
+	m.hasValidSave = true
+
+	// Set up the submit daily callback
+	submittedSave := (*save.SaveData)(nil)
+	m.SetSubmitDailyCallback(func(saveData *save.SaveData) error {
+		submittedSave = saveData
+		return nil
+	})
+
+	// Trigger the new game selection which shows confirmation
+	m.handleMenuSelection("New Game")
+
+	// Should be in confirm dialog
+	if m.currentView != ViewConfirmDialog {
+		t.Fatalf("expected ViewConfirmDialog, got %v", m.currentView)
+	}
+
+	// Execute the confirmation action (simulating pressing 'y')
+	if m.confirmAction != nil {
+		m.confirmAction()
+	}
+
+	// After confirmation, daily run state should be updated
+	if m.dailyRunInProgress {
+		t.Error("dailyRunInProgress should be false after confirming new game")
+	}
+	if !m.dailyRunCompleted {
+		t.Error("dailyRunCompleted should be true after confirming new game")
+	}
+	if m.hasValidSave {
+		t.Error("hasValidSave should be false after confirming new game")
+	}
+
+	// Note: The actual submission happens in a goroutine, so we can't easily
+	// verify it was called synchronously. The callback setup test above
+	// verifies the callback mechanism works.
+}
