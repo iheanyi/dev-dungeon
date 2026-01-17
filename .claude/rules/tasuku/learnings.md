@@ -10,6 +10,7 @@ _Auto-synced from .tasuku/context/learnings.md_
 - Always use time.Now().UTC() when storing timestamps in PostgreSQL. Local time (e.g., CST) gets stored without timezone info, then retrieved as UTC, causing 6+ hour discrepancies. This breaks expiry checks where tokens appear expired immediately.
 - When returning a new model from Bubble Tea's Update(), you must explicitly call Init() and return its result. Bubble Tea does NOT automatically call Init() on replacement models - only on the initial model. Failing to do this causes goroutine/resource leaks if Init() sets up background tasks.
 - Always validate loaded player positions against current dungeon layout. Dungeon regeneration from seeds can produce different layouts when dimensions change, so saved positions may land in walls. Fallback to a known-safe position (like stairs) when loaded position is invalid.
+- Always use TemplateID (not ID()) when saving/loading items or comparing items for stacking. ID() returns unique instance identifiers that differ between item instances, while TemplateID identifies the item type for recreation and stacking.
 
 ## Insights
 

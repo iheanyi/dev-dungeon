@@ -623,10 +623,10 @@ func NewInventory(maxSlots int) *Inventory {
 
 // AddItem adds an item to the inventory.
 func (inv *Inventory) AddItem(item *Item) bool {
-	// Try to stack with existing item
+	// Try to stack with existing item (by TemplateID, not instance ID)
 	if item.Stackable {
 		for _, existing := range inv.Items {
-			if existing.ID() == item.ID() && existing.Quantity < existing.MaxStack {
+			if existing.TemplateID == item.TemplateID && existing.Quantity < existing.MaxStack {
 				space := existing.MaxStack - existing.Quantity
 				if item.Quantity <= space {
 					existing.Quantity += item.Quantity

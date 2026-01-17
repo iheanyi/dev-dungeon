@@ -119,22 +119,37 @@ func TestShopPurchaseWithSufficientFunds(t *testing.T) {
 
 	// Record initial state
 	initialCodes := m.player.ExitCodes
-	initialInvCount := len(m.player.Inventory.Items)
-	itemPrice := m.shopItems[0].Price
+	itemPrice := m.shopItems[0].Price // malloc(), which may stack with existing
+	purchasedTemplateID := m.shopItems[0].TemplateID
+
+	// Count initial quantity of this item type in inventory
+	initialQuantity := 0
+	for _, item := range m.player.Inventory.Items {
+		if item.TemplateID == purchasedTemplateID {
+			initialQuantity += item.Quantity
+		}
+	}
 
 	// Buy first item
 	m.shopCursor = 0
 	m.buyItem()
 
-	// Verify purchase
+	// Verify exit codes were deducted
 	if m.player.ExitCodes != initialCodes-itemPrice {
 		t.Errorf("expected %d exit codes after purchase, got %d",
 			initialCodes-itemPrice, m.player.ExitCodes)
 	}
 
-	if len(m.player.Inventory.Items) != initialInvCount+1 {
-		t.Errorf("expected %d items in inventory, got %d",
-			initialInvCount+1, len(m.player.Inventory.Items))
+	// Verify item was added (either new slot or quantity increase due to stacking)
+	finalQuantity := 0
+	for _, item := range m.player.Inventory.Items {
+		if item.TemplateID == purchasedTemplateID {
+			finalQuantity += item.Quantity
+		}
+	}
+	if finalQuantity != initialQuantity+1 {
+		t.Errorf("expected %d total %s after purchase (was %d), got %d",
+			initialQuantity+1, purchasedTemplateID, initialQuantity, finalQuantity)
 	}
 }
 

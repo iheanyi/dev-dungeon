@@ -999,28 +999,28 @@ func (e *Engine) Shutdown() {
 
 // toSaveData converts the current game state to SaveData.
 func (e *Engine) toSaveData() *save.SaveData {
-	// Convert inventory
+	// Convert inventory - use TemplateID (not ID()) so items can be recreated on load
 	var invData []save.ItemData
 	for _, item := range e.player.Inventory.Items {
 		invData = append(invData, save.ItemData{
-			TemplateID: item.ID(),
+			TemplateID: item.TemplateID,
 			Quantity:   item.Quantity,
 		})
 	}
 
-	// Convert equipment
+	// Convert equipment - use TemplateID (not ID()) so items can be recreated on load
 	eqData := save.EquipmentData{}
 	if e.player.Equipment.Weapon != nil {
-		eqData.Weapon = e.player.Equipment.Weapon.ID()
+		eqData.Weapon = e.player.Equipment.Weapon.TemplateID
 	}
 	if e.player.Equipment.Armor != nil {
-		eqData.Armor = e.player.Equipment.Armor.ID()
+		eqData.Armor = e.player.Equipment.Armor.TemplateID
 	}
 	if e.player.Equipment.Utility1 != nil {
-		eqData.Utility1 = e.player.Equipment.Utility1.ID()
+		eqData.Utility1 = e.player.Equipment.Utility1.TemplateID
 	}
 	if e.player.Equipment.Utility2 != nil {
-		eqData.Utility2 = e.player.Equipment.Utility2.ID()
+		eqData.Utility2 = e.player.Equipment.Utility2.TemplateID
 	}
 
 	// Build floor states

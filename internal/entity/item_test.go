@@ -128,7 +128,7 @@ func TestInventoryStacking(t *testing.T) {
 func TestInventoryNonStacking(t *testing.T) {
 	inv := NewInventory(5)
 
-	// Add stackable items with DIFFERENT IDs - they won't stack
+	// Add stackable items with DIFFERENT instance IDs but SAME TemplateID - they SHOULD stack
 	item1 := NewItem("malloc", "id1", types.Position{})
 	item1.Quantity = 3
 	inv.AddItem(item1)
@@ -137,9 +137,12 @@ func TestInventoryNonStacking(t *testing.T) {
 	item2.Quantity = 2
 	inv.AddItem(item2)
 
-	// Should NOT stack since IDs differ
-	if len(inv.Items) != 2 {
-		t.Errorf("items with different IDs should not stack: expected 2 slots, got %d", len(inv.Items))
+	// Should stack since TemplateIDs match (both are "malloc")
+	if len(inv.Items) != 1 {
+		t.Errorf("items with same TemplateID should stack: expected 1 slot, got %d", len(inv.Items))
+	}
+	if inv.Items[0].Quantity != 5 {
+		t.Errorf("stacked quantity should be 5, got %d", inv.Items[0].Quantity)
 	}
 }
 

@@ -27,3 +27,6 @@ When returning a new model from Bubble Tea's Update(), you must explicitly call 
 ## 4ebf4d - 2026-01-16T03:04:57Z
 Always validate loaded player positions against current dungeon layout. Dungeon regeneration from seeds can produce different layouts when dimensions change, so saved positions may land in walls. Fallback to a known-safe position (like stairs) when loaded position is invalid.
 
+## 604540 - 2026-01-17T00:48:33Z
+Always use TemplateID (not ID()) when saving/loading items or comparing items for stacking. ID() returns unique instance identifiers that differ between item instances, while TemplateID identifies the item type for recreation and stacking.
+

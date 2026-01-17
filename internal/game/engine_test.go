@@ -2,6 +2,7 @@ package game
 
 import (
 	"testing"
+	"time"
 
 	"github.com/iheanyi/devdungeon/internal/config"
 	"github.com/iheanyi/devdungeon/internal/entity"
@@ -436,7 +437,8 @@ func TestItemPickup(t *testing.T) {
 		t.Skip("Adjacent position not walkable")
 	}
 
-	testItem := entity.NewItem("malloc", "test_item_123", itemPos)
+	// Use core_dump which is not in starting inventory, so we know it won't stack
+	testItem := entity.NewItem("core_dump", "test_item_123", itemPos)
 	if testItem == nil {
 		t.Fatal("Failed to create test item")
 	}
@@ -459,9 +461,9 @@ func TestItemPickup(t *testing.T) {
 		t.Errorf("Picked up wrong item: %s", result.PickedUp.ID())
 	}
 
-	// Check inventory
+	// Check inventory - core_dump not in starting gear, so should create new slot
 	if len(engine.Player().Inventory.Items) != initialInventorySize+1 {
-		t.Errorf("Inventory size should have increased by 1")
+		t.Errorf("Inventory size should have increased by 1, got %d (was %d)", len(engine.Player().Inventory.Items), initialInventorySize)
 	}
 
 	// Item should be removed from world
@@ -925,5 +927,678 @@ func TestGatherNearbyEnemiesNilWorld(t *testing.T) {
 
 	if enemies[0].ID() != "target" {
 		t.Error("should return target when world is nil")
+	}
+}
+
+// TestSaveDataUsesTemplateID is a regression test to ensure that toSaveData()
+// saves item TemplateIDs (like "malloc") not instance IDs (like "item_malloc_123").
+// Bug: Items were being saved with ID() instead of TemplateID, causing items
+// to be lost on load because NewItem() couldn't find templates with those IDs.
+func TestSaveDataUsesTemplateID(t *testing.T) {
+	cfg := config.DefaultConfig()
+	engine := NewEngine(cfg, 12345)
+
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("StartNewGame failed: %v", err)
+	}
+
+	// Clear starting gear to have clean slate for testing
+	engine.Player().Inventory.Clear()
+	engine.Player().Equipment.Weapon = nil
+	engine.Player().Equipment.Armor = nil
+	engine.Player().Equipment.Utility1 = nil
+	engine.Player().Equipment.Utility2 = nil
+
+	// Add specific items to inventory with known template IDs
+	// These items have instance IDs like "item_malloc_0" but TemplateID is "malloc"
+	malloc := entity.NewItem("malloc", "item_malloc_test", types.Position{})
+	malloc.Quantity = 3
+	engine.Player().Inventory.AddItem(malloc)
+
+	realloc := entity.NewItem("realloc", "item_realloc_test", types.Position{})
+	realloc.Quantity = 2
+	engine.Player().Inventory.AddItem(realloc)
+
+	// Equip items
+	weapon := entity.NewItem("vim_blade", "weapon_test", types.Position{})
+	engine.Player().Equipment.Weapon = weapon
+
+	armor := entity.NewItem("firewall", "armor_test", types.Position{})
+	engine.Player().Equipment.Armor = armor
+
+	utility := entity.NewItem("ssh_key", "utility_test", types.Position{})
+	engine.Player().Equipment.Utility1 = utility
+
+	// Get save data
+	saveData := engine.toSaveData()
+
+	// Verify inventory items use TemplateID, not instance ID
+	foundMalloc := false
+	foundRealloc := false
+	for _, item := range saveData.Player.Inventory {
+		// TemplateID should be "malloc" or "realloc", NOT "item_malloc_test" or "item_realloc_test"
+		if item.TemplateID == "malloc" {
+			foundMalloc = true
+			if item.Quantity != 3 {
+				t.Errorf("malloc quantity = %d, want 3", item.Quantity)
+			}
+		}
+		if item.TemplateID == "realloc" {
+			foundRealloc = true
+			if item.Quantity != 2 {
+				t.Errorf("realloc quantity = %d, want 2", item.Quantity)
+			}
+		}
+		// Should never contain instance IDs
+		if item.TemplateID == "item_malloc_test" || item.TemplateID == "item_realloc_test" {
+			t.Errorf("save data contains instance ID %q instead of template ID", item.TemplateID)
+		}
+	}
+
+	if !foundMalloc {
+		t.Error("malloc not found in saved inventory (or has wrong TemplateID)")
+	}
+	if !foundRealloc {
+		t.Error("realloc not found in saved inventory (or has wrong TemplateID)")
+	}
+
+	// Verify equipment uses TemplateID
+	if saveData.Player.Equipment.Weapon != "vim_blade" {
+		t.Errorf("saved weapon = %q, want 'vim_blade' (TemplateID)", saveData.Player.Equipment.Weapon)
+	}
+	if saveData.Player.Equipment.Armor != "firewall" {
+		t.Errorf("saved armor = %q, want 'firewall' (TemplateID)", saveData.Player.Equipment.Armor)
+	}
+	if saveData.Player.Equipment.Utility1 != "ssh_key" {
+		t.Errorf("saved utility1 = %q, want 'ssh_key' (TemplateID)", saveData.Player.Equipment.Utility1)
+	}
+
+	// Verify round-trip: save then load should preserve items
+	newEngine := NewEngine(cfg, 12345)
+	if err := newEngine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("StartNewGame for load test failed: %v", err)
+	}
+	if err := newEngine.LoadGame(saveData); err != nil {
+		t.Fatalf("LoadGame failed: %v", err)
+	}
+
+	// Check loaded inventory has correct items
+	loadedInv := newEngine.Player().Inventory.Items
+	foundLoadedMalloc := false
+	foundLoadedRealloc := false
+	for _, item := range loadedInv {
+		if item.TemplateID == "malloc" && item.Quantity == 3 {
+			foundLoadedMalloc = true
+		}
+		if item.TemplateID == "realloc" && item.Quantity == 2 {
+			foundLoadedRealloc = true
+		}
+	}
+	if !foundLoadedMalloc {
+		t.Error("malloc not found after load (save/load round-trip failed)")
+	}
+	if !foundLoadedRealloc {
+		t.Error("realloc not found after load (save/load round-trip failed)")
+	}
+
+	// Check loaded equipment
+	if newEngine.Player().Equipment.Weapon == nil || newEngine.Player().Equipment.Weapon.TemplateID != "vim_blade" {
+		t.Error("weapon not loaded correctly")
+	}
+	if newEngine.Player().Equipment.Armor == nil || newEngine.Player().Equipment.Armor.TemplateID != "firewall" {
+		t.Error("armor not loaded correctly")
+	}
+	if newEngine.Player().Equipment.Utility1 == nil || newEngine.Player().Equipment.Utility1.TemplateID != "ssh_key" {
+		t.Error("utility1 not loaded correctly")
+	}
+}
+
+// TestSaveLoadE2E_FileSystem is an E2E integration test that verifies the full
+// save/load cycle including actual file I/O. This tests the complete path:
+// Engine.SaveSync() -> toSaveData() -> SaveManager -> File -> Load -> LoadGame()
+func TestSaveLoadE2E_FileSystem(t *testing.T) {
+	// Create a save manager with a temp directory for real file I/O
+	tempDir := t.TempDir()
+	saveCfg := save.Config{
+		SaveDir:          tempDir,
+		AutoSaveInterval: 1 * time.Second,
+		MinSaveInterval:  0, // No debounce for tests
+	}
+
+	saveMgr, err := save.NewManager(saveCfg)
+	if err != nil {
+		t.Fatalf("failed to create save manager: %v", err)
+	}
+	saveMgr.Start()
+	defer saveMgr.Stop()
+
+	// Create engine and inject the save manager
+	cfg := config.DefaultConfig()
+	engine := NewEngine(cfg, 54321)
+	engine.saveManager = saveMgr // Inject custom save manager
+
+	if err := engine.StartNewGame(entity.ClassBash); err != nil {
+		t.Fatalf("StartNewGame failed: %v", err)
+	}
+
+	// Clear starting gear for clean test
+	engine.Player().Inventory.Clear()
+	engine.Player().Equipment.Weapon = nil
+	engine.Player().Equipment.Armor = nil
+	engine.Player().Equipment.Utility1 = nil
+	engine.Player().Equipment.Utility2 = nil
+
+	// Set player to known state
+	engine.Player().Level = 7
+	engine.Player().XP = 350
+	engine.Player().Stats.RAM = 150
+	engine.Player().Stats.CPU = 25
+	engine.Player().ExitCodes = 42
+	engine.Player().SetPosition(types.Position{X: 10, Y: 15})
+
+	// Add inventory items
+	malloc := entity.NewItem("malloc", "e2e_malloc", types.Position{})
+	malloc.Quantity = 5
+	engine.Player().Inventory.AddItem(malloc)
+
+	mmap := entity.NewItem("mmap", "e2e_mmap", types.Position{})
+	mmap.Quantity = 2
+	engine.Player().Inventory.AddItem(mmap)
+
+	// Equip items
+	weapon := entity.NewItem("vim_blade", "e2e_weapon", types.Position{})
+	engine.Player().Equipment.Weapon = weapon
+
+	armor := entity.NewItem("firewall", "e2e_armor", types.Position{})
+	engine.Player().Equipment.Armor = armor
+
+	util1 := entity.NewItem("ssh_key", "e2e_util1", types.Position{})
+	engine.Player().Equipment.Utility1 = util1
+
+	util2 := entity.NewItem("env_vars", "e2e_util2", types.Position{})
+	engine.Player().Equipment.Utility2 = util2
+
+	// Save to file system (synchronously)
+	if err := engine.SaveSync(save.TriggerManual); err != nil {
+		t.Fatalf("SaveSync failed: %v", err)
+	}
+
+	// Verify save file was created
+	saves, err := saveMgr.ListSaves()
+	if err != nil {
+		t.Fatalf("ListSaves failed: %v", err)
+	}
+	if len(saves) != 1 {
+		t.Fatalf("expected 1 save file, got %d", len(saves))
+	}
+
+	// Create a FRESH engine with the same save manager (same temp dir)
+	newEngine := NewEngine(cfg, 99999) // Different seed - should use loaded data
+	newEngine.saveManager = saveMgr
+
+	// Start a new game first (required before LoadGame)
+	if err := newEngine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("StartNewGame for loading failed: %v", err)
+	}
+
+	// Load the saved game from disk
+	if err := newEngine.LoadLatestSave(); err != nil {
+		t.Fatalf("LoadLatestSave failed: %v", err)
+	}
+
+	// Verify player state was restored correctly
+	player := newEngine.Player()
+
+	// Check class (should be bash, not init which was used for StartNewGame)
+	if player.Class != entity.ClassBash {
+		t.Errorf("loaded class = %s, want bash", player.Class)
+	}
+
+	// Check level and XP
+	if player.Level != 7 {
+		t.Errorf("loaded level = %d, want 7", player.Level)
+	}
+	if player.XP != 350 {
+		t.Errorf("loaded XP = %d, want 350", player.XP)
+	}
+
+	// Check stats
+	if player.Stats.RAM != 150 {
+		t.Errorf("loaded RAM = %d, want 150", player.Stats.RAM)
+	}
+	if player.Stats.CPU != 25 {
+		t.Errorf("loaded CPU = %d, want 25", player.Stats.CPU)
+	}
+
+	// Check exit codes
+	if player.ExitCodes != 42 {
+		t.Errorf("loaded exit codes = %d, want 42", player.ExitCodes)
+	}
+
+	// Check position
+	pos := player.Position()
+	if pos.X != 10 || pos.Y != 15 {
+		t.Errorf("loaded position = (%d, %d), want (10, 15)", pos.X, pos.Y)
+	}
+
+	// Verify inventory survived the round-trip through file system
+	foundMalloc := false
+	foundMmap := false
+	for _, item := range player.Inventory.Items {
+		if item.TemplateID == "malloc" {
+			foundMalloc = true
+			if item.Quantity != 5 {
+				t.Errorf("malloc quantity = %d, want 5", item.Quantity)
+			}
+		}
+		if item.TemplateID == "mmap" {
+			foundMmap = true
+			if item.Quantity != 2 {
+				t.Errorf("mmap quantity = %d, want 2", item.Quantity)
+			}
+		}
+	}
+	if !foundMalloc {
+		t.Error("malloc not found in loaded inventory (E2E file I/O round-trip failed)")
+	}
+	if !foundMmap {
+		t.Error("mmap not found in loaded inventory (E2E file I/O round-trip failed)")
+	}
+
+	// Verify equipment survived the round-trip through file system
+	if player.Equipment.Weapon == nil {
+		t.Error("weapon not loaded from file")
+	} else if player.Equipment.Weapon.TemplateID != "vim_blade" {
+		t.Errorf("weapon template = %s, want vim_blade", player.Equipment.Weapon.TemplateID)
+	}
+
+	if player.Equipment.Armor == nil {
+		t.Error("armor not loaded from file")
+	} else if player.Equipment.Armor.TemplateID != "firewall" {
+		t.Errorf("armor template = %s, want firewall", player.Equipment.Armor.TemplateID)
+	}
+
+	if player.Equipment.Utility1 == nil {
+		t.Error("utility1 not loaded from file")
+	} else if player.Equipment.Utility1.TemplateID != "ssh_key" {
+		t.Errorf("utility1 template = %s, want ssh_key", player.Equipment.Utility1.TemplateID)
+	}
+
+	if player.Equipment.Utility2 == nil {
+		t.Error("utility2 not loaded from file")
+	} else if player.Equipment.Utility2.TemplateID != "env_vars" {
+		t.Errorf("utility2 template = %s, want env_vars", player.Equipment.Utility2.TemplateID)
+	}
+}
+
+// TestCombatVictory_E2E tests the full combat flow including XP, exit codes, loot,
+// and verifies everything persists through a save/load cycle with real file I/O.
+func TestCombatVictory_E2E(t *testing.T) {
+	tempDir := t.TempDir()
+	saveCfg := save.Config{
+		SaveDir:          tempDir,
+		AutoSaveInterval: 1 * time.Second,
+		MinSaveInterval:  0,
+	}
+	saveMgr, err := save.NewManager(saveCfg)
+	if err != nil {
+		t.Fatalf("failed to create save manager: %v", err)
+	}
+	saveMgr.Start()
+	defer saveMgr.Stop()
+
+	cfg := config.DefaultConfig()
+	engine := NewEngine(cfg, 11111)
+	engine.saveManager = saveMgr
+
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("StartNewGame failed: %v", err)
+	}
+
+	// Record initial state
+	initialLevel := engine.Player().Level
+	initialXP := engine.Player().XP
+	initialExitCodes := engine.Player().ExitCodes
+
+	// Create enemies for combat
+	enemy1 := entity.NewEnemy(entity.EnemyZombie, "test_zombie", types.Position{X: 5, Y: 5}, 1)
+	enemy2 := entity.NewEnemy(entity.EnemyDaemon, "test_daemon", types.Position{X: 6, Y: 5}, 1)
+
+	// Start combat
+	combat := engine.StartCombat([]*entity.Enemy{enemy1, enemy2})
+
+	if engine.CurrentState() != types.StateCombat {
+		t.Errorf("state should be StateCombat, got %v", engine.CurrentState())
+	}
+
+	// Kill both enemies (simulate combat victory)
+	enemy1.Stats.RAM = 0
+	enemy2.Stats.RAM = 0
+	combat.Victory = true
+
+	// End combat - should award XP and exit codes
+	engine.EndCombat(combat)
+
+	if engine.CurrentState() != types.StateExploring {
+		t.Errorf("state should be StateExploring after combat, got %v", engine.CurrentState())
+	}
+
+	// Verify XP was gained
+	expectedXP := enemy1.XPReward + enemy2.XPReward
+	if engine.Player().XP < initialXP+expectedXP && engine.Player().Level == initialLevel {
+		// XP should increase (or level up and reset)
+		t.Errorf("XP should have increased: initial=%d, expected gain=%d, final=%d",
+			initialXP, expectedXP, engine.Player().XP)
+	}
+
+	// Verify exit codes were gained
+	expectedExitCodes := expectedXP / 2
+	if engine.Player().ExitCodes != initialExitCodes+expectedExitCodes {
+		t.Errorf("exit codes = %d, want %d", engine.Player().ExitCodes, initialExitCodes+expectedExitCodes)
+	}
+
+	// Save to file
+	if err := engine.SaveSync(save.TriggerManual); err != nil {
+		t.Fatalf("SaveSync failed: %v", err)
+	}
+
+	// Create fresh engine and load
+	newEngine := NewEngine(cfg, 99999)
+	newEngine.saveManager = saveMgr
+	if err := newEngine.StartNewGame(entity.ClassBash); err != nil {
+		t.Fatalf("StartNewGame failed: %v", err)
+	}
+	if err := newEngine.LoadLatestSave(); err != nil {
+		t.Fatalf("LoadLatestSave failed: %v", err)
+	}
+
+	// Verify combat rewards persisted
+	if newEngine.Player().ExitCodes != initialExitCodes+expectedExitCodes {
+		t.Errorf("loaded exit codes = %d, want %d", newEngine.Player().ExitCodes, initialExitCodes+expectedExitCodes)
+	}
+}
+
+// TestFloorStateDeltas_E2E tests that applyFloorState correctly removes dead enemies
+// and looted items from the world when loading a save. This tests the load-side of
+// floor deltas since buildFloorStates tracking is not yet implemented.
+func TestFloorStateDeltas_E2E(t *testing.T) {
+	tempDir := t.TempDir()
+	saveCfg := save.Config{
+		SaveDir:          tempDir,
+		AutoSaveInterval: 1 * time.Second,
+		MinSaveInterval:  0,
+	}
+	saveMgr, err := save.NewManager(saveCfg)
+	if err != nil {
+		t.Fatalf("failed to create save manager: %v", err)
+	}
+	saveMgr.Start()
+	defer saveMgr.Stop()
+
+	cfg := config.DefaultConfig()
+
+	// First, create an engine to discover enemy/item IDs on the generated floor
+	seedEngine := NewEngine(cfg, 22222)
+	if err := seedEngine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("StartNewGame failed for seed engine: %v", err)
+	}
+
+	// Find an enemy and item on the floor
+	if len(seedEngine.world.Enemies) == 0 {
+		t.Skip("no enemies on floor 1 to test with")
+	}
+	if len(seedEngine.world.Items) == 0 {
+		t.Skip("no items on floor 1 to test with")
+	}
+	deadEnemyID := seedEngine.world.Enemies[0].ID()
+	lootedItemID := seedEngine.world.Items[0].ID()
+
+	// Create a save with floor state deltas directly (bypassing buildFloorStates)
+	saveData := &save.SaveData{
+		Version:      save.Version,
+		MasterSeed:   22222,
+		CurrentDepth: 1,
+		Player: save.PlayerData{
+			Class:     entity.ClassInit,
+			Level:     1,
+			XP:        0,
+			XPToLevel: 100,
+			Stats:     seedEngine.Player().Stats,
+			MaxStats:  seedEngine.Player().MaxStats,
+			Position:  seedEngine.Player().Position(),
+			Inventory: []save.ItemData{
+				{TemplateID: "malloc", Quantity: 3}, // Add an item to verify inventory persists
+			},
+			Equipment: save.EquipmentData{},
+		},
+		FloorStates: []save.FloorState{
+			{
+				Depth:         1,
+				ExploredTiles: []types.Position{},
+				DeadEnemies:   []string{deadEnemyID},
+				LootedItems:   []string{lootedItemID},
+			},
+		},
+	}
+
+	// Save to file
+	if err := saveMgr.SaveSync(saveData, save.TriggerManual); err != nil {
+		t.Fatalf("SaveSync failed: %v", err)
+	}
+
+	// Create fresh engine with same seed (regenerates same floor)
+	newEngine := NewEngine(cfg, 22222)
+	newEngine.saveManager = saveMgr
+	if err := newEngine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("StartNewGame for load failed: %v", err)
+	}
+
+	// Before load: enemy and item should exist (regenerated from seed)
+	if newEngine.world.GetEnemyByID(deadEnemyID) == nil {
+		t.Skip("enemy not found before load - seed may have changed")
+	}
+	if newEngine.world.GetItemByID(lootedItemID) == nil {
+		t.Skip("item not found before load - seed may have changed")
+	}
+
+	// Load the save - this should apply floor deltas
+	if err := newEngine.LoadLatestSave(); err != nil {
+		t.Fatalf("LoadLatestSave failed: %v", err)
+	}
+
+	// After load: dead enemy should be removed by applyFloorState
+	if newEngine.world.GetEnemyByID(deadEnemyID) != nil {
+		t.Error("dead enemy should be removed after loading save with floor delta")
+	}
+
+	// After load: looted item should be removed by applyFloorState
+	if newEngine.world.GetItemByID(lootedItemID) != nil {
+		t.Error("looted item should be removed after loading save with floor delta")
+	}
+
+	// Verify inventory items from save were restored
+	foundMalloc := false
+	for _, item := range newEngine.Player().Inventory.Items {
+		if item.TemplateID == "malloc" && item.Quantity == 3 {
+			foundMalloc = true
+			break
+		}
+	}
+	if !foundMalloc {
+		t.Error("inventory items from save should be restored")
+	}
+}
+
+// TestLevelUp_E2E tests that level up stat increases persist through save/load.
+func TestLevelUp_E2E(t *testing.T) {
+	tempDir := t.TempDir()
+	saveCfg := save.Config{
+		SaveDir:          tempDir,
+		AutoSaveInterval: 1 * time.Second,
+		MinSaveInterval:  0,
+	}
+	saveMgr, err := save.NewManager(saveCfg)
+	if err != nil {
+		t.Fatalf("failed to create save manager: %v", err)
+	}
+	saveMgr.Start()
+	defer saveMgr.Stop()
+
+	cfg := config.DefaultConfig()
+	engine := NewEngine(cfg, 33333)
+	engine.saveManager = saveMgr
+
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("StartNewGame failed: %v", err)
+	}
+
+	// Record initial stats (level 1)
+	initialLevel := engine.Player().Level
+	initialMaxRAM := engine.Player().MaxStats.MaxRAM
+	initialMaxFD := engine.Player().MaxStats.MaxFD
+	initialCPU := engine.Player().Stats.CPU
+
+	if initialLevel != 1 {
+		t.Fatalf("expected starting level 1, got %d", initialLevel)
+	}
+
+	// Give enough XP to level up (more than XPToLevel)
+	xpNeeded := engine.Player().XPToLevel + 10
+	leveled := engine.Player().GainXP(xpNeeded)
+
+	if !leveled {
+		t.Fatal("player should have leveled up")
+	}
+	if engine.Player().Level != 2 {
+		t.Errorf("level should be 2, got %d", engine.Player().Level)
+	}
+
+	// Verify stat increases from level up
+	// Level up grants: MaxRAM +10, MaxFD +2, CPU +2
+	if engine.Player().MaxStats.MaxRAM != initialMaxRAM+10 {
+		t.Errorf("MaxRAM should be %d after level up, got %d", initialMaxRAM+10, engine.Player().MaxStats.MaxRAM)
+	}
+	if engine.Player().MaxStats.MaxFD != initialMaxFD+2 {
+		t.Errorf("MaxFD should be %d after level up, got %d", initialMaxFD+2, engine.Player().MaxStats.MaxFD)
+	}
+	if engine.Player().Stats.CPU != initialCPU+2 {
+		t.Errorf("CPU should be %d after level up, got %d", initialCPU+2, engine.Player().Stats.CPU)
+	}
+
+	// Save to file
+	if err := engine.SaveSync(save.TriggerManual); err != nil {
+		t.Fatalf("SaveSync failed: %v", err)
+	}
+
+	// Create fresh engine and load
+	newEngine := NewEngine(cfg, 99999)
+	newEngine.saveManager = saveMgr
+	if err := newEngine.StartNewGame(entity.ClassBash); err != nil {
+		t.Fatalf("StartNewGame failed: %v", err)
+	}
+	if err := newEngine.LoadLatestSave(); err != nil {
+		t.Fatalf("LoadLatestSave failed: %v", err)
+	}
+
+	// Verify level and stats persisted
+	if newEngine.Player().Level != 2 {
+		t.Errorf("loaded level = %d, want 2", newEngine.Player().Level)
+	}
+	if newEngine.Player().MaxStats.MaxRAM != initialMaxRAM+10 {
+		t.Errorf("loaded MaxRAM = %d, want %d", newEngine.Player().MaxStats.MaxRAM, initialMaxRAM+10)
+	}
+	if newEngine.Player().MaxStats.MaxFD != initialMaxFD+2 {
+		t.Errorf("loaded MaxFD = %d, want %d", newEngine.Player().MaxStats.MaxFD, initialMaxFD+2)
+	}
+	if newEngine.Player().Stats.CPU != initialCPU+2 {
+		t.Errorf("loaded CPU = %d, want %d", newEngine.Player().Stats.CPU, initialCPU+2)
+	}
+}
+
+// TestMetaProgression_E2E tests that meta-progress (exit codes, run stats) persists
+// across multiple "runs" through real file I/O.
+func TestMetaProgression_E2E(t *testing.T) {
+	tempDir := t.TempDir()
+	saveCfg := save.Config{
+		SaveDir:          tempDir,
+		AutoSaveInterval: 1 * time.Second,
+		MinSaveInterval:  0,
+	}
+	saveMgr, err := save.NewManager(saveCfg)
+	if err != nil {
+		t.Fatalf("failed to create save manager: %v", err)
+	}
+	saveMgr.Start()
+	defer saveMgr.Stop()
+
+	// Load initial meta progress (should be empty/default)
+	meta, err := saveMgr.LoadMetaProgress()
+	if err != nil {
+		t.Fatalf("LoadMetaProgress failed: %v", err)
+	}
+	initialExitCodes := meta.TotalExitCodes
+
+	// Simulate a "run" - earn some exit codes
+	meta.TotalExitCodes += 100
+	meta.RunsCompleted++
+	meta.DeepestFloor = 3
+
+	// Save meta progress
+	if err := saveMgr.SaveMetaProgress(meta); err != nil {
+		t.Fatalf("SaveMetaProgress failed: %v", err)
+	}
+
+	// Create a NEW save manager (simulate app restart) pointing to same directory
+	saveMgr2, err := save.NewManager(saveCfg)
+	if err != nil {
+		t.Fatalf("failed to create second save manager: %v", err)
+	}
+
+	// Load meta progress after "restart"
+	loadedMeta, err := saveMgr2.LoadMetaProgress()
+	if err != nil {
+		t.Fatalf("LoadMetaProgress after restart failed: %v", err)
+	}
+
+	// Verify exit codes persisted
+	if loadedMeta.TotalExitCodes != initialExitCodes+100 {
+		t.Errorf("loaded TotalExitCodes = %d, want %d", loadedMeta.TotalExitCodes, initialExitCodes+100)
+	}
+	if loadedMeta.RunsCompleted != 1 {
+		t.Errorf("loaded RunsCompleted = %d, want 1", loadedMeta.RunsCompleted)
+	}
+	if loadedMeta.DeepestFloor != 3 {
+		t.Errorf("loaded DeepestFloor = %d, want 3", loadedMeta.DeepestFloor)
+	}
+
+	// Simulate second run - more exit codes
+	loadedMeta.TotalExitCodes += 50
+	loadedMeta.RunsCompleted++
+	loadedMeta.DeepestFloor = 5 // Went deeper
+
+	if err := saveMgr2.SaveMetaProgress(loadedMeta); err != nil {
+		t.Fatalf("SaveMetaProgress second run failed: %v", err)
+	}
+
+	// Create THIRD save manager (another restart)
+	saveMgr3, err := save.NewManager(saveCfg)
+	if err != nil {
+		t.Fatalf("failed to create third save manager: %v", err)
+	}
+
+	finalMeta, err := saveMgr3.LoadMetaProgress()
+	if err != nil {
+		t.Fatalf("LoadMetaProgress final failed: %v", err)
+	}
+
+	// Verify cumulative progress
+	if finalMeta.TotalExitCodes != initialExitCodes+150 {
+		t.Errorf("final TotalExitCodes = %d, want %d", finalMeta.TotalExitCodes, initialExitCodes+150)
+	}
+	if finalMeta.RunsCompleted != 2 {
+		t.Errorf("final RunsCompleted = %d, want 2", finalMeta.RunsCompleted)
+	}
+	if finalMeta.DeepestFloor != 5 {
+		t.Errorf("final DeepestFloor = %d, want 5", finalMeta.DeepestFloor)
 	}
 }
