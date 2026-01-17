@@ -40,29 +40,62 @@ type GameSession struct {
 
 // SessionManager tracks active game sessions.
 type SessionManager struct {
-	sessions map[string]*GameSession // fingerprint -> session
-	wg       sync.WaitGroup          // tracks auto-save goroutines
-	mu       sync.RWMutex
+	sessions     map[string]*GameSession // fingerprint -> session
+	userSessions map[int]string          // userID -> fingerprint (for enforcing single session per user)
+	wg           sync.WaitGroup          // tracks auto-save goroutines
+	mu           sync.RWMutex
 }
 
 // NewSessionManager creates a new session manager.
 func NewSessionManager() *SessionManager {
 	return &SessionManager{
-		sessions: make(map[string]*GameSession),
+		sessions:     make(map[string]*GameSession),
+		userSessions: make(map[int]string),
 	}
 }
 
-// Add registers a new session.
-func (sm *SessionManager) Add(fingerprint string, session *GameSession) {
+// Add registers a new session, kicking any existing session for the same user.
+// Returns the old session if one was kicked, nil otherwise.
+func (sm *SessionManager) Add(fingerprint string, session *GameSession) *GameSession {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
+
+	var kickedSession *GameSession
+
+	// Check if this user already has an active session
+	if session.User != nil {
+		if oldFingerprint, exists := sm.userSessions[session.User.ID]; exists && oldFingerprint != fingerprint {
+			// Kick the old session
+			if oldSession, ok := sm.sessions[oldFingerprint]; ok {
+				kickedSession = oldSession
+				delete(sm.sessions, oldFingerprint)
+				log.Info("Kicking existing session for user",
+					"user", session.User.Username,
+					"old_fingerprint", oldFingerprint,
+					"new_fingerprint", fingerprint)
+			}
+		}
+		// Register this user's current fingerprint
+		sm.userSessions[session.User.ID] = fingerprint
+	}
+
 	sm.sessions[fingerprint] = session
+	return kickedSession
 }
 
 // Remove unregisters a session.
 func (sm *SessionManager) Remove(fingerprint string) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
+
+	// Clean up user tracking if this session belongs to a user
+	if session, ok := sm.sessions[fingerprint]; ok && session.User != nil {
+		// Only remove from userSessions if this is still the active session for this user
+		if sm.userSessions[session.User.ID] == fingerprint {
+			delete(sm.userSessions, session.User.ID)
+		}
+	}
+
 	delete(sm.sessions, fingerprint)
 }
 
@@ -160,6 +193,54 @@ func (sm *SessionManager) NotifyShutdown(message string) {
 		}
 	}
 	log.Info("Shutdown notification complete", "notified", notified, "total", sessionCount)
+}
+
+// handleKickedSession saves progress and disconnects a kicked session.
+// Called when a user logs in from a new location, kicking their existing session.
+func (s *Server) handleKickedSession(session *GameSession) {
+	if session == nil {
+		return
+	}
+
+	username := "unknown"
+	if session.User != nil {
+		username = session.User.Username
+	}
+
+	// Try to save their progress before kicking
+	saveCtx, saveCancel := context.WithTimeout(context.Background(), dbSaveTimeout)
+	defer saveCancel()
+
+	if _, err := saveSessionToDatabase(saveCtx, s.db, session); err != nil {
+		log.Error("Failed to save kicked session", "user", username, "error", err)
+	} else {
+		log.Info("Saved kicked session progress", "user", username)
+	}
+
+	// Send a message to the user explaining what happened
+	if session.Session != nil {
+		const (
+			reset  = "\033[0m"
+			bold   = "\033[1m"
+			yellow = "\033[33m"
+			cyan   = "\033[36m"
+		)
+
+		msg := "\r\n\r\n"
+		msg += fmt.Sprintf("%s%s╔══════════════════════════════════════════════════╗%s\r\n", bold, yellow, reset)
+		msg += fmt.Sprintf("%s%s║%s  %s⚠️  DISCONNECTED - LOGGED IN ELSEWHERE%s          %s%s║%s\r\n", bold, yellow, reset, bold, reset, bold, yellow, reset)
+		msg += fmt.Sprintf("%s%s╠══════════════════════════════════════════════════╣%s\r\n", bold, yellow, reset)
+		msg += fmt.Sprintf("%s%s║%s                                                  %s%s║%s\r\n", bold, yellow, reset, bold, yellow, reset)
+		msg += fmt.Sprintf("%s%s║%s  %sYour account was accessed from another session.%s %s%s║%s\r\n", bold, yellow, reset, cyan, reset, bold, yellow, reset)
+		msg += fmt.Sprintf("%s%s║%s  %sYour progress has been saved.%s                   %s%s║%s\r\n", bold, yellow, reset, cyan, reset, bold, yellow, reset)
+		msg += fmt.Sprintf("%s%s║%s                                                  %s%s║%s\r\n", bold, yellow, reset, bold, yellow, reset)
+		msg += fmt.Sprintf("%s%s╚══════════════════════════════════════════════════╝%s\r\n\r\n", bold, yellow, reset)
+
+		session.Session.Write([]byte(msg))
+		session.Session.Close()
+	}
+
+	log.Info("Kicked session for user", "user", username)
 }
 
 // saveSessionToDatabase persists the game state and returns the saved data.
@@ -289,7 +370,7 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 	})
 
 	// Set up leaderboard submitter - called on death or victory
-	model.SetLeaderboardSubmitter(func(score, floorsCleared int, class string, seed int64, runType string, victory bool) error {
+	model.SetLeaderboardSubmitter(func(score, floorsCleared, timeSeconds int, class string, seed int64, runType string, victory bool) error {
 		ctx, cancel := context.WithTimeout(context.Background(), dbSaveTimeout)
 		defer cancel()
 
@@ -298,6 +379,7 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 			Username:      user.Username,
 			Score:         score,
 			FloorsCleared: floorsCleared,
+			TimeSeconds:   timeSeconds,
 			Class:         class,
 			Seed:          seed,
 			RunType:       runType,
@@ -312,6 +394,7 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 			"user", user.Username,
 			"score", score,
 			"floors", floorsCleared,
+			"time", timeSeconds,
 			"class", class,
 			"runType", runType,
 			"victory", victory)
@@ -445,8 +528,10 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 	// Set daily run status for menu gating
 	model.SetDailyRunStatus(dailyRunCompleted, dailyRunInProgress, todaysDailySeed)
 
-	// Register session
-	s.sessions.Add(fingerprint, gameSession)
+	// Register session (kicks any existing session for this user)
+	if kickedSession := s.sessions.Add(fingerprint, gameSession); kickedSession != nil {
+		s.handleKickedSession(kickedSession)
+	}
 
 	// Create wrapper model that handles saves on quit
 	wrapper := &sessionWrapper{
@@ -869,7 +954,7 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 	})
 
 	// Set up leaderboard submitter - called on death or victory
-	model.SetLeaderboardSubmitter(func(score, floorsCleared int, class string, seed int64, runType string, victory bool) error {
+	model.SetLeaderboardSubmitter(func(score, floorsCleared, timeSeconds int, class string, seed int64, runType string, victory bool) error {
 		ctx, cancel := context.WithTimeout(context.Background(), dbSaveTimeout)
 		defer cancel()
 
@@ -878,6 +963,7 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 			Username:      user.Username,
 			Score:         score,
 			FloorsCleared: floorsCleared,
+			TimeSeconds:   timeSeconds,
 			Class:         class,
 			Seed:          seed,
 			RunType:       runType,
@@ -892,6 +978,7 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 			"user", user.Username,
 			"score", score,
 			"floors", floorsCleared,
+			"time", timeSeconds,
 			"class", class,
 			"runType", runType,
 			"victory", victory)
@@ -947,7 +1034,10 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 		return entries, playerRank, playerEntry, nil
 	})
 
-	s.sessions.Add(fingerprint, gameSession)
+	// Register session (kicks any existing session for this user)
+	if kickedSession := s.sessions.Add(fingerprint, gameSession); kickedSession != nil {
+		s.handleKickedSession(kickedSession)
+	}
 
 	wrapper := &sessionWrapper{
 		model:       model,

@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/iheanyi/devdungeon/internal/config"
 	"github.com/iheanyi/devdungeon/internal/entity"
@@ -2470,7 +2471,7 @@ func TestLeaderboardSubmitterCalledWithCorrectRunType(t *testing.T) {
 
 	// Track what gets submitted using a channel for synchronization
 	submittedCh := make(chan string, 1)
-	m.leaderboardSubmitter = func(score, floors int, class string, seed int64, runType string, victory bool) error {
+	m.leaderboardSubmitter = func(score, floors, timeSeconds int, class string, seed int64, runType string, victory bool) error {
 		submittedCh <- runType
 		return nil
 	}
@@ -2537,5 +2538,195 @@ func TestSaveDataRunTypePreservedThroughFullCycle(t *testing.T) {
 	// Verify RunType is preserved
 	if m.currentRunType != "daily" {
 		t.Errorf("RunType should be preserved as 'daily' after continue, got '%s'", m.currentRunType)
+	}
+}
+
+// === Time Tracking Tests ===
+
+func TestTimeTrackingInitializedOnNewGame(t *testing.T) {
+	m := newTestModel()
+	m.config = config.DefaultConfig()
+
+	// Start a new game
+	m.startNewGame(entity.ClassInit)
+
+	// Time tracking fields should be initialized
+	if m.runStartTime.IsZero() {
+		t.Error("runStartTime should be set after starting new game")
+	}
+	if m.sessionStartTime.IsZero() {
+		t.Error("sessionStartTime should be set after starting new game")
+	}
+	if m.elapsedSeconds != 0 {
+		t.Errorf("elapsedSeconds should be 0 for new game, got %d", m.elapsedSeconds)
+	}
+}
+
+func TestGetSaveDataIncludesTimeTracking(t *testing.T) {
+	m := newTestModel()
+	m.config = config.DefaultConfig()
+
+	// Start a new game
+	m.startNewGame(entity.ClassInit)
+
+	// Get save data
+	saveData := m.GetSaveData()
+	if saveData == nil {
+		t.Fatal("expected save data, got nil")
+	}
+
+	// RunStartTime should be set
+	if saveData.RunStartTime.IsZero() {
+		t.Error("RunStartTime should be set in save data")
+	}
+
+	// ElapsedSeconds should be >= 0 (might be 0 for a quick test)
+	if saveData.ElapsedSeconds < 0 {
+		t.Errorf("ElapsedSeconds should be >= 0, got %d", saveData.ElapsedSeconds)
+	}
+}
+
+func TestContinueRestoresTimeTracking(t *testing.T) {
+	m := newTestModel()
+	m.isMultiplayer = true
+
+	// Create a save with time tracking
+	pendingSave := &save.SaveData{
+		Version:        save.Version,
+		MasterSeed:     12345,
+		CurrentDepth:   1,
+		RunType:        "standard",
+		RunStartTime:   time.Now().UTC().Add(-1 * time.Hour), // Started 1 hour ago
+		ElapsedSeconds: 300,                                  // 5 minutes accumulated
+		Player: save.PlayerData{
+			Class:     entity.ClassInit,
+			Level:     1,
+			XP:        0,
+			XPToLevel: 100,
+			Stats: types.Stats{
+				RAM:  100,
+				CPU:  10,
+				FD:   16,
+				NICE: 10,
+				UID:  1000,
+			},
+			MaxStats: types.MaxStats{
+				MaxRAM: 100,
+				MaxFD:  16,
+			},
+			Position:    types.Position{X: 5, Y: 5},
+			Inventory:   []save.ItemData{},
+			SkillStates: []save.SkillState{{ID: "fork", CurrentCD: 0}},
+		},
+		FloorStates:  []save.FloorState{},
+		MetaProgress: save.MetaProgress{UnlockedClasses: []string{"init"}},
+	}
+
+	m.SetHasValidSave(true, pendingSave)
+
+	// Continue the game
+	m.continueGame()
+
+	// Time tracking should be restored
+	if m.runStartTime.IsZero() {
+		t.Error("runStartTime should be restored from save")
+	}
+	if m.elapsedSeconds != 300 {
+		t.Errorf("elapsedSeconds should be 300 from save, got %d", m.elapsedSeconds)
+	}
+	if m.sessionStartTime.IsZero() {
+		t.Error("sessionStartTime should be set for new session")
+	}
+}
+
+func TestGetTotalPlayTime(t *testing.T) {
+	m := newTestModel()
+	m.config = config.DefaultConfig()
+
+	// Start a new game
+	m.startNewGame(entity.ClassInit)
+
+	// Set some previous elapsed time
+	m.elapsedSeconds = 60 // 1 minute from previous sessions
+
+	// Get total play time
+	totalTime := m.GetTotalPlayTime()
+
+	// Should be at least the previous elapsed time
+	if totalTime < 60 {
+		t.Errorf("expected total time >= 60, got %d", totalTime)
+	}
+}
+
+func TestGetTotalPlayTimeWithZeroSession(t *testing.T) {
+	m := newTestModel()
+
+	// Without starting a session (sessionStartTime is zero)
+	m.elapsedSeconds = 120
+
+	totalTime := m.GetTotalPlayTime()
+
+	// Should return just the elapsed seconds when no active session
+	if totalTime != 120 {
+		t.Errorf("expected total time 120 with no active session, got %d", totalTime)
+	}
+}
+
+func TestTimeTrackingAccumulatesAcrossSaves(t *testing.T) {
+	m := newTestModel()
+	m.config = config.DefaultConfig()
+
+	// Start a new game
+	m.startNewGame(entity.ClassInit)
+
+	// Simulate some elapsed time from a previous session
+	m.elapsedSeconds = 100
+
+	// Get save data
+	saveData := m.GetSaveData()
+	if saveData == nil {
+		t.Fatal("expected save data")
+	}
+
+	// ElapsedSeconds in save should include accumulated time
+	// Note: since test runs quickly, current session adds ~0 seconds
+	if saveData.ElapsedSeconds < 100 {
+		t.Errorf("ElapsedSeconds should be >= 100, got %d", saveData.ElapsedSeconds)
+	}
+}
+
+func TestLeaderboardSubmitterReceivesTimeSeconds(t *testing.T) {
+	m := newTestModel()
+	m.isMultiplayer = true
+	m.currentRunType = "standard"
+
+	// Track submitted time
+	var submittedTime int
+	submittedCh := make(chan struct{}, 1)
+	m.leaderboardSubmitter = func(score, floors, timeSeconds int, class string, seed int64, runType string, victory bool) error {
+		submittedTime = timeSeconds
+		submittedCh <- struct{}{}
+		return nil
+	}
+
+	// Setup game state
+	cfg := config.DefaultConfig()
+	engine := game.NewEngine(cfg, 12345)
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+	m.engine = engine
+	m.player = engine.Player()
+	m.elapsedSeconds = 180 // 3 minutes from previous sessions
+
+	// Submit to leaderboard
+	m.submitToLeaderboard(false)
+
+	// Wait for submission
+	<-submittedCh
+
+	// Time should be passed (at least the accumulated time)
+	if submittedTime < 180 {
+		t.Errorf("expected submitted time >= 180, got %d", submittedTime)
 	}
 }

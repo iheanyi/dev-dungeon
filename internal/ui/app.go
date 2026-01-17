@@ -212,6 +212,11 @@ type Model struct {
 	dailySeed           int64               // Today's daily seed (set by session)
 	submitDailyCallback SubmitDailyCallback // Callback to submit abandoned daily run
 
+	// Run time tracking
+	runStartTime     time.Time // When this run first started (persisted across saves)
+	sessionStartTime time.Time // When this session started (for calculating current session duration)
+	elapsedSeconds   int       // Accumulated play time from previous sessions
+
 	// Leaderboard state
 	leaderboardEntries   []LeaderboardEntry
 	leaderboardCursor    int
@@ -296,7 +301,7 @@ type SaveCallback func() (*save.SaveData, error)
 
 // LeaderboardSubmitter is a callback to submit a score to the leaderboard.
 // Called on death or victory. Parameters: score, floorsCleared, class, seed, runType, victory.
-type LeaderboardSubmitter func(score, floorsCleared int, class string, seed int64, runType string, victory bool) error
+type LeaderboardSubmitter func(score, floorsCleared, timeSeconds int, class string, seed int64, runType string, victory bool) error
 
 // SubmitDailyCallback submits an abandoned daily run to leaderboard.
 // Called with the save data when player starts a new game while having an in-progress daily.
@@ -542,7 +547,24 @@ func (m *Model) GetSaveData() *save.SaveData {
 		runType = "standard"
 	}
 	saveData.RunType = runType
+
+	// Include time tracking in save data
+	saveData.RunStartTime = m.runStartTime
+	// Calculate total elapsed: previous sessions + current session duration
+	currentSessionDuration := int(time.Since(m.sessionStartTime).Seconds())
+	saveData.ElapsedSeconds = m.elapsedSeconds + currentSessionDuration
+
 	return saveData
+}
+
+// GetTotalPlayTime returns the total play time for the current run in seconds.
+// This includes all previous sessions plus the current session.
+func (m *Model) GetTotalPlayTime() int {
+	if m.sessionStartTime.IsZero() {
+		return m.elapsedSeconds
+	}
+	currentSessionDuration := int(time.Since(m.sessionStartTime).Seconds())
+	return m.elapsedSeconds + currentSessionDuration
 }
 
 // SetMultiplayerMode configures the model for multiplayer (SSH) sessions.
@@ -655,6 +677,9 @@ func (m *Model) submitToLeaderboard(victory bool) {
 		score += 1000 // Victory bonus
 	}
 
+	// Get total play time for this run
+	timeSeconds := m.GetTotalPlayTime()
+
 	// Get game info
 	class := string(m.player.Class)
 	seed := m.engine.MasterSeed()
@@ -665,7 +690,7 @@ func (m *Model) submitToLeaderboard(victory bool) {
 
 	// Submit asynchronously (don't block the UI)
 	go func() {
-		if err := m.leaderboardSubmitter(score, floorsCleared, class, seed, runType, victory); err != nil {
+		if err := m.leaderboardSubmitter(score, floorsCleared, timeSeconds, class, seed, runType, victory); err != nil {
 			// Log error but don't disrupt the game
 			// The error is already logged in the server callback
 		}
@@ -956,6 +981,13 @@ func (m *Model) continueGame() {
 		} else {
 			m.currentRunType = "standard"
 		}
+		// Restore time tracking from save
+		m.runStartTime = m.pendingSave.RunStartTime
+		m.elapsedSeconds = m.pendingSave.ElapsedSeconds
+		// If no run start time in old save, use now as fallback
+		if m.runStartTime.IsZero() {
+			m.runStartTime = time.Now().UTC()
+		}
 	} else {
 		// Try to load from local files (single player mode)
 		if err := m.engine.LoadLatestSave(); err != nil {
@@ -963,7 +995,13 @@ func (m *Model) continueGame() {
 			return
 		}
 		m.currentRunType = "standard" // Local saves don't track run type
+		// Local saves don't have time tracking, start fresh
+		m.runStartTime = time.Now().UTC()
+		m.elapsedSeconds = 0
 	}
+
+	// Start a new session timer
+	m.sessionStartTime = time.Now().UTC()
 
 	// Get the player from the engine
 	m.player = m.engine.Player()
@@ -1012,6 +1050,12 @@ func (m *Model) startNewGame(playerClass entity.PlayerClass) {
 	// Reset run exit codes tracking
 	m.runExitCodesEarned = 0
 	m.runExitCodesBreakdown = nil
+
+	// Initialize time tracking for this new run
+	now := time.Now().UTC()
+	m.runStartTime = now
+	m.sessionStartTime = now
+	m.elapsedSeconds = 0
 
 	// Get the player from the engine
 	m.player = m.engine.Player()

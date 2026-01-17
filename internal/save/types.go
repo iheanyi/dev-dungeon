@@ -13,14 +13,16 @@ const Version = 1
 
 // SaveData represents a complete game save.
 type SaveData struct {
-	Version      int          `json:"version"`
-	MasterSeed   int64        `json:"master_seed"`
-	Timestamp    time.Time    `json:"timestamp"`
-	Player       PlayerData   `json:"player"`
-	CurrentDepth int          `json:"current_depth"`
-	FloorStates  []FloorState `json:"floor_states"`
-	MetaProgress MetaProgress `json:"meta_progress"`
-	RunType      string       `json:"run_type,omitempty"` // "standard", "daily", or "seeded"
+	Version        int          `json:"version"`
+	MasterSeed     int64        `json:"master_seed"`
+	Timestamp      time.Time    `json:"timestamp"`
+	Player         PlayerData   `json:"player"`
+	CurrentDepth   int          `json:"current_depth"`
+	FloorStates    []FloorState `json:"floor_states"`
+	MetaProgress   MetaProgress `json:"meta_progress"`
+	RunType        string       `json:"run_type,omitempty"`        // "standard", "daily", or "seeded"
+	RunStartTime   time.Time    `json:"run_start_time,omitempty"`  // When this run first started
+	ElapsedSeconds int          `json:"elapsed_seconds,omitempty"` // Total play time accumulated across sessions
 }
 
 // PlayerData represents saved player state.
