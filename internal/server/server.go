@@ -361,7 +361,27 @@ func isKeyTypeSupported(key ssh.PublicKey) bool {
 
 // gameMiddleware returns the Bubble Tea middleware for the game.
 func (s *Server) gameMiddleware() wish.Middleware {
-	return bubbletea.Middleware(func(sess ssh.Session) (tea.Model, []tea.ProgramOption) {
+	// Wrap the bubbletea middleware to add a goodbye message
+	btMiddleware := bubbletea.Middleware(func(sess ssh.Session) (tea.Model, []tea.ProgramOption) {
 		return s.newGameSession(sess)
 	})
+
+	return func(next ssh.Handler) ssh.Handler {
+		// Get the bubbletea handler
+		btHandler := btMiddleware(next)
+
+		return func(sess ssh.Session) {
+			// Run the game
+			btHandler(sess)
+
+			// After the game ends, show goodbye message
+			goodbye := "\r\n\033[1;32m" + // Bold green
+				"╔════════════════════════════════════════╗\r\n" +
+				"║   Thanks for playing /dev/dungeon!     ║\r\n" +
+				"║   Your progress has been saved.        ║\r\n" +
+				"╚════════════════════════════════════════╝\r\n" +
+				"\033[0m" // Reset
+			sess.Write([]byte(goodbye))
+		}
+	}
 }

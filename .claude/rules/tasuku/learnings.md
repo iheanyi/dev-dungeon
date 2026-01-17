@@ -20,4 +20,5 @@ _Auto-synced from .tasuku/context/learnings.md_
 - Equipment slots with the same EquipSlot enum value need auto-fill logic to find the next available slot. Without this, equipping two items of the same slot type will overwrite the first one instead of filling the second slot.
 - Go 1.23 doesn't have the covdata tool required for -covermode=atomic. Use default coverage mode or upgrade to Go 1.24+ for atomic coverage in CI.
 - This project uses PlanetScale Postgres (not MySQL). PlanetScale now offers Postgres, not just MySQL. The DATABASE_URL points to PlanetScale's Postgres service.
+- When golang-migrate gets stuck in a dirty state: (1) Add --migrate-force flag or MIGRATE_FORCE_VERSION env var support, (2) Deploy with force version set to last clean version, (3) Remove the force flag after successful migration. Complex PL/pgSQL migrations can fail mid-way and leave dirty state - prefer simple SQL or handle in application code.
 

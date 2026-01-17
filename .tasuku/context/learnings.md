@@ -39,3 +39,6 @@ When using pendingSave pattern for multiplayer saves, always update pendingSave 
 ## 30690c - 2026-01-17T02:51:58Z
 This project uses PlanetScale Postgres (not MySQL). PlanetScale now offers Postgres, not just MySQL. The DATABASE_URL points to PlanetScale's Postgres service.
 
+## 6c83bb - 2026-01-17T02:56:32Z
+When golang-migrate gets stuck in a dirty state: (1) Add --migrate-force flag or MIGRATE_FORCE_VERSION env var support, (2) Deploy with force version set to last clean version, (3) Remove the force flag after successful migration. Complex PL/pgSQL migrations can fail mid-way and leave dirty state - prefer simple SQL or handle in application code.
+
