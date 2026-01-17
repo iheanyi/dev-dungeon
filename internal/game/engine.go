@@ -1050,16 +1050,49 @@ func (e *Engine) toSaveData() *save.SaveData {
 func (e *Engine) buildFloorStates() []save.FloorState {
 	var states []save.FloorState
 
-	// For now, just save current floor state
-	// In the future, track all visited floors
+	// Build state for current floor (includes explored tiles)
 	if e.world.CurrentFloor != nil {
 		state := save.FloorState{
 			Depth:         e.world.CurrentDepth,
 			ExploredTiles: e.getExploredTiles(),
-			DeadEnemies:   []string{}, // Track killed enemies
-			LootedItems:   []string{}, // Track picked up items
+			DeadEnemies:   e.world.GetRemovedEnemies(e.world.CurrentDepth),
+			LootedItems:   e.world.GetRemovedItems(e.world.CurrentDepth),
+		}
+		// Ensure non-nil slices for JSON
+		if state.DeadEnemies == nil {
+			state.DeadEnemies = []string{}
+		}
+		if state.LootedItems == nil {
+			state.LootedItems = []string{}
 		}
 		states = append(states, state)
+	}
+
+	// Also save deltas for other visited floors (from tracking)
+	// This ensures enemies killed on floor 1 stay dead even after descending
+	if e.world.RemovedEnemies != nil || e.world.RemovedItems != nil {
+		for depth := 1; depth <= 8; depth++ {
+			if depth == e.world.CurrentDepth {
+				continue // Already added above
+			}
+			enemies := e.world.GetRemovedEnemies(depth)
+			items := e.world.GetRemovedItems(depth)
+			if len(enemies) > 0 || len(items) > 0 {
+				state := save.FloorState{
+					Depth:         depth,
+					ExploredTiles: []types.Position{}, // No explored tiles for non-current floors
+					DeadEnemies:   enemies,
+					LootedItems:   items,
+				}
+				if state.DeadEnemies == nil {
+					state.DeadEnemies = []string{}
+				}
+				if state.LootedItems == nil {
+					state.LootedItems = []string{}
+				}
+				states = append(states, state)
+			}
+		}
 	}
 
 	return states

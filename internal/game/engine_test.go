@@ -1602,3 +1602,154 @@ func TestMetaProgression_E2E(t *testing.T) {
 		t.Errorf("final DeepestFloor = %d, want 5", finalMeta.DeepestFloor)
 	}
 }
+
+// TestFloorDeltaTracking_E2E verifies that killed enemies and looted items are
+// tracked during gameplay and correctly saved to the floor state deltas.
+func TestFloorDeltaTracking_E2E(t *testing.T) {
+	tempDir := t.TempDir()
+	saveCfg := save.Config{
+		SaveDir:          tempDir,
+		AutoSaveInterval: 1 * time.Second,
+		MinSaveInterval:  0,
+	}
+	saveMgr, err := save.NewManager(saveCfg)
+	if err != nil {
+		t.Fatalf("failed to create save manager: %v", err)
+	}
+	saveMgr.Start()
+	defer saveMgr.Stop()
+
+	cfg := config.DefaultConfig()
+	engine := NewEngine(cfg, 44444)
+	engine.saveManager = saveMgr
+
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("StartNewGame failed: %v", err)
+	}
+
+	// Find enemies and items on the floor
+	if len(engine.world.Enemies) == 0 {
+		t.Skip("no enemies on floor to test with")
+	}
+	if len(engine.world.Items) == 0 {
+		t.Skip("no items on floor to test with")
+	}
+
+	// Record IDs before removal
+	enemyToKill := engine.world.Enemies[0].ID()
+	itemToLoot := engine.world.Items[0].ID()
+
+	// Simulate killing enemy (via world.RemoveEnemy which tracks)
+	engine.world.RemoveEnemy(enemyToKill)
+
+	// Simulate looting item (via world.RemoveItem which tracks)
+	engine.world.RemoveItem(itemToLoot)
+
+	// Verify tracking recorded the removals
+	removedEnemies := engine.world.GetRemovedEnemies(1)
+	if len(removedEnemies) == 0 {
+		t.Error("killed enemy should be tracked in RemovedEnemies")
+	} else {
+		found := false
+		for _, id := range removedEnemies {
+			if id == enemyToKill {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("enemy %s should be in RemovedEnemies", enemyToKill)
+		}
+	}
+
+	removedItems := engine.world.GetRemovedItems(1)
+	if len(removedItems) == 0 {
+		t.Error("looted item should be tracked in RemovedItems")
+	} else {
+		found := false
+		for _, id := range removedItems {
+			if id == itemToLoot {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("item %s should be in RemovedItems", itemToLoot)
+		}
+	}
+
+	// Save to file
+	if err := engine.SaveSync(save.TriggerManual); err != nil {
+		t.Fatalf("SaveSync failed: %v", err)
+	}
+
+	// Load the save file directly to verify floor state deltas
+	loadedSave, err := saveMgr.LoadLatest()
+	if err != nil {
+		t.Fatalf("LoadLatest failed: %v", err)
+	}
+	if loadedSave == nil {
+		t.Fatal("save should exist")
+	}
+
+	// Find floor 1 state in save data
+	var floor1State *save.FloorState
+	for i := range loadedSave.FloorStates {
+		if loadedSave.FloorStates[i].Depth == 1 {
+			floor1State = &loadedSave.FloorStates[i]
+			break
+		}
+	}
+	if floor1State == nil {
+		t.Fatal("floor 1 state should be in save data")
+	}
+
+	// Verify dead enemy is in floor state
+	foundDeadEnemy := false
+	for _, id := range floor1State.DeadEnemies {
+		if id == enemyToKill {
+			foundDeadEnemy = true
+			break
+		}
+	}
+	if !foundDeadEnemy {
+		t.Errorf("dead enemy %s should be in save file floor state DeadEnemies", enemyToKill)
+	}
+
+	// Verify looted item is in floor state
+	foundLootedItem := false
+	for _, id := range floor1State.LootedItems {
+		if id == itemToLoot {
+			foundLootedItem = true
+			break
+		}
+	}
+	if !foundLootedItem {
+		t.Errorf("looted item %s should be in save file floor state LootedItems", itemToLoot)
+	}
+
+	// Now verify the full round-trip: load and confirm entities are still gone
+	newEngine := NewEngine(cfg, 44444) // Same seed
+	newEngine.saveManager = saveMgr
+	if err := newEngine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("StartNewGame for load failed: %v", err)
+	}
+
+	// Before load, entities should be regenerated
+	if newEngine.world.GetEnemyByID(enemyToKill) == nil {
+		t.Skip("enemy not regenerated - seed may vary")
+	}
+
+	// Load the save
+	if err := newEngine.LoadLatestSave(); err != nil {
+		t.Fatalf("LoadLatestSave failed: %v", err)
+	}
+
+	// After load, dead enemy and looted item should be gone
+	if newEngine.world.GetEnemyByID(enemyToKill) != nil {
+		t.Error("dead enemy should be removed after loading save")
+	}
+	if newEngine.world.GetItemByID(itemToLoot) != nil {
+		t.Error("looted item should be removed after loading save")
+	}
+}

@@ -13,6 +13,11 @@ type GameWorld struct {
 	Items        []*entity.Item      // Items on the current floor
 	FloorCache   map[int]*FloorState // Cache of visited floors with their state
 	CurrentDepth int                 // Current depth (1 = first floor)
+
+	// Track removed entities for save/load floor deltas
+	// Key is floor depth, value is list of entity IDs removed from that floor
+	RemovedEnemies map[int][]string // Dead enemy IDs by floor depth
+	RemovedItems   map[int][]string // Looted item IDs by floor depth
 }
 
 // FloorState stores the complete state of a floor for caching.
@@ -25,10 +30,12 @@ type FloorState struct {
 // NewGameWorld creates a new empty game world.
 func NewGameWorld() *GameWorld {
 	return &GameWorld{
-		Enemies:      make([]*entity.Enemy, 0),
-		Items:        make([]*entity.Item, 0),
-		FloorCache:   make(map[int]*FloorState),
-		CurrentDepth: 0,
+		Enemies:        make([]*entity.Enemy, 0),
+		Items:          make([]*entity.Item, 0),
+		FloorCache:     make(map[int]*FloorState),
+		CurrentDepth:   0,
+		RemovedEnemies: make(map[int][]string),
+		RemovedItems:   make(map[int][]string),
 	}
 }
 
@@ -76,10 +83,16 @@ func (w *GameWorld) AddEnemy(enemy *entity.Enemy) {
 }
 
 // RemoveEnemy removes an enemy from the current floor by ID.
+// Also tracks the removal for save/load floor deltas.
 func (w *GameWorld) RemoveEnemy(id string) bool {
 	for i, e := range w.Enemies {
 		if e.ID() == id {
 			w.Enemies = append(w.Enemies[:i], w.Enemies[i+1:]...)
+			// Track removal for floor deltas
+			if w.RemovedEnemies == nil {
+				w.RemovedEnemies = make(map[int][]string)
+			}
+			w.RemovedEnemies[w.CurrentDepth] = append(w.RemovedEnemies[w.CurrentDepth], id)
 			return true
 		}
 	}
@@ -112,10 +125,16 @@ func (w *GameWorld) AddItem(item *entity.Item) {
 }
 
 // RemoveItem removes an item from the current floor by ID.
+// Also tracks the removal for save/load floor deltas.
 func (w *GameWorld) RemoveItem(id string) bool {
 	for i, item := range w.Items {
 		if item.ID() == id {
 			w.Items = append(w.Items[:i], w.Items[i+1:]...)
+			// Track removal for floor deltas
+			if w.RemovedItems == nil {
+				w.RemovedItems = make(map[int][]string)
+			}
+			w.RemovedItems[w.CurrentDepth] = append(w.RemovedItems[w.CurrentDepth], id)
 			return true
 		}
 	}
@@ -140,6 +159,42 @@ func (w *GameWorld) GetItemByID(id string) *entity.Item {
 		}
 	}
 	return nil
+}
+
+// GetRemovedEnemies returns the list of enemy IDs removed from a floor.
+func (w *GameWorld) GetRemovedEnemies(depth int) []string {
+	if w.RemovedEnemies == nil {
+		return nil
+	}
+	return w.RemovedEnemies[depth]
+}
+
+// GetRemovedItems returns the list of item IDs removed from a floor.
+func (w *GameWorld) GetRemovedItems(depth int) []string {
+	if w.RemovedItems == nil {
+		return nil
+	}
+	return w.RemovedItems[depth]
+}
+
+// SetRemovedEntities sets the removed entities from saved floor state.
+// Used when loading a save to restore tracking state.
+func (w *GameWorld) SetRemovedEntities(depth int, enemies []string, items []string) {
+	if w.RemovedEnemies == nil {
+		w.RemovedEnemies = make(map[int][]string)
+	}
+	if w.RemovedItems == nil {
+		w.RemovedItems = make(map[int][]string)
+	}
+	w.RemovedEnemies[depth] = enemies
+	w.RemovedItems[depth] = items
+}
+
+// ClearRemovedEntities clears all entity removal tracking.
+// Used when starting a new game.
+func (w *GameWorld) ClearRemovedEntities() {
+	w.RemovedEnemies = make(map[int][]string)
+	w.RemovedItems = make(map[int][]string)
 }
 
 // IsPositionBlocked checks if a position is blocked by walls or entities.
