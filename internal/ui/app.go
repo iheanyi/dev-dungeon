@@ -201,10 +201,12 @@ type Model struct {
 	currentRunType string // "standard", "daily", or "seeded" for current game
 
 	// Save state
-	hasValidSave  bool           // True if a valid save file exists
-	pendingSave   *save.SaveData // Pending save data from DB (multiplayer) to load on Continue
-	quitRequested bool           // True when user wants to quit (for sessionWrapper to intercept)
-	saveCallback  SaveCallback   // Callback to save game (set by server for multiplayer)
+	hasValidSave        bool                // True if a valid save file exists
+	pendingSave         *save.SaveData      // Pending save data from DB (multiplayer) to load on Continue
+	quitRequested       bool                // True when user wants to quit (for sessionWrapper to intercept)
+	saveCallback        SaveCallback        // Callback to save game (set by server for multiplayer)
+	clearSaveCallback   ClearSaveCallback   // Callback to delete save (set by server for multiplayer)
+	metaProgressUpdater MetaProgressUpdater // Callback to update meta progress (set by server for multiplayer)
 
 	// Daily run status (for preventing duplicate daily runs)
 	dailyRunCompleted   bool                // True if player has leaderboard entry for today's daily
@@ -300,12 +302,21 @@ type DailyLeaderboardFetcher func(date time.Time, limit int, userID int) ([]Lead
 type SaveCallback func() (*save.SaveData, error)
 
 // LeaderboardSubmitter is a callback to submit a score to the leaderboard.
-// Called on death or victory. Parameters: score, floorsCleared, class, seed, runType, victory.
+// Called on death or victory. Parameters: score, floorsCleared, timeSeconds, class, seed, runType, victory.
 type LeaderboardSubmitter func(score, floorsCleared, timeSeconds int, class string, seed int64, runType string, victory bool) error
 
 // SubmitDailyCallback submits an abandoned daily run to leaderboard.
 // Called with the save data when player starts a new game while having an in-progress daily.
 type SubmitDailyCallback func(saveData *save.SaveData) error
+
+// ClearSaveCallback is a callback to delete the game save.
+// Called on death or victory when the run ends and save should be deleted.
+type ClearSaveCallback func() error
+
+// MetaProgressUpdater is a callback to update meta progress in the database.
+// Called on death or victory to persist exit codes earned.
+// Parameters: exitCodesEarned, victory, maxDepthReached
+type MetaProgressUpdater func(exitCodesEarned int, victory bool, maxDepthReached int) error
 
 // Styles holds all UI styles.
 type Styles struct {
@@ -596,6 +607,18 @@ func (m *Model) SetLeaderboardSubmitter(submitter LeaderboardSubmitter) {
 // This is typically set by the server for multiplayer sessions.
 func (m *Model) SetSaveCallback(callback SaveCallback) {
 	m.saveCallback = callback
+}
+
+// SetClearSaveCallback sets the callback function for deleting the game save.
+// This is called on death or victory when the run ends.
+func (m *Model) SetClearSaveCallback(callback ClearSaveCallback) {
+	m.clearSaveCallback = callback
+}
+
+// SetMetaProgressUpdater sets the callback function for updating meta progress.
+// This is used by the server for multiplayer sessions to persist exit codes.
+func (m *Model) SetMetaProgressUpdater(updater MetaProgressUpdater) {
+	m.metaProgressUpdater = updater
 }
 
 // SetHasValidSave sets whether a valid save exists and optionally stores the save data.
@@ -1391,10 +1414,7 @@ func (m *Model) executeCombatAction(key string) (tea.Model, tea.Cmd) {
 					m.combatLog = append(m.combatLog, "[GOD MODE] Damage negated!")
 				} else {
 					m.endCombat(false)
-					m.awardRunExitCodes(false)   // Award exit codes on death
-					m.submitToLeaderboard(false) // Submit score on death
-					m.currentView = ViewGameOver
-					m.gameState = types.StateGameOver
+					m.finishRun(false) // Handle all death logic
 					return m, nil
 				}
 			}
@@ -1444,10 +1464,7 @@ func (m *Model) executeSkill(skillIdx int) (tea.Model, tea.Cmd) {
 					m.combatLog = append(m.combatLog, "[GOD MODE] Damage negated!")
 				} else {
 					m.endCombat(false)
-					m.awardRunExitCodes(false)   // Award exit codes on death
-					m.submitToLeaderboard(false) // Submit score on death
-					m.currentView = ViewGameOver
-					m.gameState = types.StateGameOver
+					m.finishRun(false) // Handle all death logic
 					return m, nil
 				}
 			}
@@ -1475,11 +1492,7 @@ func (m *Model) endCombat(victory bool) {
 
 	// Check for game victory (boss killed)
 	if bossKilled {
-		m.awardRunExitCodes(true)   // Award exit codes on victory
-		m.submitToLeaderboard(true) // Submit score on victory
-		m.currentView = ViewVictory
-		m.gameState = types.StateVictory
-		m.statusMsg = "KERNEL PANIC DEFEATED! You saved the system!"
+		m.finishRun(true) // Handle all victory logic
 		return
 	}
 
@@ -3782,6 +3795,24 @@ func (m *Model) awardRunExitCodes(victory bool) {
 	m.runExitCodesEarned = earned
 	m.runExitCodesBreakdown = breakdown
 
+	// Get max depth for multiplayer callback
+	maxDepth := 0
+	if m.engine != nil {
+		stats := m.engine.GetRunStats()
+		if stats != nil {
+			maxDepth = stats.MaxDepthReached
+		}
+	}
+
+	// Use multiplayer callback if available (server handles persistence)
+	if m.metaProgressUpdater != nil {
+		if err := m.metaProgressUpdater(earned, victory, maxDepth); err != nil {
+			// Log error but don't fail - exit codes are still displayed this session
+		}
+		return
+	}
+
+	// Fallback to local save for single-player mode
 	if m.metaProgress == nil || m.saveManager == nil {
 		return
 	}
@@ -3796,15 +3827,53 @@ func (m *Model) awardRunExitCodes(victory bool) {
 	}
 
 	// Update deepest floor
-	if m.engine != nil {
-		stats := m.engine.GetRunStats()
-		if stats != nil && stats.MaxDepthReached > m.metaProgress.DeepestFloor {
-			m.metaProgress.DeepestFloor = stats.MaxDepthReached
-		}
+	if maxDepth > m.metaProgress.DeepestFloor {
+		m.metaProgress.DeepestFloor = maxDepth
 	}
 
 	// Save meta progress
 	m.saveManager.SaveMetaProgress(m.metaProgress)
+}
+
+// finishRun handles all end-of-run logic for both death and victory.
+// This centralizes exit codes, leaderboard submission, and save cleanup.
+func (m *Model) finishRun(victory bool) {
+	m.awardRunExitCodes(victory)
+	m.submitToLeaderboard(victory)
+	m.clearSaveOnRunEnd()
+
+	if victory {
+		m.currentView = ViewVictory
+		m.gameState = types.StateVictory
+		m.statusMsg = "KERNEL PANIC DEFEATED! You saved the system!"
+	} else {
+		m.currentView = ViewGameOver
+		m.gameState = types.StateGameOver
+	}
+}
+
+// clearSaveOnRunEnd clears the save state when a run ends (death or victory).
+// This prevents the Continue button from loading a dead game.
+func (m *Model) clearSaveOnRunEnd() {
+	// Clear in-memory state
+	m.hasValidSave = false
+	m.pendingSave = nil
+
+	// Use multiplayer callback if available (server handles DB deletion)
+	if m.clearSaveCallback != nil {
+		if err := m.clearSaveCallback(); err != nil {
+			// Log error but don't fail - the important thing is hasValidSave is false
+		}
+		return
+	}
+
+	// Fallback to local save deletion for single-player mode
+	if m.saveManager != nil && m.engine != nil {
+		seed := m.engine.MasterSeed()
+		if seed != 0 {
+			m.saveManager.DeleteSave(seed)
+		}
+	}
 }
 
 // --- Leaderboard Functions ---

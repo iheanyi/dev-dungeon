@@ -2730,3 +2730,161 @@ func TestLeaderboardSubmitterReceivesTimeSeconds(t *testing.T) {
 		t.Errorf("expected submitted time >= 180, got %d", submittedTime)
 	}
 }
+
+// === Continue After Death Regression Tests ===
+
+// TestFinishRunClearsSaveOnDeath verifies that when a player dies,
+// the save state is properly cleared so they cannot Continue.
+// This is a regression test for the bug where Continue was available after death.
+func TestFinishRunClearsSaveOnDeath(t *testing.T) {
+	m := newTestModel()
+
+	cfg := config.DefaultConfig()
+	engine := game.NewEngine(cfg, 12345)
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+	m.engine = engine
+	m.player = engine.Player()
+	m.currentView = ViewCombat
+	m.gameState = types.StateCombat
+
+	// Simulate having a valid save before death
+	m.hasValidSave = true
+	m.pendingSave = &save.SaveData{} // Non-nil save data
+
+	// Simulate player death
+	m.finishRun(false)
+
+	// Verify save state is cleared
+	if m.hasValidSave {
+		t.Error("hasValidSave should be false after death")
+	}
+	if m.pendingSave != nil {
+		t.Error("pendingSave should be nil after death")
+	}
+
+	// Verify view transitioned to game over
+	if m.currentView != ViewGameOver {
+		t.Errorf("currentView should be ViewGameOver after death, got %v", m.currentView)
+	}
+	if m.gameState != types.StateGameOver {
+		t.Errorf("gameState should be StateGameOver after death, got %v", m.gameState)
+	}
+}
+
+// TestFinishRunClearsSaveOnVictory verifies that when a player wins,
+// the save state is properly cleared (run is over, no need for save).
+func TestFinishRunClearsSaveOnVictory(t *testing.T) {
+	m := newTestModel()
+
+	cfg := config.DefaultConfig()
+	engine := game.NewEngine(cfg, 12345)
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+	m.engine = engine
+	m.player = engine.Player()
+	m.currentView = ViewCombat
+	m.gameState = types.StateCombat
+
+	// Simulate having a valid save before victory
+	m.hasValidSave = true
+	m.pendingSave = &save.SaveData{} // Non-nil save data
+
+	// Simulate player victory
+	m.finishRun(true)
+
+	// Verify save state is cleared
+	if m.hasValidSave {
+		t.Error("hasValidSave should be false after victory")
+	}
+	if m.pendingSave != nil {
+		t.Error("pendingSave should be nil after victory")
+	}
+
+	// Verify view transitioned to victory
+	if m.currentView != ViewVictory {
+		t.Errorf("currentView should be ViewVictory after victory, got %v", m.currentView)
+	}
+	if m.gameState != types.StateVictory {
+		t.Errorf("gameState should be StateVictory after victory, got %v", m.gameState)
+	}
+}
+
+// TestFinishRunCallsClearSaveCallback verifies that the clearSaveCallback
+// is called when a run ends (for multiplayer mode).
+func TestFinishRunCallsClearSaveCallback(t *testing.T) {
+	m := newTestModel()
+
+	cfg := config.DefaultConfig()
+	engine := game.NewEngine(cfg, 12345)
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+	m.engine = engine
+	m.player = engine.Player()
+
+	// Track whether callback was called
+	callbackCalled := false
+	m.SetClearSaveCallback(func() error {
+		callbackCalled = true
+		return nil
+	})
+
+	// Simulate having a valid save
+	m.hasValidSave = true
+
+	// Simulate player death
+	m.finishRun(false)
+
+	// Verify callback was called
+	if !callbackCalled {
+		t.Error("clearSaveCallback should be called on death")
+	}
+}
+
+// TestFinishRunCallsMetaProgressUpdater verifies that the metaProgressUpdater
+// is called when a run ends (for multiplayer mode exit codes).
+func TestFinishRunCallsMetaProgressUpdater(t *testing.T) {
+	m := newTestModel()
+
+	cfg := config.DefaultConfig()
+	engine := game.NewEngine(cfg, 12345)
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+	m.engine = engine
+	m.player = engine.Player()
+
+	// Track whether callback was called and with what parameters
+	callbackCalled := false
+	var receivedVictory bool
+	m.SetMetaProgressUpdater(func(exitCodes int, victory bool, maxDepth int) error {
+		callbackCalled = true
+		receivedVictory = victory
+		return nil
+	})
+
+	// Simulate player victory
+	m.finishRun(true)
+
+	// Verify callback was called with correct victory flag
+	if !callbackCalled {
+		t.Error("metaProgressUpdater should be called on run end")
+	}
+	if !receivedVictory {
+		t.Error("metaProgressUpdater should receive victory=true for victory")
+	}
+
+	// Test again for death
+	callbackCalled = false
+	m.finishRun(false)
+
+	if !callbackCalled {
+		t.Error("metaProgressUpdater should be called on death")
+	}
+	if receivedVictory {
+		t.Error("metaProgressUpdater should receive victory=false for death")
+	}
+}
