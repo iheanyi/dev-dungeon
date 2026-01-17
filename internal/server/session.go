@@ -373,7 +373,16 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 	model.SetClearSaveCallback(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), dbSaveTimeout)
 		defer cancel()
-		return s.db.DeleteGameSave(ctx, user.ID)
+		if err := s.db.DeleteGameSave(ctx, user.ID); err != nil {
+			log.Error("Failed to delete game save on run end", "error", err, "user", user.Username)
+			monitoring.CaptureException(err, map[string]string{
+				"operation": "clear_save_on_run_end",
+				"user":      user.Username,
+			})
+			return err
+		}
+		log.Debug("Deleted game save on run end", "user", user.Username)
+		return nil
 	})
 
 	// Set up meta progress updater - called on death or victory to persist exit codes
@@ -385,6 +394,10 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 		meta, err := s.db.GetMetaProgress(ctx, user.ID)
 		if err != nil {
 			log.Error("Failed to get meta progress", "error", err, "user", user.Username)
+			monitoring.CaptureException(err, map[string]string{
+				"operation": "get_meta_progress_on_run_end",
+				"user":      user.Username,
+			})
 			return err
 		}
 		if meta == nil {
@@ -404,6 +417,13 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 
 		if err := s.db.UpdateMetaProgress(ctx, meta); err != nil {
 			log.Error("Failed to update meta progress", "error", err, "user", user.Username)
+			monitoring.CaptureException(err, map[string]string{
+				"operation":   "update_meta_progress_on_run_end",
+				"user":        user.Username,
+				"exit_codes":  fmt.Sprintf("%d", exitCodesEarned),
+				"victory":     fmt.Sprintf("%t", victory),
+				"total_codes": fmt.Sprintf("%d", meta.TotalExitCodes),
+			})
 			return err
 		}
 
@@ -1003,7 +1023,16 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 	model.SetClearSaveCallback(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), dbSaveTimeout)
 		defer cancel()
-		return s.db.DeleteGameSave(ctx, user.ID)
+		if err := s.db.DeleteGameSave(ctx, user.ID); err != nil {
+			log.Error("Failed to delete game save on run end", "error", err, "user", user.Username)
+			monitoring.CaptureException(err, map[string]string{
+				"operation": "clear_save_on_run_end",
+				"user":      user.Username,
+			})
+			return err
+		}
+		log.Debug("Deleted game save on run end", "user", user.Username)
+		return nil
 	})
 
 	// Set up meta progress updater - called on death or victory to persist exit codes
@@ -1015,6 +1044,10 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 		meta, err := s.db.GetMetaProgress(ctx, user.ID)
 		if err != nil {
 			log.Error("Failed to get meta progress", "error", err, "user", user.Username)
+			monitoring.CaptureException(err, map[string]string{
+				"operation": "get_meta_progress_on_run_end",
+				"user":      user.Username,
+			})
 			return err
 		}
 		if meta == nil {
@@ -1034,6 +1067,13 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 
 		if err := s.db.UpdateMetaProgress(ctx, meta); err != nil {
 			log.Error("Failed to update meta progress", "error", err, "user", user.Username)
+			monitoring.CaptureException(err, map[string]string{
+				"operation":   "update_meta_progress_on_run_end",
+				"user":        user.Username,
+				"exit_codes":  fmt.Sprintf("%d", exitCodesEarned),
+				"victory":     fmt.Sprintf("%t", victory),
+				"total_codes": fmt.Sprintf("%d", meta.TotalExitCodes),
+			})
 			return err
 		}
 
