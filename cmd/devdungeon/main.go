@@ -39,6 +39,7 @@ func main() {
 
 	// Database
 	databaseURL := flag.String("database-url", "", "PostgreSQL connection URL (or set DATABASE_URL env)")
+	migrateForce := flag.Int("migrate-force", -1, "Force migration version (for fixing dirty state, use -1 to skip)")
 
 	// Web base URL for magic links
 	webBaseURL := flag.String("web-base-url", "", "Base URL for web portal (or set WEB_BASE_URL env)")
@@ -70,16 +71,17 @@ func main() {
 		}
 
 		cfg := serverConfig{
-			sshEnabled:  !*httpOnly,
-			httpEnabled: !*sshOnly,
-			sshHost:     *sshHost,
-			sshPort:     *sshPort,
-			hostKeyPath: resolvedHostKeyPath,
-			httpHost:    *httpHost,
-			httpPort:    *httpPort,
-			staticDir:   *staticDir,
-			databaseURL: *databaseURL,
-			webBaseURL:  resolvedWebBaseURL,
+			sshEnabled:   !*httpOnly,
+			httpEnabled:  !*sshOnly,
+			sshHost:      *sshHost,
+			sshPort:      *sshPort,
+			hostKeyPath:  resolvedHostKeyPath,
+			httpHost:     *httpHost,
+			httpPort:     *httpPort,
+			staticDir:    *staticDir,
+			databaseURL:  *databaseURL,
+			webBaseURL:   resolvedWebBaseURL,
+			migrateForce: *migrateForce,
 		}
 		runServer(cfg)
 	} else {
@@ -88,16 +90,17 @@ func main() {
 }
 
 type serverConfig struct {
-	sshEnabled  bool
-	httpEnabled bool
-	sshHost     string
-	sshPort     string
-	hostKeyPath string
-	httpHost    string
-	httpPort    string
-	staticDir   string
-	databaseURL string
-	webBaseURL  string
+	sshEnabled   bool
+	httpEnabled  bool
+	sshHost      string
+	sshPort      string
+	hostKeyPath  string
+	httpHost     string
+	httpPort     string
+	staticDir    string
+	databaseURL  string
+	webBaseURL   string
+	migrateForce int
 }
 
 // runLocal runs the game in local single-player mode.
@@ -168,6 +171,15 @@ func runServer(cfg serverConfig) {
 		os.Exit(1)
 	}
 	defer dbClient.Close()
+
+	// Force migration version if specified (for fixing dirty state)
+	if cfg.migrateForce >= 0 {
+		log.Warn("Forcing migration version", "version", cfg.migrateForce)
+		if err := migrate.Force(dbClient.Pool(), cfg.migrateForce); err != nil {
+			fmt.Fprintf(os.Stderr, "Error forcing migration version: %v\n", err)
+			os.Exit(1)
+		}
+	}
 
 	// Run database migrations
 	log.Info("Running database migrations...")

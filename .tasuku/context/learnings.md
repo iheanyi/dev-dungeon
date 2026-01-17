@@ -36,3 +36,6 @@ When modifying Stats in tests (e.g., Stats.RAM = 150), must also update MaxStats
 ## ec9747 - 2026-01-17T02:22:33Z
 When using pendingSave pattern for multiplayer saves, always update pendingSave after successful save callbacks. Otherwise Continue will load stale session-start data instead of the latest saved state. Get save data BEFORE calling save callback (engine may be destroyed after), then store it on success.
 
+## 30690c - 2026-01-17T02:51:58Z
+This project uses PlanetScale Postgres (not MySQL). PlanetScale now offers Postgres, not just MySQL. The DATABASE_URL points to PlanetScale's Postgres service.
+

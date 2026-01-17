@@ -85,3 +85,31 @@ func Version(pool *pgxpool.Pool) (uint, bool, error) {
 
 	return m.Version()
 }
+
+// Force sets the migration version without running migrations.
+// Use this to fix a dirty database state.
+func Force(pool *pgxpool.Pool, version int) error {
+	db := stdlib.OpenDBFromPool(pool)
+
+	driver, err := postgres.WithInstance(db, &postgres.Config{})
+	if err != nil {
+		return fmt.Errorf("failed to create postgres driver: %w", err)
+	}
+
+	source, err := iofs.New(Migrations, "migrations")
+	if err != nil {
+		return fmt.Errorf("failed to create migration source: %w", err)
+	}
+
+	m, err := migrate.NewWithInstance("iofs", source, "postgres", driver)
+	if err != nil {
+		return fmt.Errorf("failed to create migrator: %w", err)
+	}
+
+	if err := m.Force(version); err != nil {
+		return fmt.Errorf("failed to force version: %w", err)
+	}
+
+	log.Info("Forced migration version", "version", version)
+	return nil
+}

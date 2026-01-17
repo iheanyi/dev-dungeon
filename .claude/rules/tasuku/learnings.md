@@ -19,4 +19,5 @@ _Auto-synced from .tasuku/context/learnings.md_
 - For Linux-themed games: RAM as health (OOM = death), FD as mana (limited resource), NICE as speed (accurate!), UID as power level (0 = root = god). These mappings are both thematic AND technically accurate.
 - Equipment slots with the same EquipSlot enum value need auto-fill logic to find the next available slot. Without this, equipping two items of the same slot type will overwrite the first one instead of filling the second slot.
 - Go 1.23 doesn't have the covdata tool required for -covermode=atomic. Use default coverage mode or upgrade to Go 1.24+ for atomic coverage in CI.
+- This project uses PlanetScale Postgres (not MySQL). PlanetScale now offers Postgres, not just MySQL. The DATABASE_URL points to PlanetScale's Postgres service.
 
