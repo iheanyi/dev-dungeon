@@ -30,3 +30,9 @@ Always validate loaded player positions against current dungeon layout. Dungeon 
 ## 604540 - 2026-01-17T00:48:33Z
 Always use TemplateID (not ID()) when saving/loading items or comparing items for stacking. ID() returns unique instance identifiers that differ between item instances, while TemplateID identifies the item type for recreation and stacking.
 
+## 8cf7aa - 2026-01-17T02:11:21Z
+When modifying Stats in tests (e.g., Stats.RAM = 150), must also update MaxStats to allow the value. LoadGame validation caps stats to MaxStats bounds, so setting RAM higher than MaxRAM will silently clamp the value on load.
+
+## ec9747 - 2026-01-17T02:22:33Z
+When using pendingSave pattern for multiplayer saves, always update pendingSave after successful save callbacks. Otherwise Continue will load stale session-start data instead of the latest saved state. Get save data BEFORE calling save callback (engine may be destroyed after), then store it on success.
+
