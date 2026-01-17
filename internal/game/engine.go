@@ -999,8 +999,10 @@ func (e *Engine) LoadGame(data *save.SaveData) error {
 	for _, floorState := range data.FloorStates {
 		if floorState.Depth == loadDepth {
 			e.applyFloorState(&floorState)
-			break
 		}
+		// Restore removal tracking for ALL floors (not just current)
+		// This ensures floor deltas persist if we descend/ascend and re-save
+		e.world.SetRemovedEntities(floorState.Depth, floorState.DeadEnemies, floorState.LootedItems)
 	}
 
 	// Set player position (reset to stairs if we capped depth or position is invalid)

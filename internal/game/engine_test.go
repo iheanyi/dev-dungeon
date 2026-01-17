@@ -1754,3 +1754,126 @@ func TestFloorDeltaTracking_E2E(t *testing.T) {
 		t.Error("looted item should be removed after loading save")
 	}
 }
+
+// TestFloorDeltasPreservedAfterLoadAndFloorChange tests that floor deltas from the save
+// are preserved in tracking maps after load, so they persist through floor changes.
+// Regression test for: floor deltas lost when saving after descending post-load.
+//
+// The bug: When loading a save that's on floor 2 with floor 1 deltas, the floor 1
+// deltas were not being restored to the tracking maps because applyFloorState was
+// only called for the current floor (floor 2).
+func TestFloorDeltasPreservedAfterLoadAndFloorChange(t *testing.T) {
+	tempDir := t.TempDir()
+	saveCfg := save.Config{
+		SaveDir:          tempDir,
+		AutoSaveInterval: 1 * time.Second,
+		MinSaveInterval:  0,
+	}
+	saveMgr, err := save.NewManager(saveCfg)
+	if err != nil {
+		t.Fatalf("failed to create save manager: %v", err)
+	}
+	saveMgr.Start()
+	defer saveMgr.Stop()
+
+	cfg := config.DefaultConfig()
+
+	// Create initial engine to get enemy ID from seeded floor 1
+	seedEngine := NewEngine(cfg, 77777)
+	if err := seedEngine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("StartNewGame failed: %v", err)
+	}
+	if len(seedEngine.world.Enemies) == 0 {
+		t.Skip("no enemies on floor 1")
+	}
+	deadEnemyID := seedEngine.world.Enemies[0].ID()
+
+	// Descend to floor 2 to get floor 2 start position
+	seedEngine.player.SetPosition(seedEngine.world.CurrentFloor.StairsDown)
+	if err := seedEngine.DescendStairs(); err != nil {
+		t.Fatalf("DescendStairs failed: %v", err)
+	}
+	floor2StartPos := seedEngine.Player().Position()
+
+	// Create save ON FLOOR 2 with floor 1 dead enemy delta
+	// This is the key scenario: loading a save where we're NOT on the floor with deltas
+	saveData := &save.SaveData{
+		Version:      save.Version,
+		MasterSeed:   77777,
+		CurrentDepth: 2, // Save is on floor 2
+		Player: save.PlayerData{
+			Class:     entity.ClassInit,
+			Level:     1,
+			XP:        0,
+			XPToLevel: 100,
+			Stats:     seedEngine.Player().Stats,
+			MaxStats:  seedEngine.Player().MaxStats,
+			Position:  floor2StartPos,
+			Inventory: []save.ItemData{},
+			Equipment: save.EquipmentData{},
+		},
+		FloorStates: []save.FloorState{
+			{
+				Depth:         1, // Floor 1 has deltas
+				ExploredTiles: []types.Position{},
+				DeadEnemies:   []string{deadEnemyID},
+				LootedItems:   []string{},
+			},
+			{
+				Depth:         2, // Floor 2 has no deltas
+				ExploredTiles: []types.Position{},
+				DeadEnemies:   []string{},
+				LootedItems:   []string{},
+			},
+		},
+	}
+	if err := saveMgr.SaveSync(saveData, save.TriggerManual); err != nil {
+		t.Fatalf("SaveSync failed: %v", err)
+	}
+
+	// Load the save (on floor 2)
+	engine := NewEngine(cfg, 77777)
+	engine.saveManager = saveMgr
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("StartNewGame failed: %v", err)
+	}
+	if err := engine.LoadLatestSave(); err != nil {
+		t.Fatalf("LoadLatestSave failed: %v", err)
+	}
+
+	// Verify we're on floor 2
+	if engine.CurrentDepth() != 2 {
+		t.Fatalf("expected to load on floor 2, got floor %d", engine.CurrentDepth())
+	}
+
+	// Verify floor 1 deltas are in tracking maps (this is the bug - they won't be)
+	// The bug: applyFloorState is only called for current floor (2), so floor 1 deltas
+	// are never restored to the tracking maps
+	removedEnemies := engine.world.GetRemovedEnemies(1)
+	if len(removedEnemies) == 0 {
+		t.Error("BUG: floor 1 dead enemies not restored to tracking maps after load on floor 2")
+	}
+
+	// Save again (on floor 2)
+	if err := engine.SaveSync(save.TriggerManual); err != nil {
+		t.Fatalf("SaveSync on floor 2 failed: %v", err)
+	}
+
+	// Load the new save to check if floor 1 deltas were preserved
+	data, err := saveMgr.LoadLatest()
+	if err != nil {
+		t.Fatalf("LoadLatest failed: %v", err)
+	}
+
+	// Check floor states include floor 1 deltas
+	foundFloor1Deltas := false
+	for _, fs := range data.FloorStates {
+		if fs.Depth == 1 && len(fs.DeadEnemies) > 0 {
+			foundFloor1Deltas = true
+			break
+		}
+	}
+	if !foundFloor1Deltas {
+		t.Error("BUG: floor 1 deltas lost after re-saving from floor 2")
+	}
+}
