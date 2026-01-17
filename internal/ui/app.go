@@ -938,11 +938,15 @@ func (m *Model) updateGame(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.engine != nil {
 			// Call save callback BEFORE destroying the engine
 			if m.saveCallback != nil {
+				// Get fresh save data BEFORE calling callback
+				// This ensures Continue uses updated data if we save again in same session
+				freshSave := m.engine.GetSaveData()
 				if err := m.saveCallback(); err != nil {
 					m.statusMsg = "Failed to save game."
 				} else {
 					m.statusMsg = "Game saved."
-					m.hasValidSave = true // Enable Continue option
+					m.hasValidSave = true     // Enable Continue option
+					m.pendingSave = freshSave // Update for next Continue in same session
 				}
 			} else {
 				m.statusMsg = "Returned to menu."
@@ -1643,11 +1647,15 @@ func (m *Model) updatePause(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.engine != nil {
 			// Call save callback BEFORE destroying the engine
 			if m.saveCallback != nil {
+				// Get fresh save data BEFORE calling callback
+				// This ensures Continue uses updated data if we save again in same session
+				freshSave := m.engine.GetSaveData()
 				if err := m.saveCallback(); err != nil {
 					m.statusMsg = "Failed to save game."
 				} else {
 					m.statusMsg = "Game saved."
-					m.hasValidSave = true // Enable Continue option
+					m.hasValidSave = true     // Enable Continue option
+					m.pendingSave = freshSave // Update for next Continue in same session
 				}
 			} else {
 				m.statusMsg = "Returned to menu."
