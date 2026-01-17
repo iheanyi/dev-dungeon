@@ -13,6 +13,8 @@ _Auto-synced from .tasuku/context/learnings.md_
 - Always use TemplateID (not ID()) when saving/loading items or comparing items for stacking. ID() returns unique instance identifiers that differ between item instances, while TemplateID identifies the item type for recreation and stacking.
 - When modifying Stats in tests (e.g., Stats.RAM = 150), must also update MaxStats to allow the value. LoadGame validation caps stats to MaxStats bounds, so setting RAM higher than MaxRAM will silently clamp the value on load.
 - When using pendingSave pattern for multiplayer saves, always update pendingSave after successful save callbacks. Otherwise Continue will load stale session-start data instead of the latest saved state. Get save data BEFORE calling save callback (engine may be destroyed after), then store it on success.
+- UI-level state (like run type) must be explicitly included in save data. The game engine's GetSaveData() only knows about engine-level state, so the UI layer needs its own GetSaveData() wrapper that adds UI-specific fields like RunType before persisting to database.
+- Always centralize end-of-run logic (death/victory) into a single finishRun() method. Duplicate code for exit codes, leaderboard submission, save cleanup leads to bugs when one path is updated but not others. The finishRun pattern makes adding new end-of-run behavior safe.
 
 ## Insights
 

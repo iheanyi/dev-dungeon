@@ -42,3 +42,9 @@ This project uses PlanetScale Postgres (not MySQL). PlanetScale now offers Postg
 ## 6c83bb - 2026-01-17T02:56:32Z
 When golang-migrate gets stuck in a dirty state: (1) Add --migrate-force flag or MIGRATE_FORCE_VERSION env var support, (2) Deploy with force version set to last clean version, (3) Remove the force flag after successful migration. Complex PL/pgSQL migrations can fail mid-way and leave dirty state - prefer simple SQL or handle in application code.
 
+## cb06d4 - 2026-01-17T15:23:07Z
+UI-level state (like run type) must be explicitly included in save data. The game engine's GetSaveData() only knows about engine-level state, so the UI layer needs its own GetSaveData() wrapper that adds UI-specific fields like RunType before persisting to database.
+
+## d559cb - 2026-01-17T15:28:09Z
+Always centralize end-of-run logic (death/victory) into a single finishRun() method. Duplicate code for exit codes, leaderboard submission, save cleanup leads to bugs when one path is updated but not others. The finishRun pattern makes adding new end-of-run behavior safe.
+

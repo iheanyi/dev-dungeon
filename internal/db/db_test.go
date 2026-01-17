@@ -306,13 +306,14 @@ func TestMemoryRepository_Leaderboard(t *testing.T) {
 	user1, _ := repo.CreateUser(ctx, "player1", "SHA256:111")
 	user2, _ := repo.CreateUser(ctx, "player2", "SHA256:222")
 
-	// Add entries
+	// Add entries (each with unique seed to test different runs)
 	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 		UserID:        user1.ID,
 		RunType:       "standard",
 		Score:         1000,
 		FloorsCleared: 8,
 		Class:         "sudo",
+		Seed:          12345,
 	})
 	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 		UserID:        user2.ID,
@@ -320,6 +321,7 @@ func TestMemoryRepository_Leaderboard(t *testing.T) {
 		Score:         500,
 		FloorsCleared: 5,
 		Class:         "bash",
+		Seed:          67890,
 	})
 	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 		UserID:        user1.ID,
@@ -327,6 +329,7 @@ func TestMemoryRepository_Leaderboard(t *testing.T) {
 		Score:         800,
 		FloorsCleared: 7,
 		Class:         "vim",
+		Seed:          11111, // Different seed for daily run
 	})
 
 	// Get all leaderboard
@@ -355,6 +358,71 @@ func TestMemoryRepository_Leaderboard(t *testing.T) {
 	entries, _ = repo.GetLeaderboard(ctx, "", 1)
 	if len(entries) != 1 {
 		t.Errorf("expected 1 entry with limit, got %d", len(entries))
+	}
+}
+
+func TestMemoryRepository_LeaderboardUpsert(t *testing.T) {
+	repo := NewMemoryRepository()
+	ctx := context.Background()
+
+	user, _ := repo.CreateUser(ctx, "player", "SHA256:111")
+
+	// Submit initial score
+	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+		UserID:        user.ID,
+		RunType:       "standard",
+		Score:         1000,
+		FloorsCleared: 5,
+		Class:         "init",
+		Seed:          12345,
+	})
+
+	// Verify entry exists
+	entries, _ := repo.GetLeaderboard(ctx, "standard", 10)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].Score != 1000 {
+		t.Errorf("expected score 1000, got %d", entries[0].Score)
+	}
+
+	// Submit lower score for same user/seed - should NOT update
+	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+		UserID:        user.ID,
+		RunType:       "standard",
+		Score:         500,
+		FloorsCleared: 3,
+		Class:         "init",
+		Seed:          12345, // Same seed
+	})
+
+	entries, _ = repo.GetLeaderboard(ctx, "standard", 10)
+	if len(entries) != 1 {
+		t.Fatalf("expected still 1 entry after lower score, got %d", len(entries))
+	}
+	if entries[0].Score != 1000 {
+		t.Errorf("score should remain 1000 after lower score submission, got %d", entries[0].Score)
+	}
+
+	// Submit higher score for same user/seed - should update
+	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+		UserID:        user.ID,
+		RunType:       "standard",
+		Score:         1500,
+		FloorsCleared: 7,
+		Class:         "init",
+		Seed:          12345, // Same seed
+	})
+
+	entries, _ = repo.GetLeaderboard(ctx, "standard", 10)
+	if len(entries) != 1 {
+		t.Fatalf("expected still 1 entry after higher score, got %d", len(entries))
+	}
+	if entries[0].Score != 1500 {
+		t.Errorf("expected score updated to 1500, got %d", entries[0].Score)
+	}
+	if entries[0].FloorsCleared != 7 {
+		t.Errorf("expected floors updated to 7, got %d", entries[0].FloorsCleared)
 	}
 }
 
@@ -643,27 +711,31 @@ func TestMemoryRepository_GetTopScores(t *testing.T) {
 	user2, _ := repo.CreateUser(ctx, "player2", "fp2")
 	user3, _ := repo.CreateUser(ctx, "player3", "fp3")
 
-	// Add leaderboard entries with different scores
+	// Add leaderboard entries with different scores and unique seeds
 	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 		UserID:  user1.ID,
 		RunType: "standard",
 		Score:   500,
+		Seed:    1001,
 	})
 	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 		UserID:  user2.ID,
 		RunType: "standard",
 		Score:   1000,
+		Seed:    1002,
 	})
 	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 		UserID:  user3.ID,
 		RunType: "standard",
 		Score:   750,
+		Seed:    1003,
 	})
 	// Add a daily run entry (different type)
 	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 		UserID:  user1.ID,
 		RunType: "daily",
 		Score:   200,
+		Seed:    2001, // Different seed for daily
 	})
 
 	// Get top scores for standard run type
@@ -692,13 +764,14 @@ func TestMemoryRepository_GetTopScoresWithLimit(t *testing.T) {
 	repo := NewMemoryRepository()
 	ctx := context.Background()
 
-	// Create user and add many entries
+	// Create user and add many entries (each with unique seed)
 	user, _ := repo.CreateUser(ctx, "player", "fp")
 	for i := 0; i < 20; i++ {
 		repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 			UserID:  user.ID,
 			RunType: "standard",
 			Score:   i * 100,
+			Seed:    int64(i + 1), // Unique seed for each entry
 		})
 	}
 

@@ -259,14 +259,29 @@ func (m *MemoryRepository) AddLeaderboardEntry(ctx context.Context, entry *Leade
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// Check for existing entry with same (user_id, seed) - UPSERT logic
+	for i, existing := range m.leaderboard {
+		if existing.UserID == entry.UserID && existing.Seed == entry.Seed {
+			// Only update if new score is higher
+			if entry.Score > existing.Score {
+				entry.ID = existing.ID
+				entry.NanoID = existing.NanoID
+				entry.CreatedAt = time.Now()
+				m.leaderboard[i] = *entry
+			}
+			return nil
+		}
+	}
+
+	// No existing entry, insert new
 	entry.ID = m.nextLeaderboardID
 	entry.NanoID = GenerateNanoID()
 	entry.CreatedAt = time.Now()
 	m.nextLeaderboardID++
 
 	// Copy the entry
-	copy := *entry
-	m.leaderboard = append(m.leaderboard, copy)
+	entryCopy := *entry
+	m.leaderboard = append(m.leaderboard, entryCopy)
 	return nil
 }
 
