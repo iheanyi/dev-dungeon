@@ -170,7 +170,6 @@ type Model struct {
 	statusMsg        string
 	messageHistory   []string // Full message history
 	messageScrollIdx int      // Current scroll position (0 = most recent)
-	showingHistory   bool     // Whether message history view is active
 
 	// Intro animation state
 	introFrame    int                // Current frame of intro
@@ -713,10 +712,8 @@ func (m *Model) submitToLeaderboard(victory bool) {
 
 	// Submit asynchronously (don't block the UI)
 	go func() {
-		if err := m.leaderboardSubmitter(score, floorsCleared, timeSeconds, class, seed, runType, victory); err != nil {
-			// Log error but don't disrupt the game
-			// The error is already logged in the server callback
-		}
+		// Error is logged in the server callback, don't disrupt the game
+		_ = m.leaderboardSubmitter(score, floorsCleared, timeSeconds, class, seed, runType, victory)
 	}()
 }
 
@@ -867,7 +864,7 @@ func (m *Model) selectMenuItem() (tea.Model, tea.Cmd) {
 				func() {
 					// Submit the abandoned daily run
 					if m.submitDailyCallback != nil && m.pendingSave != nil {
-						go m.submitDailyCallback(m.pendingSave)
+						go func() { _ = m.submitDailyCallback(m.pendingSave) }()
 					}
 					// Clear the in-progress state
 					m.dailyRunInProgress = false
@@ -1599,8 +1596,8 @@ func (m *Model) useConsumable(item *entity.Item) {
 					}
 				}
 			} else {
-				effectMsg = "No target for damage item."
-				return // Don't consume
+				// No target for damage item - don't consume
+				return
 			}
 
 		case entity.EffectBuff:
@@ -2135,8 +2132,11 @@ func (m *Model) executeAdminAction() (tea.Model, tea.Cmd) {
 	case "Skip to Next Floor":
 		if err := m.engine.DescendStairs(); err != nil {
 			// Force descent even if not on stairs
-			m.engine.ForceDescend()
-			m.statusMsg = fmt.Sprintf("[ADMIN] Forced descent to depth %d", m.engine.CurrentDepth())
+			if forceErr := m.engine.ForceDescend(); forceErr != nil {
+				m.statusMsg = fmt.Sprintf("[ADMIN] Force descent failed: %v", forceErr)
+			} else {
+				m.statusMsg = fmt.Sprintf("[ADMIN] Forced descent to depth %d", m.engine.CurrentDepth())
+			}
 		} else {
 			m.statusMsg = fmt.Sprintf("[ADMIN] Descended to depth %d", m.engine.CurrentDepth())
 		}
@@ -2512,7 +2512,7 @@ func (m *Model) renderMap() string {
 	}
 
 	tiles := m.engine.GetVisibleTiles()
-	if tiles == nil || len(tiles) == 0 {
+	if len(tiles) == 0 {
 		return m.styles.MapBorder.Render("No map loaded")
 	}
 
@@ -2955,14 +2955,6 @@ func (m *Model) formatStatBonus(item *entity.Item) string {
 		return ""
 	}
 	return "Stats: " + fmt.Sprintf("%v", bonuses)
-}
-
-// equipmentSlot formats an equipment slot.
-func (m *Model) equipmentSlot(item *entity.Item) string {
-	if item == nil {
-		return m.styles.Muted.Render("(empty)")
-	}
-	return fmt.Sprintf("%c %s", item.Glyph(), item.Name())
 }
 
 // viewPause renders the pause menu.
@@ -3429,7 +3421,7 @@ func (m *Model) purchaseClassUnlock() {
 
 	// Save meta progress
 	if m.saveManager != nil {
-		m.saveManager.SaveMetaProgress(m.metaProgress)
+		_ = m.saveManager.SaveMetaProgress(m.metaProgress) // Best-effort save
 	}
 
 	m.statusMsg = fmt.Sprintf("Unlocked class '%s'!", class)
@@ -3471,7 +3463,7 @@ func (m *Model) purchaseBonusUnlock() {
 
 	// Save meta progress
 	if m.saveManager != nil {
-		m.saveManager.SaveMetaProgress(m.metaProgress)
+		_ = m.saveManager.SaveMetaProgress(m.metaProgress) // Best-effort save
 	}
 
 	m.statusMsg = fmt.Sprintf("Purchased %s upgrade!", bonus.Name)
@@ -3501,7 +3493,7 @@ func (m *Model) purchaseItemUnlock() {
 
 	// Save meta progress
 	if m.saveManager != nil {
-		m.saveManager.SaveMetaProgress(m.metaProgress)
+		_ = m.saveManager.SaveMetaProgress(m.metaProgress) // Best-effort save
 	}
 
 	m.statusMsg = fmt.Sprintf("Unlocked '%s'!", item.Name)
@@ -3806,9 +3798,8 @@ func (m *Model) awardRunExitCodes(victory bool) {
 
 	// Use multiplayer callback if available (server handles persistence)
 	if m.metaProgressUpdater != nil {
-		if err := m.metaProgressUpdater(earned, victory, maxDepth); err != nil {
-			// Log error but don't fail - exit codes are still displayed this session
-		}
+		// Error logged in server callback - exit codes still displayed this session
+		_ = m.metaProgressUpdater(earned, victory, maxDepth)
 		return
 	}
 
@@ -3832,7 +3823,7 @@ func (m *Model) awardRunExitCodes(victory bool) {
 	}
 
 	// Save meta progress
-	m.saveManager.SaveMetaProgress(m.metaProgress)
+	_ = m.saveManager.SaveMetaProgress(m.metaProgress)
 }
 
 // finishRun handles all end-of-run logic for both death and victory.
@@ -3861,9 +3852,8 @@ func (m *Model) clearSaveOnRunEnd() {
 
 	// Use multiplayer callback if available (server handles DB deletion)
 	if m.clearSaveCallback != nil {
-		if err := m.clearSaveCallback(); err != nil {
-			// Log error but don't fail - the important thing is hasValidSave is false
-		}
+		// Error logged in server callback - the important thing is hasValidSave is false
+		_ = m.clearSaveCallback()
 		return
 	}
 
@@ -3871,7 +3861,7 @@ func (m *Model) clearSaveOnRunEnd() {
 	if m.saveManager != nil && m.engine != nil {
 		seed := m.engine.MasterSeed()
 		if seed != 0 {
-			m.saveManager.DeleteSave(seed)
+			_ = m.saveManager.DeleteSave(seed) // Best-effort delete
 		}
 	}
 }

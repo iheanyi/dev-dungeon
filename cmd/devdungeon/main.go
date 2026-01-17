@@ -275,7 +275,7 @@ func runServer(cfg serverConfig) {
 	defer shutdownCancel()
 
 	if httpSrv != nil {
-		httpSrv.Shutdown(shutdownCtx)
+		_ = httpSrv.Shutdown(shutdownCtx)
 	}
 
 	cancel() // Cancel context to stop SSH server

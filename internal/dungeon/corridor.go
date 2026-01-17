@@ -93,10 +93,3 @@ func carveVerticalCorridor(floor *types.Floor, y1, y2, x int) {
 		}
 	}
 }
-
-// CarveDoor places a door at a position (optional enhancement).
-func carveDoor(floor *types.Floor, pos types.Position) {
-	if floor.InBounds(pos) {
-		floor.SetTile(pos, types.NewTile(types.TileDoor))
-	}
-}

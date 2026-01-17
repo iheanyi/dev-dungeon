@@ -236,7 +236,7 @@ func (s *Server) handleKickedSession(session *GameSession) {
 		msg += fmt.Sprintf("%s%s║%s                                                  %s%s║%s\r\n", bold, yellow, reset, bold, yellow, reset)
 		msg += fmt.Sprintf("%s%s╚══════════════════════════════════════════════════╝%s\r\n\r\n", bold, yellow, reset)
 
-		session.Session.Write([]byte(msg))
+		_, _ = session.Session.Write([]byte(msg))
 		session.Session.Close()
 	}
 
@@ -271,7 +271,7 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 	// Check for unsupported key type - show helpful error and disconnect
 	if keyType, ok := ctx.Value("unsupported_key_type").(string); ok && keyType != "" {
 		log.Warn("Disconnecting session with unsupported key type", "type", keyType)
-		sess.Write([]byte(sshKeyHelp))
+		_, _ = sess.Write([]byte(sshKeyHelp))
 		return nil, nil
 	}
 
@@ -846,7 +846,6 @@ type registrationModel struct {
 	sess        ssh.Session
 	fingerprint string
 	username    string
-	cursor      int
 	err         string
 	done        bool
 }

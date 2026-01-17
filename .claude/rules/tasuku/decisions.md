@@ -74,3 +74,11 @@ _Auto-synced from .tasuku/context/decisions.md_
 
 **Because**: Dynamic dimensions broke save/load when terminal size changed. Fixed dimensions ensure saves work across any terminal. The viewport already scrolls to show the visible portion, so smaller terminals just see less.
 
+## leaderboard-deduplication (2026-01-17)
+
+**Chose**: UPSERT with unique constraint on (user_id, seed) - only update if new score is higher
+
+**Over**: Application-level hasSubmittedScore flag, Allow duplicate entries, Database trigger for deduplication
+
+**Because**: Database-level enforcement is more reliable than application state. Using seed as the run identifier means each unique run (same seed) gets one entry per user. For daily runs with shared seeds, each user gets one entry. The UPSERT pattern keeps higher scores automatically, supporting "continue after death" without score inflation.
+

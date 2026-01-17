@@ -167,7 +167,7 @@ func TestLoadInvalidJSON(t *testing.T) {
 	configPath := filepath.Join(tempDir, "invalid.json")
 
 	// Write invalid JSON
-	os.WriteFile(configPath, []byte("not valid json {{{"), 0644)
+	_ = os.WriteFile(configPath, []byte("not valid json {{{"), 0644)
 
 	_, err := Load(configPath)
 	if err == nil {
@@ -186,7 +186,7 @@ func TestLoadPartialConfig(t *testing.T) {
 			"difficulty_multiplier": 2.0
 		}
 	}`
-	os.WriteFile(configPath, []byte(partialJSON), 0644)
+	_ = os.WriteFile(configPath, []byte(partialJSON), 0644)
 
 	cfg, err := Load(configPath)
 	if err != nil {
@@ -217,11 +217,8 @@ func TestConfigPath(t *testing.T) {
 		t.Error("ConfigPath should not return empty string")
 	}
 
-	// Should contain expected path components
-	if !filepath.IsAbs(path) {
-		// ConfigPath uses home dir which should be absolute
-		// But on some systems it might not be, so just check it's not empty
-	}
+	// ConfigPath uses home dir which should be absolute
+	// But on some systems it might not be, so just check it's not empty
 
 	// Should end with config.json
 	if filepath.Base(path) != "config.json" {

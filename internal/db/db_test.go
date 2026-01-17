@@ -152,7 +152,7 @@ func TestMemoryRepository_GetUserByUsername(t *testing.T) {
 	repo := NewMemoryRepository()
 	ctx := context.Background()
 
-	repo.CreateUser(ctx, "TestUser", "SHA256:abc123")
+	_, _ = repo.CreateUser(ctx, "TestUser", "SHA256:abc123")
 
 	// Case-insensitive lookup
 	user, _ := repo.GetUserByUsername(ctx, "testuser")
@@ -221,7 +221,7 @@ func TestMemoryRepository_UpdateLastLogin(t *testing.T) {
 	initialLogin := user.LastLogin
 
 	time.Sleep(10 * time.Millisecond)
-	repo.UpdateLastLogin(ctx, user.ID)
+	_ = repo.UpdateLastLogin(ctx, user.ID)
 
 	updated, _ := repo.GetUserByFingerprint(ctx, "SHA256:abc123")
 	if !updated.LastLogin.After(initialLogin) {
@@ -259,10 +259,10 @@ func TestMemoryRepository_GameSave(t *testing.T) {
 
 	// Update save
 	saveData["floor"] = 5
-	repo.UpsertGameSave(ctx, user.ID, saveData)
+	_ = repo.UpsertGameSave(ctx, user.ID, saveData)
 
 	// Delete save
-	repo.DeleteGameSave(ctx, user.ID)
+	_ = repo.DeleteGameSave(ctx, user.ID)
 	save, _ = repo.GetGameSave(ctx, user.ID)
 	if save != nil {
 		t.Error("expected no save after delete")
@@ -287,7 +287,7 @@ func TestMemoryRepository_MetaProgress(t *testing.T) {
 	// Update meta progress
 	meta.TotalExitCodes = 100
 	meta.UnlockedClasses = append(meta.UnlockedClasses, "bash")
-	repo.UpdateMetaProgress(ctx, meta)
+	_ = repo.UpdateMetaProgress(ctx, meta)
 
 	// Verify update
 	updated, _ := repo.GetMetaProgress(ctx, user.ID)
@@ -307,7 +307,7 @@ func TestMemoryRepository_Leaderboard(t *testing.T) {
 	user2, _ := repo.CreateUser(ctx, "player2", "SHA256:222")
 
 	// Add entries (each with unique seed to test different runs)
-	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+	_ = repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 		UserID:        user1.ID,
 		RunType:       "standard",
 		Score:         1000,
@@ -315,7 +315,7 @@ func TestMemoryRepository_Leaderboard(t *testing.T) {
 		Class:         "sudo",
 		Seed:          12345,
 	})
-	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+	_ = repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 		UserID:        user2.ID,
 		RunType:       "standard",
 		Score:         500,
@@ -323,7 +323,7 @@ func TestMemoryRepository_Leaderboard(t *testing.T) {
 		Class:         "bash",
 		Seed:          67890,
 	})
-	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+	_ = repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 		UserID:        user1.ID,
 		RunType:       "daily",
 		Score:         800,
@@ -368,7 +368,7 @@ func TestMemoryRepository_LeaderboardUpsert(t *testing.T) {
 	user, _ := repo.CreateUser(ctx, "player", "SHA256:111")
 
 	// Submit initial score
-	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+	_ = repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 		UserID:        user.ID,
 		RunType:       "standard",
 		Score:         1000,
@@ -387,7 +387,7 @@ func TestMemoryRepository_LeaderboardUpsert(t *testing.T) {
 	}
 
 	// Submit lower score for same user/seed - should NOT update
-	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+	_ = repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 		UserID:        user.ID,
 		RunType:       "standard",
 		Score:         500,
@@ -405,7 +405,7 @@ func TestMemoryRepository_LeaderboardUpsert(t *testing.T) {
 	}
 
 	// Submit higher score for same user/seed - should update
-	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+	_ = repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 		UserID:        user.ID,
 		RunType:       "standard",
 		Score:         1500,
@@ -442,7 +442,7 @@ func TestMemoryRepository_WorldDrop(t *testing.T) {
 		DropType:  "message",
 		Content:   "Beware the daemon!",
 	}
-	repo.CreateWorldDrop(ctx, drop)
+	_ = repo.CreateWorldDrop(ctx, drop)
 
 	// User2 should see the drop
 	found, _ := repo.GetRandomDrop(ctx, "home", user2.ID)
@@ -544,7 +544,7 @@ func TestMemoryRepository_WebSession(t *testing.T) {
 	}
 
 	// Delete session
-	repo.DeleteWebSession(ctx, token)
+	_ = repo.DeleteWebSession(ctx, token)
 	sessionUser, _ = repo.GetWebSession(ctx, token)
 	if sessionUser != nil {
 		t.Error("session should be deleted")
@@ -565,7 +565,7 @@ func TestMemoryRepository_CleanupExpiredDrops(t *testing.T) {
 		Content:   "Old message",
 		ExpiresAt: time.Now().Add(-1 * time.Hour), // Expired 1 hour ago
 	}
-	repo.CreateWorldDrop(ctx, drop)
+	_ = repo.CreateWorldDrop(ctx, drop)
 
 	// Create a valid drop
 	validDrop := &WorldDrop{
@@ -575,7 +575,7 @@ func TestMemoryRepository_CleanupExpiredDrops(t *testing.T) {
 		Content:   "New message",
 		ExpiresAt: time.Now().Add(1 * time.Hour),
 	}
-	repo.CreateWorldDrop(ctx, validDrop)
+	_ = repo.CreateWorldDrop(ctx, validDrop)
 
 	// Cleanup
 	count, _ := repo.CleanupExpiredDrops(ctx)
@@ -712,26 +712,26 @@ func TestMemoryRepository_GetTopScores(t *testing.T) {
 	user3, _ := repo.CreateUser(ctx, "player3", "fp3")
 
 	// Add leaderboard entries with different scores and unique seeds
-	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+	_ = repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 		UserID:  user1.ID,
 		RunType: "standard",
 		Score:   500,
 		Seed:    1001,
 	})
-	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+	_ = repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 		UserID:  user2.ID,
 		RunType: "standard",
 		Score:   1000,
 		Seed:    1002,
 	})
-	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+	_ = repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 		UserID:  user3.ID,
 		RunType: "standard",
 		Score:   750,
 		Seed:    1003,
 	})
 	// Add a daily run entry (different type)
-	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+	_ = repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 		UserID:  user1.ID,
 		RunType: "daily",
 		Score:   200,
@@ -767,7 +767,7 @@ func TestMemoryRepository_GetTopScoresWithLimit(t *testing.T) {
 	// Create user and add many entries (each with unique seed)
 	user, _ := repo.CreateUser(ctx, "player", "fp")
 	for i := 0; i < 20; i++ {
-		repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+		_ = repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 			UserID:  user.ID,
 			RunType: "standard",
 			Score:   i * 100,
@@ -1103,7 +1103,7 @@ func TestMemoryRepository_GetDailyLeaderboard(t *testing.T) {
 	seed, _ := repo.GetOrCreateDailySeed(ctx)
 
 	// Add daily leaderboard entries
-	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+	_ = repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 		UserID:        user1.ID,
 		RunType:       "daily",
 		Seed:          seed,
@@ -1111,7 +1111,7 @@ func TestMemoryRepository_GetDailyLeaderboard(t *testing.T) {
 		FloorsCleared: 5,
 		Class:         "init",
 	})
-	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+	_ = repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 		UserID:        user2.ID,
 		RunType:       "daily",
 		Seed:          seed,
@@ -1119,7 +1119,7 @@ func TestMemoryRepository_GetDailyLeaderboard(t *testing.T) {
 		FloorsCleared: 8,
 		Class:         "cron",
 	})
-	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+	_ = repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 		UserID:        user3.ID,
 		RunType:       "daily",
 		Seed:          seed,
@@ -1169,7 +1169,7 @@ func TestMemoryRepository_GetDailyLeaderboard_Pagination(t *testing.T) {
 	// Add 5 entries
 	for i := 1; i <= 5; i++ {
 		user, _ := repo.CreateUser(ctx, "player"+string(rune('0'+i)), "SHA256:key"+string(rune('0'+i)))
-		repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+		_ = repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 			UserID:        user.ID,
 			RunType:       "daily",
 			Seed:          seed,
@@ -1197,7 +1197,7 @@ func TestMemoryRepository_GetDailyLeaderboard_Pagination(t *testing.T) {
 	}
 
 	// Get second page
-	entries, cursor, err = repo.GetDailyLeaderboard(ctx, today, 2, cursor)
+	entries, _, err = repo.GetDailyLeaderboard(ctx, today, 2, cursor)
 	if err != nil {
 		t.Fatalf("GetDailyLeaderboard page 2 failed: %v", err)
 	}
@@ -1239,21 +1239,21 @@ func TestMemoryRepository_GetPlayerDailyRank(t *testing.T) {
 	seed, _ := repo.GetOrCreateDailySeed(ctx)
 
 	// Add entries with different scores
-	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+	_ = repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 		UserID:  user1.ID,
 		RunType: "daily",
 		Seed:    seed,
 		Score:   5000,
 		Class:   "init",
 	})
-	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+	_ = repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 		UserID:  user2.ID,
 		RunType: "daily",
 		Seed:    seed,
 		Score:   8000, // highest
 		Class:   "cron",
 	})
-	repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
+	_ = repo.AddLeaderboardEntry(ctx, &LeaderboardEntry{
 		UserID:  user3.ID,
 		RunType: "daily",
 		Seed:    seed,
@@ -1279,13 +1279,13 @@ func TestMemoryRepository_GetPlayerDailyRank(t *testing.T) {
 	}
 
 	// Check rank for user1 (should be #2)
-	rank, entry, _ = repo.GetPlayerDailyRank(ctx, today, user1.ID)
+	rank, _, _ = repo.GetPlayerDailyRank(ctx, today, user1.ID)
 	if rank != 2 {
 		t.Errorf("expected rank 2, got %d", rank)
 	}
 
 	// Check rank for user3 (should be #3)
-	rank, entry, _ = repo.GetPlayerDailyRank(ctx, today, user3.ID)
+	rank, _, _ = repo.GetPlayerDailyRank(ctx, today, user3.ID)
 	if rank != 3 {
 		t.Errorf("expected rank 3, got %d", rank)
 	}

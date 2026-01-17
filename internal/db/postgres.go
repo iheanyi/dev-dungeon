@@ -456,7 +456,7 @@ func (c *Client) VerifyAuthToken(ctx context.Context, token string) (*User, erro
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	// Get and lock the token row
 	var userID int
@@ -547,7 +547,7 @@ func (c *Client) GetWebSession(ctx context.Context, token string) (*User, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	// Get session and check expiry
 	var userID int
@@ -569,8 +569,8 @@ func (c *Client) GetWebSession(ctx context.Context, token string) (*User, error)
 	// Check if expired
 	if time.Now().UTC().After(expiresAt) {
 		// Delete expired session
-		tx.Exec(ctx, `DELETE FROM web_sessions WHERE token = $1`, token)
-		tx.Commit(ctx)
+		_, _ = tx.Exec(ctx, `DELETE FROM web_sessions WHERE token = $1`, token)
+		_ = tx.Commit(ctx)
 		return nil, nil
 	}
 

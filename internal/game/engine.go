@@ -1062,7 +1062,7 @@ func (e *Engine) HasSaveFile() bool {
 func (e *Engine) Shutdown() {
 	// Save on quit
 	if e.player != nil && e.saveManager != nil {
-		e.SaveSync(save.TriggerQuit)
+		_ = e.SaveSync(save.TriggerQuit) // Best-effort save on shutdown
 	}
 
 	// Stop the save manager

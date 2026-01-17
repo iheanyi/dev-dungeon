@@ -210,7 +210,7 @@ func TestManagerLoadLatest(t *testing.T) {
 		MasterSeed:   111,
 		CurrentDepth: 2,
 	}
-	manager.SaveSync(save1, TriggerManual)
+	_ = manager.SaveSync(save1, TriggerManual)
 
 	time.Sleep(50 * time.Millisecond) // Ensure different timestamps
 
@@ -219,7 +219,7 @@ func TestManagerLoadLatest(t *testing.T) {
 		MasterSeed:   222,
 		CurrentDepth: 5,
 	}
-	manager.SaveSync(save2, TriggerManual)
+	_ = manager.SaveSync(save2, TriggerManual)
 
 	// Load latest
 	latest, err := manager.LoadLatest()
@@ -249,7 +249,7 @@ func TestManagerDeleteSave(t *testing.T) {
 		Version:    Version,
 		MasterSeed: 12345,
 	}
-	manager.SaveSync(saveData, TriggerManual)
+	_ = manager.SaveSync(saveData, TriggerManual)
 
 	// Verify it exists
 	loaded, _ := manager.Load(12345)
@@ -289,7 +289,7 @@ func TestManagerListSaves(t *testing.T) {
 				Level: 1,
 			},
 		}
-		manager.SaveSync(saveData, TriggerManual)
+		_ = manager.SaveSync(saveData, TriggerManual)
 	}
 
 	// List saves
@@ -380,7 +380,7 @@ func TestManagerDebounce(t *testing.T) {
 
 	// First save should go through
 	save1 := &SaveData{Version: Version, MasterSeed: 111}
-	manager.SaveSync(save1, TriggerAutoSave)
+	_ = manager.SaveSync(save1, TriggerAutoSave)
 
 	// Immediate second auto-save should be debounced (skipped)
 	save2 := &SaveData{Version: Version, MasterSeed: 222}
@@ -576,7 +576,7 @@ func TestLoadFromPathInvalidJSON(t *testing.T) {
 
 	// Write invalid JSON
 	invalidPath := filepath.Join(tempDir, "invalid.json")
-	os.WriteFile(invalidPath, []byte("not valid json"), 0644)
+	_ = os.WriteFile(invalidPath, []byte("not valid json"), 0644)
 
 	data, err := manager.LoadFromPath(invalidPath)
 	if err == nil {
@@ -596,7 +596,7 @@ func TestLoadFromPathNewerVersion(t *testing.T) {
 	// Write save with future version
 	futurePath := filepath.Join(tempDir, "future.json")
 	futureData := fmt.Sprintf(`{"version": %d}`, Version+1)
-	os.WriteFile(futurePath, []byte(futureData), 0644)
+	_ = os.WriteFile(futurePath, []byte(futureData), 0644)
 
 	data, err := manager.LoadFromPath(futurePath)
 	if err == nil {
@@ -655,14 +655,14 @@ func TestLoadLatestSkipsDirectories(t *testing.T) {
 	defer manager.Stop()
 
 	// Create a subdirectory
-	os.MkdirAll(filepath.Join(tempDir, "subdir"), 0755)
+	_ = os.MkdirAll(filepath.Join(tempDir, "subdir"), 0755)
 
 	// Create a save
 	saveData := &SaveData{
 		Version:    Version,
 		MasterSeed: 111,
 	}
-	manager.SaveSync(saveData, TriggerManual)
+	_ = manager.SaveSync(saveData, TriggerManual)
 
 	// Load latest should ignore the directory
 	latest, err := manager.LoadLatest()
@@ -686,14 +686,14 @@ func TestLoadLatestSkipsNonJSONFiles(t *testing.T) {
 	defer manager.Stop()
 
 	// Create a non-JSON file
-	os.WriteFile(filepath.Join(tempDir, "readme.txt"), []byte("hello"), 0644)
+	_ = os.WriteFile(filepath.Join(tempDir, "readme.txt"), []byte("hello"), 0644)
 
 	// Create a save
 	saveData := &SaveData{
 		Version:    Version,
 		MasterSeed: 222,
 	}
-	manager.SaveSync(saveData, TriggerManual)
+	_ = manager.SaveSync(saveData, TriggerManual)
 
 	// Load latest should ignore the txt file
 	latest, err := manager.LoadLatest()
@@ -740,7 +740,7 @@ func TestListSavesNonExistentDir(t *testing.T) {
 	if err != nil {
 		t.Errorf("ListSaves should not error for removed dir: %v", err)
 	}
-	if saves != nil && len(saves) != 0 {
+	if len(saves) != 0 {
 		t.Error("expected nil or empty for removed directory")
 	}
 }
@@ -754,7 +754,7 @@ func TestListSavesSkipsCorruptedFiles(t *testing.T) {
 	defer manager.Stop()
 
 	// Create a corrupted JSON file
-	os.WriteFile(filepath.Join(tempDir, "corrupted.json"), []byte("invalid json"), 0644)
+	_ = os.WriteFile(filepath.Join(tempDir, "corrupted.json"), []byte("invalid json"), 0644)
 
 	// Create a valid save
 	saveData := &SaveData{
@@ -765,7 +765,7 @@ func TestListSavesSkipsCorruptedFiles(t *testing.T) {
 			Level: 1,
 		},
 	}
-	manager.SaveSync(saveData, TriggerManual)
+	_ = manager.SaveSync(saveData, TriggerManual)
 
 	// List should skip corrupted and return valid save
 	saves, err := manager.ListSaves()
@@ -812,7 +812,7 @@ func TestLoadMetaProgressInvalidJSON(t *testing.T) {
 
 	// Write invalid JSON to meta file
 	metaPath := filepath.Join(tempDir, "meta_progress.json")
-	os.WriteFile(metaPath, []byte("invalid json"), 0644)
+	_ = os.WriteFile(metaPath, []byte("invalid json"), 0644)
 
 	_, err = manager.LoadMetaProgress()
 	if err == nil {

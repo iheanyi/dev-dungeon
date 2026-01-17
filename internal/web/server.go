@@ -17,9 +17,6 @@ import (
 	"github.com/iheanyi/devdungeon/internal/monitoring"
 )
 
-// Request size limits
-const maxRequestBodySize = 4 * 1024 // 4KB max for API requests
-
 // Session cookie configuration
 const (
 	sessionCookieName   = "devdungeon_session"
@@ -153,7 +150,7 @@ func (s *Server) spaHandlerFS(staticFS fs.FS) http.Handler {
 		indexContent, err := fs.ReadFile(staticFS, "index.html")
 		if err == nil {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.Write(indexContent)
+			_, _ = w.Write(indexContent)
 			return
 		}
 
@@ -220,22 +217,13 @@ type apiResponse struct {
 func (s *Server) jsonResponse(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(apiResponse{Success: true, Data: data})
+	_ = json.NewEncoder(w).Encode(apiResponse{Success: true, Data: data})
 }
 
 func (s *Server) jsonError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(apiResponse{Success: false, Error: message})
-}
-
-// limitRequestBody wraps a handler to limit request body size.
-// Use this for any POST/PUT endpoints that accept JSON.
-func (s *Server) limitRequestBody(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
-		next(w, r)
-	}
+	_ = json.NewEncoder(w).Encode(apiResponse{Success: false, Error: message})
 }
 
 // Handlers

@@ -95,7 +95,7 @@ func main() {
 	case "drop":
 		fmt.Print("WARNING: This will drop all tables. Type 'yes' to confirm: ")
 		var confirm string
-		fmt.Scanln(&confirm)
+		_, _ = fmt.Scanln(&confirm)
 		if confirm != "yes" {
 			fmt.Println("Aborted")
 			return

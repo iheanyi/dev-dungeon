@@ -381,7 +381,7 @@ func (s *Server) gameMiddleware() wish.Middleware {
 				"║   Your progress has been saved.        ║\r\n" +
 				"╚════════════════════════════════════════╝\r\n" +
 				"\033[0m" // Reset
-			sess.Write([]byte(goodbye))
+			_, _ = sess.Write([]byte(goodbye))
 		}
 	}
 }
