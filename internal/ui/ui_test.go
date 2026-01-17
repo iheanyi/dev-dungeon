@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/iheanyi/devdungeon/internal/config"
 	"github.com/iheanyi/devdungeon/internal/entity"
@@ -1916,6 +1917,373 @@ func TestIntroScreenSetup(t *testing.T) {
 	}
 }
 
+// === Daily Run Gating Tests ===
+
+func TestDailyRunBlockedWhenCompleted(t *testing.T) {
+	m := newTestModel()
+	m.isMultiplayer = true
+	m.dailyRunCompleted = true
+	m.currentView = ViewMainMenu
+	m.menuCursor = 0
+	m.menuOptions = []string{"Daily Run"}
+
+	// Simulate selecting "Daily Run" menu option
+	m.handleMenuSelection("Daily Run")
+
+	// Should stay on main menu with error message
+	if m.currentView != ViewMainMenu {
+		t.Errorf("should stay on main menu when daily completed, got %v", m.currentView)
+	}
+	if m.statusMsg != "You've already completed today's daily run" {
+		t.Errorf("wrong status message: %s", m.statusMsg)
+	}
+}
+
+func TestDailyRunRedirectsWhenInProgress(t *testing.T) {
+	m := newTestModel()
+	m.isMultiplayer = true
+	m.dailyRunInProgress = true
+	m.currentView = ViewMainMenu
+	m.menuCursor = 0
+	m.menuOptions = []string{"Daily Run"}
+
+	// Simulate selecting "Daily Run" menu option
+	m.handleMenuSelection("Daily Run")
+
+	// Should stay on main menu with message to use Continue
+	if m.currentView != ViewMainMenu {
+		t.Errorf("should stay on main menu when daily in progress, got %v", m.currentView)
+	}
+	if m.statusMsg != "You have a daily run in progress - use Continue" {
+		t.Errorf("wrong status message: %s", m.statusMsg)
+	}
+}
+
+func TestDailyRunAllowedWhenNoActiveDailyRun(t *testing.T) {
+	m := newTestModel()
+	m.isMultiplayer = true
+	m.dailyRunCompleted = false
+	m.dailyRunInProgress = false
+	m.currentView = ViewMainMenu
+	m.menuCursor = 0
+	m.menuOptions = []string{"Daily Run"}
+
+	// Simulate selecting "Daily Run" menu option
+	m.handleMenuSelection("Daily Run")
+
+	// Should transition to class select for daily run
+	if m.currentView != ViewClassSelect {
+		t.Errorf("should transition to class select, got %v", m.currentView)
+	}
+	if !m.dailyRunMode {
+		t.Error("dailyRunMode should be true")
+	}
+}
+
+func TestDailyRunRequiresMultiplayer(t *testing.T) {
+	m := newTestModel()
+	m.isMultiplayer = false
+	m.dailyRunCompleted = false
+	m.dailyRunInProgress = false
+	m.currentView = ViewMainMenu
+
+	// Simulate selecting "Daily Run" menu option
+	m.handleMenuSelection("Daily Run")
+
+	// Should stay on main menu with error
+	if m.currentView != ViewMainMenu {
+		t.Errorf("should stay on main menu when not multiplayer, got %v", m.currentView)
+	}
+	if m.statusMsg != "Daily runs require SSH connection" {
+		t.Errorf("wrong status message: %s", m.statusMsg)
+	}
+}
+
+func TestNewGameWarnsWithInProgressDaily(t *testing.T) {
+	m := newTestModel()
+	m.dailyRunInProgress = true
+	m.pendingSave = &save.SaveData{CurrentDepth: 3}
+	m.currentView = ViewMainMenu
+	m.menuCursor = 0
+	m.menuOptions = []string{"New Game"}
+
+	// Simulate selecting "New Game" menu option
+	m.handleMenuSelection("New Game")
+
+	// Should show confirmation dialog
+	if m.currentView != ViewConfirmDialog {
+		t.Errorf("expected ViewConfirmDialog, got %v", m.currentView)
+	}
+
+	// Confirm message should mention the floor depth
+	if m.confirmMessage == "" {
+		t.Error("confirm message should be set")
+	}
+
+	// Confirm action should be set
+	if m.confirmAction == nil {
+		t.Error("confirm action should be set")
+	}
+
+	// Return view should be main menu
+	if m.confirmReturnView != ViewMainMenu {
+		t.Errorf("confirm return view should be ViewMainMenu, got %v", m.confirmReturnView)
+	}
+}
+
+func TestNewGameProceedsWithoutInProgressDaily(t *testing.T) {
+	m := newTestModel()
+	m.dailyRunInProgress = false
+	m.pendingSave = nil
+	m.currentView = ViewMainMenu
+	m.menuCursor = 0
+	m.menuOptions = []string{"New Game"}
+
+	// Simulate selecting "New Game" menu option
+	m.handleMenuSelection("New Game")
+
+	// Should go directly to class select (no confirmation dialog)
+	if m.currentView != ViewClassSelect {
+		t.Errorf("expected ViewClassSelect, got %v", m.currentView)
+	}
+}
+
+func TestConfirmDialogYesExecutesAction(t *testing.T) {
+	m := newTestModel()
+	m.currentView = ViewConfirmDialog
+
+	// Set up confirmation state
+	actionExecuted := false
+	m.confirmMessage = "Test confirmation"
+	m.confirmAction = func() {
+		actionExecuted = true
+	}
+	m.confirmReturnView = ViewMainMenu
+
+	// Simulate pressing 'y'
+	m.handleConfirmDialogKey("y")
+
+	// Action should have been executed
+	if !actionExecuted {
+		t.Error("confirm action should have been executed")
+	}
+}
+
+func TestConfirmDialogEnterExecutesAction(t *testing.T) {
+	m := newTestModel()
+	m.currentView = ViewConfirmDialog
+
+	// Set up confirmation state
+	actionExecuted := false
+	m.confirmMessage = "Test confirmation"
+	m.confirmAction = func() {
+		actionExecuted = true
+	}
+	m.confirmReturnView = ViewMainMenu
+
+	// Simulate pressing 'enter'
+	m.handleConfirmDialogKey("enter")
+
+	// Action should have been executed
+	if !actionExecuted {
+		t.Error("confirm action should have been executed on enter")
+	}
+}
+
+func TestConfirmDialogNoReturnsToMenu(t *testing.T) {
+	m := newTestModel()
+	m.currentView = ViewConfirmDialog
+
+	// Set up confirmation state
+	actionExecuted := false
+	m.confirmMessage = "Test confirmation"
+	m.confirmAction = func() {
+		actionExecuted = true
+	}
+	m.confirmReturnView = ViewMainMenu
+
+	// Simulate pressing 'n'
+	m.handleConfirmDialogKey("n")
+
+	// Should return to the return view
+	if m.currentView != ViewMainMenu {
+		t.Errorf("should return to main menu, got %v", m.currentView)
+	}
+
+	// Action should NOT have been executed
+	if actionExecuted {
+		t.Error("confirm action should not have been executed on 'n'")
+	}
+}
+
+func TestConfirmDialogEscReturnsToMenu(t *testing.T) {
+	m := newTestModel()
+	m.currentView = ViewConfirmDialog
+
+	// Set up confirmation state
+	actionExecuted := false
+	m.confirmMessage = "Test confirmation"
+	m.confirmAction = func() {
+		actionExecuted = true
+	}
+	m.confirmReturnView = ViewGame
+
+	// Simulate pressing 'esc'
+	m.handleConfirmDialogKey("esc")
+
+	// Should return to the return view (ViewGame in this case)
+	if m.currentView != ViewGame {
+		t.Errorf("should return to game view, got %v", m.currentView)
+	}
+
+	// Action should NOT have been executed
+	if actionExecuted {
+		t.Error("confirm action should not have been executed on esc")
+	}
+}
+
+func TestShowConfirmDialog(t *testing.T) {
+	m := newTestModel()
+	m.currentView = ViewMainMenu
+
+	// Set up a confirmation dialog
+	actionExecuted := false
+	m.showConfirmDialog(
+		"Test message",
+		func() { actionExecuted = true },
+		ViewMainMenu,
+	)
+
+	// Should transition to confirm dialog view
+	if m.currentView != ViewConfirmDialog {
+		t.Errorf("expected ViewConfirmDialog, got %v", m.currentView)
+	}
+
+	// Message should be set
+	if m.confirmMessage != "Test message" {
+		t.Errorf("expected message 'Test message', got '%s'", m.confirmMessage)
+	}
+
+	// Return view should be set
+	if m.confirmReturnView != ViewMainMenu {
+		t.Errorf("expected return view ViewMainMenu, got %v", m.confirmReturnView)
+	}
+
+	// Execute the action
+	m.confirmAction()
+	if !actionExecuted {
+		t.Error("action should have been executed")
+	}
+}
+
+func TestSetDailyRunStatus(t *testing.T) {
+	m := newTestModel()
+
+	// Initially all should be default values
+	if m.dailyRunCompleted {
+		t.Error("dailyRunCompleted should initially be false")
+	}
+	if m.dailyRunInProgress {
+		t.Error("dailyRunInProgress should initially be false")
+	}
+	if m.dailySeed != 0 {
+		t.Error("dailySeed should initially be 0")
+	}
+
+	// Set daily run status
+	m.SetDailyRunStatus(true, false, 12345)
+
+	if !m.dailyRunCompleted {
+		t.Error("dailyRunCompleted should be true after SetDailyRunStatus")
+	}
+	if m.dailyRunInProgress {
+		t.Error("dailyRunInProgress should be false")
+	}
+	if m.dailySeed != 12345 {
+		t.Errorf("dailySeed should be 12345, got %d", m.dailySeed)
+	}
+
+	// Update to different status
+	m.SetDailyRunStatus(false, true, 67890)
+
+	if m.dailyRunCompleted {
+		t.Error("dailyRunCompleted should be false")
+	}
+	if !m.dailyRunInProgress {
+		t.Error("dailyRunInProgress should be true")
+	}
+	if m.dailySeed != 67890 {
+		t.Errorf("dailySeed should be 67890, got %d", m.dailySeed)
+	}
+}
+
+func TestSetSubmitDailyCallback(t *testing.T) {
+	m := newTestModel()
+
+	// Initially nil
+	if m.submitDailyCallback != nil {
+		t.Error("submitDailyCallback should initially be nil")
+	}
+
+	// Set a callback
+	callbackCalled := false
+	m.SetSubmitDailyCallback(func(saveData *save.SaveData) error {
+		callbackCalled = true
+		return nil
+	})
+
+	if m.submitDailyCallback == nil {
+		t.Error("submitDailyCallback should be set")
+	}
+
+	// Call the callback
+	_ = m.submitDailyCallback(nil)
+	if !callbackCalled {
+		t.Error("callback should have been called")
+	}
+}
+
+func TestNewGameConfirmationSubmitsDaily(t *testing.T) {
+	m := newTestModel()
+	m.dailyRunInProgress = true
+	m.pendingSave = &save.SaveData{CurrentDepth: 5, MasterSeed: 12345}
+	m.currentView = ViewMainMenu
+	m.hasValidSave = true
+
+	// Set up the submit daily callback (runs in goroutine so we just verify it's set)
+	m.SetSubmitDailyCallback(func(saveData *save.SaveData) error {
+		return nil
+	})
+
+	// Trigger the new game selection which shows confirmation
+	m.handleMenuSelection("New Game")
+
+	// Should be in confirm dialog
+	if m.currentView != ViewConfirmDialog {
+		t.Fatalf("expected ViewConfirmDialog, got %v", m.currentView)
+	}
+
+	// Execute the confirmation action (simulating pressing 'y')
+	if m.confirmAction != nil {
+		m.confirmAction()
+	}
+
+	// After confirmation, daily run state should be updated
+	if m.dailyRunInProgress {
+		t.Error("dailyRunInProgress should be false after confirming new game")
+	}
+	if !m.dailyRunCompleted {
+		t.Error("dailyRunCompleted should be true after confirming new game")
+	}
+	if m.hasValidSave {
+		t.Error("hasValidSave should be false after confirming new game")
+	}
+
+	// Note: The actual submission happens in a goroutine, so we can't easily
+	// verify it was called synchronously. The callback setup test above
+	// verifies the callback mechanism works.
+}
+
 // === RunType Persistence Tests ===
 
 func TestRunTypeSetToStandardByDefault(t *testing.T) {
@@ -2103,7 +2471,7 @@ func TestLeaderboardSubmitterCalledWithCorrectRunType(t *testing.T) {
 
 	// Track what gets submitted using a channel for synchronization
 	submittedCh := make(chan string, 1)
-	m.leaderboardSubmitter = func(score, floors int, class string, seed int64, runType string, victory bool) error {
+	m.leaderboardSubmitter = func(score, floors, timeSeconds int, class string, seed int64, runType string, victory bool) error {
 		submittedCh <- runType
 		return nil
 	}
@@ -2170,5 +2538,195 @@ func TestSaveDataRunTypePreservedThroughFullCycle(t *testing.T) {
 	// Verify RunType is preserved
 	if m.currentRunType != "daily" {
 		t.Errorf("RunType should be preserved as 'daily' after continue, got '%s'", m.currentRunType)
+	}
+}
+
+// === Time Tracking Tests ===
+
+func TestTimeTrackingInitializedOnNewGame(t *testing.T) {
+	m := newTestModel()
+	m.config = config.DefaultConfig()
+
+	// Start a new game
+	m.startNewGame(entity.ClassInit)
+
+	// Time tracking fields should be initialized
+	if m.runStartTime.IsZero() {
+		t.Error("runStartTime should be set after starting new game")
+	}
+	if m.sessionStartTime.IsZero() {
+		t.Error("sessionStartTime should be set after starting new game")
+	}
+	if m.elapsedSeconds != 0 {
+		t.Errorf("elapsedSeconds should be 0 for new game, got %d", m.elapsedSeconds)
+	}
+}
+
+func TestGetSaveDataIncludesTimeTracking(t *testing.T) {
+	m := newTestModel()
+	m.config = config.DefaultConfig()
+
+	// Start a new game
+	m.startNewGame(entity.ClassInit)
+
+	// Get save data
+	saveData := m.GetSaveData()
+	if saveData == nil {
+		t.Fatal("expected save data, got nil")
+	}
+
+	// RunStartTime should be set
+	if saveData.RunStartTime.IsZero() {
+		t.Error("RunStartTime should be set in save data")
+	}
+
+	// ElapsedSeconds should be >= 0 (might be 0 for a quick test)
+	if saveData.ElapsedSeconds < 0 {
+		t.Errorf("ElapsedSeconds should be >= 0, got %d", saveData.ElapsedSeconds)
+	}
+}
+
+func TestContinueRestoresTimeTracking(t *testing.T) {
+	m := newTestModel()
+	m.isMultiplayer = true
+
+	// Create a save with time tracking
+	pendingSave := &save.SaveData{
+		Version:        save.Version,
+		MasterSeed:     12345,
+		CurrentDepth:   1,
+		RunType:        "standard",
+		RunStartTime:   time.Now().UTC().Add(-1 * time.Hour), // Started 1 hour ago
+		ElapsedSeconds: 300,                                  // 5 minutes accumulated
+		Player: save.PlayerData{
+			Class:     entity.ClassInit,
+			Level:     1,
+			XP:        0,
+			XPToLevel: 100,
+			Stats: types.Stats{
+				RAM:  100,
+				CPU:  10,
+				FD:   16,
+				NICE: 10,
+				UID:  1000,
+			},
+			MaxStats: types.MaxStats{
+				MaxRAM: 100,
+				MaxFD:  16,
+			},
+			Position:    types.Position{X: 5, Y: 5},
+			Inventory:   []save.ItemData{},
+			SkillStates: []save.SkillState{{ID: "fork", CurrentCD: 0}},
+		},
+		FloorStates:  []save.FloorState{},
+		MetaProgress: save.MetaProgress{UnlockedClasses: []string{"init"}},
+	}
+
+	m.SetHasValidSave(true, pendingSave)
+
+	// Continue the game
+	m.continueGame()
+
+	// Time tracking should be restored
+	if m.runStartTime.IsZero() {
+		t.Error("runStartTime should be restored from save")
+	}
+	if m.elapsedSeconds != 300 {
+		t.Errorf("elapsedSeconds should be 300 from save, got %d", m.elapsedSeconds)
+	}
+	if m.sessionStartTime.IsZero() {
+		t.Error("sessionStartTime should be set for new session")
+	}
+}
+
+func TestGetTotalPlayTime(t *testing.T) {
+	m := newTestModel()
+	m.config = config.DefaultConfig()
+
+	// Start a new game
+	m.startNewGame(entity.ClassInit)
+
+	// Set some previous elapsed time
+	m.elapsedSeconds = 60 // 1 minute from previous sessions
+
+	// Get total play time
+	totalTime := m.GetTotalPlayTime()
+
+	// Should be at least the previous elapsed time
+	if totalTime < 60 {
+		t.Errorf("expected total time >= 60, got %d", totalTime)
+	}
+}
+
+func TestGetTotalPlayTimeWithZeroSession(t *testing.T) {
+	m := newTestModel()
+
+	// Without starting a session (sessionStartTime is zero)
+	m.elapsedSeconds = 120
+
+	totalTime := m.GetTotalPlayTime()
+
+	// Should return just the elapsed seconds when no active session
+	if totalTime != 120 {
+		t.Errorf("expected total time 120 with no active session, got %d", totalTime)
+	}
+}
+
+func TestTimeTrackingAccumulatesAcrossSaves(t *testing.T) {
+	m := newTestModel()
+	m.config = config.DefaultConfig()
+
+	// Start a new game
+	m.startNewGame(entity.ClassInit)
+
+	// Simulate some elapsed time from a previous session
+	m.elapsedSeconds = 100
+
+	// Get save data
+	saveData := m.GetSaveData()
+	if saveData == nil {
+		t.Fatal("expected save data")
+	}
+
+	// ElapsedSeconds in save should include accumulated time
+	// Note: since test runs quickly, current session adds ~0 seconds
+	if saveData.ElapsedSeconds < 100 {
+		t.Errorf("ElapsedSeconds should be >= 100, got %d", saveData.ElapsedSeconds)
+	}
+}
+
+func TestLeaderboardSubmitterReceivesTimeSeconds(t *testing.T) {
+	m := newTestModel()
+	m.isMultiplayer = true
+	m.currentRunType = "standard"
+
+	// Track submitted time
+	var submittedTime int
+	submittedCh := make(chan struct{}, 1)
+	m.leaderboardSubmitter = func(score, floors, timeSeconds int, class string, seed int64, runType string, victory bool) error {
+		submittedTime = timeSeconds
+		submittedCh <- struct{}{}
+		return nil
+	}
+
+	// Setup game state
+	cfg := config.DefaultConfig()
+	engine := game.NewEngine(cfg, 12345)
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("failed to start game: %v", err)
+	}
+	m.engine = engine
+	m.player = engine.Player()
+	m.elapsedSeconds = 180 // 3 minutes from previous sessions
+
+	// Submit to leaderboard
+	m.submitToLeaderboard(false)
+
+	// Wait for submission
+	<-submittedCh
+
+	// Time should be passed (at least the accumulated time)
+	if submittedTime < 180 {
+		t.Errorf("expected submitted time >= 180, got %d", submittedTime)
 	}
 }

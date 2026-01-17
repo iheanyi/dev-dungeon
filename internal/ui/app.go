@@ -4,6 +4,7 @@ package ui
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -36,6 +37,7 @@ const (
 	ViewUnlockShop
 	ViewLeaderboard
 	ViewDailyLeaderboard
+	ViewConfirmDialog
 )
 
 // introTickMsg is sent to advance intro animation.
@@ -159,6 +161,11 @@ type Model struct {
 	godMode      bool
 	prevView     ViewType // View to return to after admin
 
+	// Confirmation dialog state
+	confirmMessage    string   // Message to display
+	confirmAction     func()   // Action to execute on "Yes"
+	confirmReturnView ViewType // View to return to on "No"
+
 	// Messages
 	statusMsg        string
 	messageHistory   []string // Full message history
@@ -198,6 +205,17 @@ type Model struct {
 	pendingSave   *save.SaveData // Pending save data from DB (multiplayer) to load on Continue
 	quitRequested bool           // True when user wants to quit (for sessionWrapper to intercept)
 	saveCallback  SaveCallback   // Callback to save game (set by server for multiplayer)
+
+	// Daily run status (for preventing duplicate daily runs)
+	dailyRunCompleted   bool                // True if player has leaderboard entry for today's daily
+	dailyRunInProgress  bool                // True if pendingSave.MasterSeed matches today's daily seed
+	dailySeed           int64               // Today's daily seed (set by session)
+	submitDailyCallback SubmitDailyCallback // Callback to submit abandoned daily run
+
+	// Run time tracking
+	runStartTime     time.Time // When this run first started (persisted across saves)
+	sessionStartTime time.Time // When this session started (for calculating current session duration)
+	elapsedSeconds   int       // Accumulated play time from previous sessions
 
 	// Leaderboard state
 	leaderboardEntries   []LeaderboardEntry
@@ -283,7 +301,11 @@ type SaveCallback func() (*save.SaveData, error)
 
 // LeaderboardSubmitter is a callback to submit a score to the leaderboard.
 // Called on death or victory. Parameters: score, floorsCleared, class, seed, runType, victory.
-type LeaderboardSubmitter func(score, floorsCleared int, class string, seed int64, runType string, victory bool) error
+type LeaderboardSubmitter func(score, floorsCleared, timeSeconds int, class string, seed int64, runType string, victory bool) error
+
+// SubmitDailyCallback submits an abandoned daily run to leaderboard.
+// Called with the save data when player starts a new game while having an in-progress daily.
+type SubmitDailyCallback func(saveData *save.SaveData) error
 
 // Styles holds all UI styles.
 type Styles struct {
@@ -525,7 +547,24 @@ func (m *Model) GetSaveData() *save.SaveData {
 		runType = "standard"
 	}
 	saveData.RunType = runType
+
+	// Include time tracking in save data
+	saveData.RunStartTime = m.runStartTime
+	// Calculate total elapsed: previous sessions + current session duration
+	currentSessionDuration := int(time.Since(m.sessionStartTime).Seconds())
+	saveData.ElapsedSeconds = m.elapsedSeconds + currentSessionDuration
+
 	return saveData
+}
+
+// GetTotalPlayTime returns the total play time for the current run in seconds.
+// This includes all previous sessions plus the current session.
+func (m *Model) GetTotalPlayTime() int {
+	if m.sessionStartTime.IsZero() {
+		return m.elapsedSeconds
+	}
+	currentSessionDuration := int(time.Since(m.sessionStartTime).Seconds())
+	return m.elapsedSeconds + currentSessionDuration
 }
 
 // SetMultiplayerMode configures the model for multiplayer (SSH) sessions.
@@ -569,6 +608,56 @@ func (m *Model) SetHasValidSave(hasValidSave bool, saveData ...*save.SaveData) {
 	}
 }
 
+// SetDailyRunStatus sets the daily run state for menu gating.
+func (m *Model) SetDailyRunStatus(completed, inProgress bool, dailySeed int64) {
+	m.dailyRunCompleted = completed
+	m.dailyRunInProgress = inProgress
+	m.dailySeed = dailySeed
+}
+
+// SetSubmitDailyCallback sets the callback for submitting abandoned daily runs.
+func (m *Model) SetSubmitDailyCallback(cb SubmitDailyCallback) {
+	m.submitDailyCallback = cb
+}
+
+// handleMenuSelection is a test helper that simulates selecting a menu option.
+// It finds the option in menuOptions and triggers the selection logic.
+func (m *Model) handleMenuSelection(option string) {
+	// Find the option in menuOptions
+	for i, opt := range m.menuOptions {
+		if opt == option {
+			m.menuCursor = i
+			m.selectMenuItem()
+			return
+		}
+	}
+	// If option not found, just set up the menu and call selectMenuItem
+	// This handles cases where menuOptions isn't fully set up
+	m.menuOptions = []string{option}
+	m.menuCursor = 0
+	m.selectMenuItem()
+}
+
+// handleConfirmDialogKey is a test helper that simulates a key press in the confirm dialog.
+func (m *Model) handleConfirmDialogKey(key string) {
+	switch key {
+	case "y", "Y", "enter":
+		if m.confirmAction != nil {
+			m.confirmAction()
+		}
+	case "n", "N", "esc", "q":
+		m.currentView = m.confirmReturnView
+	}
+}
+
+// showConfirmDialog displays a yes/no confirmation dialog.
+func (m *Model) showConfirmDialog(message string, onConfirm func(), returnView ViewType) {
+	m.confirmMessage = message
+	m.confirmAction = onConfirm
+	m.confirmReturnView = returnView
+	m.currentView = ViewConfirmDialog
+}
+
 // submitToLeaderboard submits the current run's score to the leaderboard.
 // Called on death or victory in multiplayer mode.
 func (m *Model) submitToLeaderboard(victory bool) {
@@ -588,6 +677,9 @@ func (m *Model) submitToLeaderboard(victory bool) {
 		score += 1000 // Victory bonus
 	}
 
+	// Get total play time for this run
+	timeSeconds := m.GetTotalPlayTime()
+
 	// Get game info
 	class := string(m.player.Class)
 	seed := m.engine.MasterSeed()
@@ -598,7 +690,7 @@ func (m *Model) submitToLeaderboard(victory bool) {
 
 	// Submit asynchronously (don't block the UI)
 	go func() {
-		if err := m.leaderboardSubmitter(score, floorsCleared, class, seed, runType, victory); err != nil {
+		if err := m.leaderboardSubmitter(score, floorsCleared, timeSeconds, class, seed, runType, victory); err != nil {
 			// Log error but don't disrupt the game
 			// The error is already logged in the server callback
 		}
@@ -666,6 +758,8 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateLeaderboard(msg)
 	case ViewDailyLeaderboard:
 		return m.updateDailyLeaderboard(msg)
+	case ViewConfirmDialog:
+		return m.updateConfirmDialog(msg)
 	}
 
 	return m, nil
@@ -742,6 +836,29 @@ func (m *Model) updateMainMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) selectMenuItem() (tea.Model, tea.Cmd) {
 	switch m.menuOptions[m.menuCursor] {
 	case "New Game":
+		// Check if they have an in-progress daily run
+		if m.dailyRunInProgress && m.pendingSave != nil {
+			depth := m.pendingSave.CurrentDepth
+			m.showConfirmDialog(
+				fmt.Sprintf("You have a daily run in progress (Floor %d).\nStarting a new game will submit your current progress.\n\nContinue?", depth),
+				func() {
+					// Submit the abandoned daily run
+					if m.submitDailyCallback != nil && m.pendingSave != nil {
+						go m.submitDailyCallback(m.pendingSave)
+					}
+					// Clear the in-progress state
+					m.dailyRunInProgress = false
+					m.dailyRunCompleted = true // They now have a score for today
+					m.pendingSave = nil
+					m.hasValidSave = false
+					// Proceed to class select
+					m.classCursor = 0
+					m.currentView = ViewClassSelect
+				},
+				ViewMainMenu,
+			)
+			return m, nil
+		}
 		m.classCursor = 0
 		m.currentView = ViewClassSelect
 		return m, nil
@@ -749,6 +866,16 @@ func (m *Model) selectMenuItem() (tea.Model, tea.Cmd) {
 		// Daily runs are SSH-only (competitive feature requiring leaderboard)
 		if !m.isMultiplayer {
 			m.statusMsg = "Daily runs require SSH connection"
+			return m, nil
+		}
+		// Block if already completed today's daily
+		if m.dailyRunCompleted {
+			m.statusMsg = "You've already completed today's daily run"
+			return m, nil
+		}
+		// Redirect if in-progress daily exists
+		if m.dailyRunInProgress {
+			m.statusMsg = "You have a daily run in progress - use Continue"
 			return m, nil
 		}
 		m.classCursor = 0
@@ -854,6 +981,13 @@ func (m *Model) continueGame() {
 		} else {
 			m.currentRunType = "standard"
 		}
+		// Restore time tracking from save
+		m.runStartTime = m.pendingSave.RunStartTime
+		m.elapsedSeconds = m.pendingSave.ElapsedSeconds
+		// If no run start time in old save, use now as fallback
+		if m.runStartTime.IsZero() {
+			m.runStartTime = time.Now().UTC()
+		}
 	} else {
 		// Try to load from local files (single player mode)
 		if err := m.engine.LoadLatestSave(); err != nil {
@@ -861,7 +995,13 @@ func (m *Model) continueGame() {
 			return
 		}
 		m.currentRunType = "standard" // Local saves don't track run type
+		// Local saves don't have time tracking, start fresh
+		m.runStartTime = time.Now().UTC()
+		m.elapsedSeconds = 0
 	}
+
+	// Start a new session timer
+	m.sessionStartTime = time.Now().UTC()
 
 	// Get the player from the engine
 	m.player = m.engine.Player()
@@ -910,6 +1050,12 @@ func (m *Model) startNewGame(playerClass entity.PlayerClass) {
 	// Reset run exit codes tracking
 	m.runExitCodesEarned = 0
 	m.runExitCodesBreakdown = nil
+
+	// Initialize time tracking for this new run
+	now := time.Now().UTC()
+	m.runStartTime = now
+	m.sessionStartTime = now
+	m.elapsedSeconds = 0
 
 	// Get the player from the engine
 	m.player = m.engine.Player()
@@ -2034,6 +2180,8 @@ func (m *Model) View() string {
 		return m.viewLeaderboard()
 	case ViewDailyLeaderboard:
 		return m.viewDailyLeaderboard()
+	case ViewConfirmDialog:
+		return m.viewConfirmDialog()
 	default:
 		return "Unknown view"
 	}
@@ -3865,6 +4013,21 @@ func (m *Model) updateDailyLeaderboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateConfirmDialog handles confirmation dialog input.
+func (m *Model) updateConfirmDialog(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y", "enter":
+		if m.confirmAction != nil {
+			m.confirmAction()
+		}
+		return m, nil
+	case "n", "N", "esc", "q":
+		m.currentView = m.confirmReturnView
+		return m, nil
+	}
+	return m, nil
+}
+
 // refreshDailyLeaderboard reloads the daily leaderboard data for the selected date.
 func (m *Model) refreshDailyLeaderboard() {
 	m.dailyLeaderboardError = ""
@@ -3891,10 +4054,11 @@ func (m *Model) viewDailyLeaderboard() string {
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 	minDate := today.AddDate(0, 0, -6)
 
-	// Navigation arrows - always show but dim when disabled
+	// Navigation arrows - check if navigation is allowed
 	canGoBack := !m.dailyLeaderboardDate.Equal(minDate) && !m.dailyLeaderboardDate.Before(minDate)
 	canGoForward := !m.dailyLeaderboardDate.Equal(today) && !m.dailyLeaderboardDate.After(today)
 
+	// Build navigation arrows - use consistent characters
 	leftArrow := "←"
 	rightArrow := "→"
 	if !canGoBack {
@@ -3904,15 +4068,15 @@ func (m *Model) viewDailyLeaderboard() string {
 		rightArrow = " "
 	}
 
-	// Fixed-width date display (12 chars: "Jan 15, 2006")
-	datePadded := fmt.Sprintf("%-12s", dateStr)
+	// Build date navigation line (43 chars inner width to match box)
+	// Layout: 11 spaces + arrow + 3 spaces + date(12) + 3 spaces + arrow + 12 spaces = 43
+	dateLine := fmt.Sprintf("           %s   %-12s   %s            ", leftArrow, dateStr, rightArrow)
 
-	title := m.styles.Title.Render(fmt.Sprintf(
+	title := m.styles.Title.Render(
 		"╔═══════════════════════════════════════════╗\n"+
 			"║            DAILY LEADERBOARD              ║\n"+
-			"║           %s   %s   %s            ║\n"+
-			"╚═══════════════════════════════════════════╝",
-		leftArrow, datePadded, rightArrow)) + "\n"
+			"║"+dateLine+"║\n"+
+			"╚═══════════════════════════════════════════╝") + "\n"
 
 	// Content
 	var content string
@@ -3986,4 +4150,15 @@ func (m *Model) viewDailyLeaderboard() string {
 
 	result := m.styles.Container.Render(title + content + footer)
 	return m.centerContent(result)
+}
+
+// viewConfirmDialog renders a yes/no confirmation dialog.
+func (m *Model) viewConfirmDialog() string {
+	var b strings.Builder
+	b.WriteString(m.styles.Title.Render("Confirm"))
+	b.WriteString("\n\n")
+	b.WriteString(m.confirmMessage)
+	b.WriteString("\n\n")
+	b.WriteString(m.styles.Muted.Render("[Y] Yes  [N] No"))
+	return m.centerContent(m.styles.Container.Render(b.String()))
 }
