@@ -33,5 +33,12 @@ export SSH_HOST_KEY_PATH="$HOST_KEY_PATH"
 
 echo "==> Starting /dev/dungeon server..."
 
+# Check for migration force (to fix dirty state)
+MIGRATE_ARGS=""
+if [ -n "$MIGRATE_FORCE_VERSION" ]; then
+    echo "==> Forcing migration version to $MIGRATE_FORCE_VERSION"
+    MIGRATE_ARGS="--migrate-force $MIGRATE_FORCE_VERSION"
+fi
+
 # Execute the main application with all arguments
-exec /app/devdungeon "$@"
+exec /app/devdungeon $MIGRATE_ARGS "$@"
