@@ -16,6 +16,7 @@ _Auto-synced from .tasuku/context/learnings.md_
 - UI-level state (like run type) must be explicitly included in save data. The game engine's GetSaveData() only knows about engine-level state, so the UI layer needs its own GetSaveData() wrapper that adds UI-specific fields like RunType before persisting to database.
 - Always centralize end-of-run logic (death/victory) into a single finishRun() method. Duplicate code for exit codes, leaderboard submission, save cleanup leads to bugs when one path is updated but not others. The finishRun pattern makes adding new end-of-run behavior safe.
 - When adding database constraints or indexes in migrations, also update the hardcoded test schema in postgres_integration_test.go. The test schema must stay in sync with production migrations or tests using ON CONFLICT or other constraint-dependent features will fail.
+- When spawning goroutines that capture struct fields (like m.pendingSave), always capture the value in a local variable BEFORE the goroutine. The main thread may modify the field (set to nil) before the goroutine executes, causing a race condition.
 
 ## Insights
 

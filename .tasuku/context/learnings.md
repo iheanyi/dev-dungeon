@@ -51,3 +51,6 @@ Always centralize end-of-run logic (death/victory) into a single finishRun() met
 ## 6128af - 2026-01-20T17:19:47Z
 When adding database constraints or indexes in migrations, also update the hardcoded test schema in postgres_integration_test.go. The test schema must stay in sync with production migrations or tests using ON CONFLICT or other constraint-dependent features will fail.
 
+## 0748f9 - 2026-01-20T17:26:37Z
+When spawning goroutines that capture struct fields (like m.pendingSave), always capture the value in a local variable BEFORE the goroutine. The main thread may modify the field (set to nil) before the goroutine executes, causing a race condition.
+

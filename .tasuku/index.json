@@ -154,6 +154,16 @@
       "file": "tasks/reality-mode.md",
       "updated_at": "2026-01-14T01:16:33.124386Z"
     },
+    "refactor-appgo-lines-into-modula": {
+      "status": "ready",
+      "priority": 3,
+      "tags": [
+        "refactor",
+        "tech-debt"
+      ],
+      "file": "tasks/refactor-appgo-lines-into-modula.md",
+      "updated_at": "2026-01-20T17:29:31.901983Z"
+    },
     "security-audit-logging": {
       "status": "ready",
       "priority": 3,
@@ -297,7 +307,7 @@
     }
   },
   "archived_count": 0,
-  "learnings_count": 17,
+  "learnings_count": 18,
   "decisions_count": 10,
-  "updated_at": "2026-01-15T22:20:09.266001Z"
+  "updated_at": "2026-01-20T17:29:31.902234Z"
 }
