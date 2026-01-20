@@ -104,6 +104,10 @@ CREATE TABLE IF NOT EXISTS leaderboard_entries (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Unique constraint for UPSERT on (user_id, seed)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_leaderboard_user_seed
+ON leaderboard_entries(user_id, seed);
+
 -- World drops (async multiplayer)
 CREATE TABLE IF NOT EXISTS world_drops (
     id SERIAL PRIMARY KEY,
