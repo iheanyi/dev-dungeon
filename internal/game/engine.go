@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"sync"
 	"time"
 
 	"github.com/iheanyi/devdungeon/internal/config"
@@ -54,6 +55,11 @@ type Engine struct {
 	saveManager   *save.Manager
 	stats         *RunStats // Current run statistics
 	unlockedItems []string  // Items unlocked via meta-progression (added to loot pool)
+
+	// mu protects state that may be read during background saves.
+	// Lock order: always acquire mu before modifying player, world, or stats
+	// when those modifications could race with toSaveData().
+	mu sync.RWMutex
 }
 
 // NewEngine creates a new game engine with the given configuration and seed.
@@ -474,7 +480,11 @@ func (e *Engine) getViewRadius() int {
 }
 
 // MovePlayer attempts to move the player in the given direction.
+// Acquires write lock to protect state during movement.
 func (e *Engine) MovePlayer(dir types.Direction) MoveResult {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	if e.player == nil || e.state != types.StateExploring {
 		return MoveResult{Moved: false, Message: "Cannot move right now."}
 	}
@@ -598,7 +608,14 @@ func (e *Engine) gatherNearbyEnemies(target *entity.Enemy, radius int) []*entity
 }
 
 // DescendStairs attempts to go down stairs.
+// Note: Save is called outside the lock to avoid deadlock with toSaveData().
 func (e *Engine) DescendStairs() error {
+	// Save before floor transition (outside lock to avoid deadlock)
+	e.Save(save.TriggerFloorTransition)
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	if e.player == nil || e.world.CurrentFloor == nil {
 		return errors.New("no active game")
 	}
@@ -614,9 +631,6 @@ func (e *Engine) DescendStairs() error {
 	if tile == nil || tile.Type != types.TileStairsDown {
 		return errors.New("no stairs down here")
 	}
-
-	// Save before floor transition
-	e.Save(save.TriggerFloorTransition)
 
 	// Cache current floor state
 	e.world.CacheCurrentFloor()
@@ -647,13 +661,17 @@ func (e *Engine) DescendStairs() error {
 }
 
 // ForceDescend forces descent to the next floor regardless of player position (admin/debug).
+// Note: Save is called outside the lock to avoid deadlock with toSaveData().
 func (e *Engine) ForceDescend() error {
+	// Save before floor transition (outside lock to avoid deadlock)
+	e.Save(save.TriggerFloorTransition)
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	if e.player == nil || e.world.CurrentFloor == nil {
 		return errors.New("no active game")
 	}
-
-	// Save before floor transition
-	e.Save(save.TriggerFloorTransition)
 
 	// Cache current floor state
 	e.world.CacheCurrentFloor()
@@ -676,7 +694,14 @@ func (e *Engine) ForceDescend() error {
 }
 
 // AscendStairs attempts to go up stairs.
+// Note: Save is called outside the lock to avoid deadlock with toSaveData().
 func (e *Engine) AscendStairs() error {
+	// Save before floor transition (outside lock to avoid deadlock)
+	e.Save(save.TriggerFloorTransition)
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	if e.player == nil || e.world.CurrentFloor == nil {
 		return errors.New("no active game")
 	}
@@ -691,9 +716,6 @@ func (e *Engine) AscendStairs() error {
 	if tile == nil || tile.Type != types.TileStairsUp {
 		return errors.New("no stairs up here")
 	}
-
-	// Save before floor transition
-	e.Save(save.TriggerFloorTransition)
 
 	// Cache current floor state
 	e.world.CacheCurrentFloor()
@@ -1072,7 +1094,11 @@ func (e *Engine) Shutdown() {
 }
 
 // toSaveData converts the current game state to SaveData.
+// Acquires a read lock to prevent races with game state modifications.
 func (e *Engine) toSaveData() *save.SaveData {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
 	// Convert inventory - use TemplateID (not ID()) so items can be recreated on load
 	var invData []save.ItemData
 	for _, item := range e.player.Inventory.Items {

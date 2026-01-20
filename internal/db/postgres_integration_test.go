@@ -822,6 +822,161 @@ func TestPostgres_CleanupExpiredSessions(t *testing.T) {
 	}
 }
 
+// --- Atomicity and Race Condition Tests ---
+
+// TestPostgres_CreateUser_Atomicity verifies that CreateUser creates both
+// the user and their meta_progress atomically. If the meta_progress insert
+// fails, the user should not be created.
+func TestPostgres_CreateUser_Atomicity(t *testing.T) {
+	client, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Create a user - both user and meta_progress should be created
+	user, err := client.CreateUser(ctx, "atomicuser", "SHA256:atomicfp")
+	if err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
+	}
+
+	// Verify meta_progress was created atomically
+	meta, err := client.GetMetaProgress(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("GetMetaProgress failed: %v", err)
+	}
+	if meta == nil {
+		t.Fatal("meta_progress should be created atomically with user")
+	}
+
+	// Verify default values
+	if len(meta.UnlockedClasses) != 1 || meta.UnlockedClasses[0] != "init" {
+		t.Errorf("expected default class 'init', got %v", meta.UnlockedClasses)
+	}
+	if meta.TotalExitCodes != 0 {
+		t.Errorf("expected 0 exit codes, got %d", meta.TotalExitCodes)
+	}
+}
+
+// TestPostgres_DailySeed_ConcurrentCreation verifies that concurrent calls to
+// GetOrCreateDailySeed don't create duplicate entries (TOCTOU race).
+// All goroutines should get the same seed.
+func TestPostgres_DailySeed_ConcurrentCreation(t *testing.T) {
+	client, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Clear any existing daily seed for today
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	_, _ = client.pool.Exec(ctx, "DELETE FROM daily_seeds WHERE date = $1", today)
+
+	// Run multiple goroutines trying to create today's seed concurrently
+	const numGoroutines = 10
+	results := make(chan int64, numGoroutines)
+	errors := make(chan error, numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			seed, err := client.GetOrCreateDailySeed(ctx)
+			if err != nil {
+				errors <- err
+				return
+			}
+			results <- seed
+		}()
+	}
+
+	// Collect results
+	var seeds []int64
+	for i := 0; i < numGoroutines; i++ {
+		select {
+		case seed := <-results:
+			seeds = append(seeds, seed)
+		case err := <-errors:
+			t.Fatalf("GetOrCreateDailySeed failed: %v", err)
+		case <-time.After(5 * time.Second):
+			t.Fatal("timeout waiting for results")
+		}
+	}
+
+	// All seeds should be the same
+	if len(seeds) != numGoroutines {
+		t.Fatalf("expected %d seeds, got %d", numGoroutines, len(seeds))
+	}
+
+	firstSeed := seeds[0]
+	for i, seed := range seeds {
+		if seed != firstSeed {
+			t.Errorf("goroutine %d got different seed: %d vs %d (TOCTOU race!)", i, seed, firstSeed)
+		}
+	}
+
+	// Verify only one row exists in database
+	var count int
+	err := client.pool.QueryRow(ctx, "SELECT COUNT(*) FROM daily_seeds WHERE date = $1", today).Scan(&count)
+	if err != nil {
+		t.Fatalf("count query failed: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected exactly 1 daily_seed row, got %d (duplicate entries created!)", count)
+	}
+}
+
+// TestPostgres_CreateUser_ConcurrentWithSameFingerprint verifies that
+// concurrent CreateUser calls with the same fingerprint don't cause issues.
+func TestPostgres_CreateUser_ConcurrentWithSameFingerprint(t *testing.T) {
+	client, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	fingerprint := "SHA256:concurrentfp"
+
+	// Run multiple goroutines trying to create the same user
+	const numGoroutines = 5
+	type result struct {
+		user *User
+		err  error
+	}
+	results := make(chan result, numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func(idx int) {
+			user, err := client.CreateUser(ctx, "concurrentuser", fingerprint)
+			results <- result{user, err}
+		}(i)
+	}
+
+	// Collect results - exactly one should succeed, others should fail with unique constraint
+	var successes int
+	var failures int
+	for i := 0; i < numGoroutines; i++ {
+		r := <-results
+		if r.err == nil && r.user != nil {
+			successes++
+		} else {
+			failures++
+		}
+	}
+
+	// Exactly one should succeed
+	if successes != 1 {
+		t.Errorf("expected exactly 1 success, got %d", successes)
+	}
+	if failures != numGoroutines-1 {
+		t.Errorf("expected %d failures, got %d", numGoroutines-1, failures)
+	}
+
+	// Verify only one user exists
+	var count int
+	err := client.pool.QueryRow(ctx, "SELECT COUNT(*) FROM users WHERE public_key_fingerprint = $1", fingerprint).Scan(&count)
+	if err != nil {
+		t.Fatalf("count query failed: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected exactly 1 user, got %d", count)
+	}
+}
+
 // --- Connection Tests ---
 
 func TestPostgres_Close(t *testing.T) {

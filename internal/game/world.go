@@ -14,6 +14,10 @@ type GameWorld struct {
 	FloorCache   map[int]*FloorState // Cache of visited floors with their state
 	CurrentDepth int                 // Current depth (1 = first floor)
 
+	// Spatial indexes for O(1) entity lookups by position
+	enemyIndex map[types.Position]*entity.Enemy // Position -> Enemy for fast lookup
+	itemIndex  map[types.Position]*entity.Item  // Position -> Item for fast lookup
+
 	// Track removed entities for save/load floor deltas
 	// Key is floor depth, value is list of entity IDs removed from that floor
 	RemovedEnemies map[int][]string // Dead enemy IDs by floor depth
@@ -34,17 +38,38 @@ func NewGameWorld() *GameWorld {
 		Items:          make([]*entity.Item, 0),
 		FloorCache:     make(map[int]*FloorState),
 		CurrentDepth:   0,
+		enemyIndex:     make(map[types.Position]*entity.Enemy),
+		itemIndex:      make(map[types.Position]*entity.Item),
 		RemovedEnemies: make(map[int][]string),
 		RemovedItems:   make(map[int][]string),
 	}
 }
 
 // SetFloor sets the current floor and initializes the world state.
+// Rebuilds spatial indexes for O(1) entity lookups.
 func (w *GameWorld) SetFloor(floor *types.Floor, enemies []*entity.Enemy, items []*entity.Item) {
 	w.CurrentFloor = floor
 	w.Enemies = enemies
 	w.Items = items
 	w.CurrentDepth = floor.Depth
+
+	// Rebuild spatial indexes
+	w.rebuildIndexes()
+}
+
+// rebuildIndexes rebuilds the spatial indexes from the current entity slices.
+func (w *GameWorld) rebuildIndexes() {
+	w.enemyIndex = make(map[types.Position]*entity.Enemy)
+	w.itemIndex = make(map[types.Position]*entity.Item)
+
+	for _, enemy := range w.Enemies {
+		if enemy.IsAlive() {
+			w.enemyIndex[enemy.Position()] = enemy
+		}
+	}
+	for _, item := range w.Items {
+		w.itemIndex[item.Position()] = item
+	}
 }
 
 // GetCurrentFloor returns the current floor.
@@ -65,6 +90,7 @@ func (w *GameWorld) CacheCurrentFloor() {
 }
 
 // LoadCachedFloor loads a floor from the cache if it exists.
+// Rebuilds spatial indexes after loading.
 func (w *GameWorld) LoadCachedFloor(depth int) bool {
 	state, ok := w.FloorCache[depth]
 	if !ok {
@@ -74,19 +100,29 @@ func (w *GameWorld) LoadCachedFloor(depth int) bool {
 	w.Enemies = state.Enemies
 	w.Items = state.Items
 	w.CurrentDepth = depth
+
+	// Rebuild spatial indexes
+	w.rebuildIndexes()
 	return true
 }
 
 // AddEnemy adds an enemy to the current floor.
+// Updates the spatial index for O(1) lookups.
 func (w *GameWorld) AddEnemy(enemy *entity.Enemy) {
 	w.Enemies = append(w.Enemies, enemy)
+	if enemy.IsAlive() {
+		w.enemyIndex[enemy.Position()] = enemy
+	}
 }
 
 // RemoveEnemy removes an enemy from the current floor by ID.
-// Also tracks the removal for save/load floor deltas.
+// Also tracks the removal for save/load floor deltas and updates spatial index.
 func (w *GameWorld) RemoveEnemy(id string) bool {
 	for i, e := range w.Enemies {
 		if e.ID() == id {
+			// Remove from spatial index
+			delete(w.enemyIndex, e.Position())
+
 			w.Enemies = append(w.Enemies[:i], w.Enemies[i+1:]...)
 			// Track removal for floor deltas
 			if w.RemovedEnemies == nil {
@@ -100,11 +136,10 @@ func (w *GameWorld) RemoveEnemy(id string) bool {
 }
 
 // GetEnemyAt returns the enemy at the given position, or nil if none.
+// Uses spatial index for O(1) lookup instead of O(n) iteration.
 func (w *GameWorld) GetEnemyAt(pos types.Position) *entity.Enemy {
-	for _, e := range w.Enemies {
-		if e.Position() == pos && e.IsAlive() {
-			return e
-		}
+	if enemy, ok := w.enemyIndex[pos]; ok && enemy.IsAlive() {
+		return enemy
 	}
 	return nil
 }
@@ -120,15 +155,20 @@ func (w *GameWorld) GetEnemyByID(id string) *entity.Enemy {
 }
 
 // AddItem adds an item to the current floor.
+// Updates the spatial index for O(1) lookups.
 func (w *GameWorld) AddItem(item *entity.Item) {
 	w.Items = append(w.Items, item)
+	w.itemIndex[item.Position()] = item
 }
 
 // RemoveItem removes an item from the current floor by ID.
-// Also tracks the removal for save/load floor deltas.
+// Also tracks the removal for save/load floor deltas and updates spatial index.
 func (w *GameWorld) RemoveItem(id string) bool {
 	for i, item := range w.Items {
 		if item.ID() == id {
+			// Remove from spatial index
+			delete(w.itemIndex, item.Position())
+
 			w.Items = append(w.Items[:i], w.Items[i+1:]...)
 			// Track removal for floor deltas
 			if w.RemovedItems == nil {
@@ -142,13 +182,9 @@ func (w *GameWorld) RemoveItem(id string) bool {
 }
 
 // GetItemAt returns the item at the given position, or nil if none.
+// Uses spatial index for O(1) lookup instead of O(n) iteration.
 func (w *GameWorld) GetItemAt(pos types.Position) *entity.Item {
-	for _, item := range w.Items {
-		if item.Position() == pos {
-			return item
-		}
-	}
-	return nil
+	return w.itemIndex[pos]
 }
 
 // GetItemByID returns the item with the given ID, or nil if not found.

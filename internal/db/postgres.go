@@ -111,12 +111,20 @@ func (c *Client) GetUserByUsername(ctx context.Context, username string) (*User,
 }
 
 // CreateUser creates a new user account.
+// Uses a transaction to ensure atomicity between user creation and meta_progress insertion.
 func (c *Client) CreateUser(ctx context.Context, username, fingerprint string) (*User, error) {
 	nanoid := GenerateNanoID()
 	now := time.Now().UTC()
 
+	// Use a transaction to ensure user and meta_progress are created atomically
+	tx, err := c.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	var user User
-	err := c.pool.QueryRow(ctx, `
+	err = tx.QueryRow(ctx, `
 		INSERT INTO users (nanoid, username, public_key_fingerprint, created_at, last_login)
 		VALUES ($1, $2, $3, $4, $4)
 		RETURNING id, nanoid, username, public_key_fingerprint, created_at, last_login, is_banned
@@ -133,13 +141,17 @@ func (c *Client) CreateUser(ctx context.Context, username, fingerprint string) (
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	// Create default meta progress
-	_, err = c.pool.Exec(ctx, `
+	// Create default meta progress within the same transaction
+	_, err = tx.Exec(ctx, `
 		INSERT INTO meta_progress (user_id, unlocked_classes, unlocked_items)
 		VALUES ($1, ARRAY['init'], ARRAY[]::TEXT[])
 	`, user.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create meta progress: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	return &user, nil
@@ -359,30 +371,39 @@ func (c *Client) CleanupExpiredDrops(ctx context.Context) (int64, error) {
 // --- Daily Seed Operations ---
 
 // GetOrCreateDailySeed gets today's seed, creating if needed.
+// Uses INSERT ON CONFLICT to prevent TOCTOU race conditions when multiple
+// concurrent requests try to create the seed for the same day.
 func (c *Client) GetOrCreateDailySeed(ctx context.Context) (int64, error) {
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 
+	// Generate cryptographically random seed (unpredictable)
+	var seedBytes [8]byte
+	if _, err := crypto_rand.Read(seedBytes[:]); err != nil {
+		return 0, fmt.Errorf("failed to generate random seed: %w", err)
+	}
+	candidateSeed := int64(binary.BigEndian.Uint64(seedBytes[:]))
+
+	// Use INSERT ON CONFLICT to atomically get-or-create the daily seed.
+	// If the row already exists (conflict on date), DO NOTHING and then
+	// SELECT the existing seed. This prevents TOCTOU race conditions.
 	var seed int64
 	err := c.pool.QueryRow(ctx, `
-		SELECT seed FROM daily_seeds WHERE date = $1
-	`, today).Scan(&seed)
+		INSERT INTO daily_seeds (date, seed, created_at)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (date) DO NOTHING
+		RETURNING seed
+	`, today, candidateSeed, time.Now().UTC()).Scan(&seed)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		// Generate cryptographically random seed (unpredictable)
-		var seedBytes [8]byte
-		if _, err := crypto_rand.Read(seedBytes[:]); err != nil {
-			return 0, fmt.Errorf("failed to generate random seed: %w", err)
-		}
-		seed = int64(binary.BigEndian.Uint64(seedBytes[:]))
-		_, err = c.pool.Exec(ctx, `
-			INSERT INTO daily_seeds (date, seed, created_at)
-			VALUES ($1, $2, $3)
-		`, today, seed, time.Now().UTC())
+		// Row already existed (conflict), fetch the existing seed
+		err = c.pool.QueryRow(ctx, `
+			SELECT seed FROM daily_seeds WHERE date = $1
+		`, today).Scan(&seed)
 		if err != nil {
-			return 0, err
+			return 0, fmt.Errorf("failed to get existing daily seed: %w", err)
 		}
 	} else if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to create daily seed: %w", err)
 	}
 
 	return seed, nil
