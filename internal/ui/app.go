@@ -863,8 +863,10 @@ func (m *Model) selectMenuItem() (tea.Model, tea.Cmd) {
 				fmt.Sprintf("You have a daily run in progress (Floor %d).\nStarting a new game will submit your current progress.\n\nContinue?", depth),
 				func() {
 					// Submit the abandoned daily run
-					if m.submitDailyCallback != nil && m.pendingSave != nil {
-						go func() { _ = m.submitDailyCallback(m.pendingSave) }()
+					// Capture pendingSave before clearing to avoid race condition
+					saveData := m.pendingSave
+					if m.submitDailyCallback != nil && saveData != nil {
+						go func() { _ = m.submitDailyCallback(saveData) }()
 					}
 					// Clear the in-progress state
 					m.dailyRunInProgress = false
