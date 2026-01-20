@@ -48,3 +48,6 @@ UI-level state (like run type) must be explicitly included in save data. The gam
 ## d559cb - 2026-01-17T15:28:09Z
 Always centralize end-of-run logic (death/victory) into a single finishRun() method. Duplicate code for exit codes, leaderboard submission, save cleanup leads to bugs when one path is updated but not others. The finishRun pattern makes adding new end-of-run behavior safe.
 
+## 6128af - 2026-01-20T17:19:47Z
+When adding database constraints or indexes in migrations, also update the hardcoded test schema in postgres_integration_test.go. The test schema must stay in sync with production migrations or tests using ON CONFLICT or other constraint-dependent features will fail.
+

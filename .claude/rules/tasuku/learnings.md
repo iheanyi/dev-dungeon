@@ -15,6 +15,7 @@ _Auto-synced from .tasuku/context/learnings.md_
 - When using pendingSave pattern for multiplayer saves, always update pendingSave after successful save callbacks. Otherwise Continue will load stale session-start data instead of the latest saved state. Get save data BEFORE calling save callback (engine may be destroyed after), then store it on success.
 - UI-level state (like run type) must be explicitly included in save data. The game engine's GetSaveData() only knows about engine-level state, so the UI layer needs its own GetSaveData() wrapper that adds UI-specific fields like RunType before persisting to database.
 - Always centralize end-of-run logic (death/victory) into a single finishRun() method. Duplicate code for exit codes, leaderboard submission, save cleanup leads to bugs when one path is updated but not others. The finishRun pattern makes adding new end-of-run behavior safe.
+- When adding database constraints or indexes in migrations, also update the hardcoded test schema in postgres_integration_test.go. The test schema must stay in sync with production migrations or tests using ON CONFLICT or other constraint-dependent features will fail.
 
 ## Insights
 

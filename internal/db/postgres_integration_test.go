@@ -464,12 +464,12 @@ func TestPostgres_Leaderboard(t *testing.T) {
 	user2, _ := client.CreateUser(ctx, "player2", "SHA256:fp2")
 	user3, _ := client.CreateUser(ctx, "player3", "SHA256:fp3")
 
-	// Add entries
+	// Add entries - each needs a unique (user_id, seed) combination due to UPSERT constraint
 	entries := []*LeaderboardEntry{
-		{UserID: user1.ID, RunType: "standard", Score: 1000, FloorsCleared: 5, Class: "init"},
-		{UserID: user2.ID, RunType: "standard", Score: 2000, FloorsCleared: 8, Class: "bash"},
-		{UserID: user3.ID, RunType: "daily", Score: 1500, FloorsCleared: 6, Class: "sudo"},
-		{UserID: user1.ID, RunType: "standard", Score: 3000, FloorsCleared: 10, Class: "init"},
+		{UserID: user1.ID, RunType: "standard", Seed: 1001, Score: 1000, FloorsCleared: 5, Class: "init"},
+		{UserID: user2.ID, RunType: "standard", Seed: 1002, Score: 2000, FloorsCleared: 8, Class: "bash"},
+		{UserID: user3.ID, RunType: "daily", Seed: 1003, Score: 1500, FloorsCleared: 6, Class: "sudo"},
+		{UserID: user1.ID, RunType: "standard", Seed: 1004, Score: 3000, FloorsCleared: 10, Class: "init"},
 	}
 
 	for _, entry := range entries {
