@@ -1,6 +1,25 @@
 {
   "version": "v4",
   "tasks": {
+    "add-spatial-indexing-for-o-entit": {
+      "status": "done",
+      "priority": 1,
+      "tags": [
+        "performance"
+      ],
+      "file": "tasks/add-spatial-indexing-for-o-entit.md",
+      "updated_at": "2026-01-21T01:45:28.284216Z"
+    },
+    "add-synchronization-for-engine-s": {
+      "status": "done",
+      "priority": 1,
+      "tags": [
+        "bug",
+        "concurrency"
+      ],
+      "file": "tasks/add-synchronization-for-engine-s.md",
+      "updated_at": "2026-01-21T01:45:28.430558Z"
+    },
     "admin-console": {
       "status": "done",
       "priority": 3,
@@ -86,6 +105,37 @@
       "file": "tasks/enemy-system.md",
       "updated_at": "2026-01-14T02:44:34.112038Z"
     },
+    "extract-magic-numbers-to-named-c": {
+      "status": "ready",
+      "priority": 3,
+      "tags": [
+        "refactor",
+        "tech-debt"
+      ],
+      "file": "tasks/extract-magic-numbers-to-named-c.md",
+      "updated_at": "2026-01-20T18:07:46.471541Z"
+    },
+    "extract-saveandreturntomenu-help": {
+      "status": "ready",
+      "priority": 3,
+      "tags": [
+        "refactor",
+        "tech-debt"
+      ],
+      "file": "tasks/extract-saveandreturntomenu-help.md",
+      "updated_at": "2026-01-20T18:07:46.589942Z"
+    },
+    "fix-toctou-race-condition-in-get": {
+      "status": "done",
+      "priority": 0,
+      "tags": [
+        "bug",
+        "data-integrity",
+        "security"
+      ],
+      "file": "tasks/fix-toctou-race-condition-in-get.md",
+      "updated_at": "2026-01-21T01:45:28.055098Z"
+    },
     "game-engine": {
       "status": "done",
       "priority": 1,
@@ -113,6 +163,16 @@
       "priority": 2,
       "file": "tasks/inventory-system.md",
       "updated_at": "2026-01-14T01:44:30.006369Z"
+    },
+    "make-createuser-atomic-with-meta": {
+      "status": "done",
+      "priority": 0,
+      "tags": [
+        "bug",
+        "data-integrity"
+      ],
+      "file": "tasks/make-createuser-atomic-with-meta.md",
+      "updated_at": "2026-01-21T01:45:28.171984Z"
     },
     "meta-progression": {
       "status": "done",
@@ -163,6 +223,16 @@
       ],
       "file": "tasks/refactor-appgo-lines-into-modula.md",
       "updated_at": "2026-01-20T17:29:31.901983Z"
+    },
+    "remove-duplicate-armor-damage-re": {
+      "status": "ready",
+      "priority": 3,
+      "tags": [
+        "refactor",
+        "tech-debt"
+      ],
+      "file": "tasks/remove-duplicate-armor-damage-re.md",
+      "updated_at": "2026-01-20T18:07:46.527515Z"
     },
     "security-audit-logging": {
       "status": "ready",
@@ -296,6 +366,15 @@
       "file": "tasks/unlockables-system.md",
       "updated_at": "2026-01-14T18:15:02.399045Z"
     },
+    "use-stringsbuilder-in-render-loo": {
+      "status": "ready",
+      "priority": 2,
+      "tags": [
+        "performance"
+      ],
+      "file": "tasks/use-stringsbuilder-in-render-loo.md",
+      "updated_at": "2026-01-20T18:07:46.406453Z"
+    },
     "wire-daily-leaderboard-fetcher": {
       "status": "done",
       "tags": [
@@ -309,5 +388,5 @@
   "archived_count": 0,
   "learnings_count": 18,
   "decisions_count": 10,
-  "updated_at": "2026-01-20T17:29:31.902234Z"
+  "updated_at": "2026-01-21T01:45:28.430748Z"
 }
