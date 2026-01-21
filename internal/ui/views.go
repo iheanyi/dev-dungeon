@@ -291,26 +291,32 @@ func (m *Model) renderStats() string {
 	return m.styles.StatPanel.Width(20).Render(content)
 }
 
-// colorizeRAM colors RAM (health) based on percentage.
+// colorizeRAM colors RAM (health) based on percentage with accessibility indicators.
 func (m *Model) colorizeRAM(current, max int) string {
 	pct := float64(current) / float64(max)
 	str := fmt.Sprintf("%d", current)
 	if pct > 0.6 {
 		return m.styles.Success.Render(str)
 	} else if pct > 0.3 {
-		return m.styles.Highlight.Render(str)
+		// Warning state - add indicator for colorblind accessibility
+		return m.styles.Highlight.Render(str + " !")
 	}
-	return m.styles.Danger.Render(str)
+	// Critical state - clear danger indicator
+	return m.styles.Danger.Render(str + " !!")
 }
 
-// colorizeFD colors FD (ability resource) based on percentage.
+// colorizeFD colors FD (ability resource) based on percentage with accessibility indicators.
 func (m *Model) colorizeFD(current, max int) string {
 	pct := float64(current) / float64(max)
 	str := fmt.Sprintf("%d", current)
 	if pct > 0.5 {
 		return m.styles.Normal.Render(str)
+	} else if pct > 0.25 {
+		// Low state
+		return m.styles.Muted.Render(str)
 	}
-	return m.styles.Muted.Render(str)
+	// Very low - add indicator
+	return m.styles.Muted.Render(str + " !")
 }
 
 // getViewportSize calculates the map viewport size based on terminal dimensions.
@@ -1093,13 +1099,16 @@ func (m *Model) viewShop() string {
 			perms = "----------"
 		}
 
+		// Price with accessibility indicator (not just color)
 		priceStr := fmt.Sprintf("%4d", item.Price)
 		if !item.InStock {
-			priceStr = m.styles.Muted.Render(priceStr)
+			priceStr = m.styles.Muted.Render(priceStr + "  ")
 		} else if m.player.ExitCodes < item.Price {
-			priceStr = m.styles.Danger.Render(priceStr)
+			// Can't afford - red with X indicator
+			priceStr = m.styles.Danger.Render(priceStr + " x")
 		} else {
-			priceStr = m.styles.Success.Render(priceStr)
+			// Can afford - green with checkmark
+			priceStr = m.styles.Success.Render(priceStr + " +")
 		}
 
 		nameStr := item.Name
@@ -1212,13 +1221,14 @@ func (m *Model) renderUnlockClasses() string {
 		unlocked := m.isClassUnlocked(c.class)
 		price := m.getClassUnlockPrice(c.class)
 
+		// Status with accessibility indicators (not just color)
 		var statusStr string
 		if unlocked {
 			statusStr = m.styles.Success.Render(" [UNLOCKED]")
 		} else if m.metaProgress.TotalExitCodes >= price {
-			statusStr = m.styles.Highlight.Render(fmt.Sprintf(" [%d exit codes]", price))
+			statusStr = m.styles.Highlight.Render(fmt.Sprintf(" + %d exit codes", price))
 		} else {
-			statusStr = m.styles.Danger.Render(fmt.Sprintf(" [%d exit codes]", price))
+			statusStr = m.styles.Danger.Render(fmt.Sprintf(" x %d exit codes", price))
 		}
 
 		content += style.Render(fmt.Sprintf("%s%s%s", cursor, c.class, statusStr)) + "\n"
@@ -1246,13 +1256,14 @@ func (m *Model) renderUnlockBonuses() string {
 		price := m.getBonusPrice(bonus)
 		levelStr := fmt.Sprintf("[%d/%d]", bonus.CurrentLevel, bonus.MaxLevel)
 
+		// Status with accessibility indicators (not just color)
 		var statusStr string
 		if bonus.CurrentLevel >= bonus.MaxLevel {
-			statusStr = m.styles.Success.Render(" MAX")
+			statusStr = m.styles.Success.Render(" [MAX]")
 		} else if m.metaProgress.TotalExitCodes >= price {
-			statusStr = m.styles.Highlight.Render(fmt.Sprintf(" - %d exit codes", price))
+			statusStr = m.styles.Highlight.Render(fmt.Sprintf(" + %d exit codes", price))
 		} else {
-			statusStr = m.styles.Danger.Render(fmt.Sprintf(" - %d exit codes", price))
+			statusStr = m.styles.Danger.Render(fmt.Sprintf(" x %d exit codes", price))
 		}
 
 		content += style.Render(fmt.Sprintf("%s%s %s%s", cursor, bonus.Name, levelStr, statusStr)) + "\n"
@@ -1277,13 +1288,14 @@ func (m *Model) renderUnlockItems() string {
 			style = m.styles.MenuSelected
 		}
 
+		// Status with accessibility indicators (not just color)
 		var statusStr string
 		if item.Unlocked {
 			statusStr = m.styles.Success.Render(" [UNLOCKED]")
 		} else if m.metaProgress.TotalExitCodes >= item.Price {
-			statusStr = m.styles.Highlight.Render(fmt.Sprintf(" [%d exit codes]", item.Price))
+			statusStr = m.styles.Highlight.Render(fmt.Sprintf(" + %d exit codes", item.Price))
 		} else {
-			statusStr = m.styles.Danger.Render(fmt.Sprintf(" [%d exit codes]", item.Price))
+			statusStr = m.styles.Danger.Render(fmt.Sprintf(" x %d exit codes", item.Price))
 		}
 
 		content += style.Render(fmt.Sprintf("%s%s%s", cursor, item.Name, statusStr)) + "\n"
@@ -1326,9 +1338,9 @@ func (m *Model) viewLeaderboard() string {
 	var content string
 	if !m.isMultiplayer {
 		// Local mode - no leaderboard access
-		content = m.styles.Muted.Render("  Leaderboards are only available via SSH.\n\n")
-		content += m.styles.Normal.Render("  Connect with:\n")
-		content += m.styles.Highlight.Render("  ssh player@dev-dungeon.com\n\n")
+		content = m.styles.Muted.Render("  Leaderboards are only available via SSH.") + "\n\n"
+		content += "  " + m.styles.Muted.Render("Connect with:") + "\n"
+		content += "  " + m.styles.Highlight.Render("ssh player@dev-dungeon.com") + "\n\n"
 	} else if m.leaderboardError != "" {
 		content = m.styles.Danger.Render("  " + m.leaderboardError + "\n\n")
 		content += m.styles.Muted.Render("  Press [R] to retry\n")
