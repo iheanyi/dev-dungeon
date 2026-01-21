@@ -291,32 +291,40 @@ func (m *Model) renderStats() string {
 	return m.styles.StatPanel.Width(20).Render(content)
 }
 
-// colorizeRAM colors RAM (health) based on percentage with accessibility indicators.
+// colorizeRAM colors RAM (health) based on percentage.
 func (m *Model) colorizeRAM(current, max int) string {
 	pct := float64(current) / float64(max)
 	str := fmt.Sprintf("%d", current)
 	if pct > 0.6 {
 		return m.styles.Success.Render(str)
 	} else if pct > 0.3 {
-		// Warning state - add indicator for colorblind accessibility
-		return m.styles.Highlight.Render(str + " !")
+		return m.styles.Highlight.Render(str)
 	}
-	// Critical state - clear danger indicator
-	return m.styles.Danger.Render(str + " !!")
+	return m.styles.Danger.Render(str)
 }
 
-// colorizeFD colors FD (ability resource) based on percentage with accessibility indicators.
+// colorizeEnemyRAM colors enemy RAM based on percentage.
+func (m *Model) colorizeEnemyRAM(current, max int) string {
+	pct := float64(current) / float64(max)
+	str := fmt.Sprintf("%d", current)
+	if pct > 0.6 {
+		return str
+	} else if pct > 0.3 {
+		return m.styles.Highlight.Render(str)
+	}
+	return m.styles.Danger.Render(str)
+}
+
+// colorizeFD colors FD (ability resource) based on percentage.
 func (m *Model) colorizeFD(current, max int) string {
 	pct := float64(current) / float64(max)
 	str := fmt.Sprintf("%d", current)
 	if pct > 0.5 {
 		return m.styles.Normal.Render(str)
 	} else if pct > 0.25 {
-		// Low state
 		return m.styles.Muted.Render(str)
 	}
-	// Very low - add indicator
-	return m.styles.Muted.Render(str + " !")
+	return m.styles.Muted.Render(str)
 }
 
 // getViewportSize calculates the map viewport size based on terminal dimensions.
@@ -594,11 +602,14 @@ func (m *Model) viewCombat() string {
 				bossTag = m.styles.Danger.Render(" [BOSS]")
 			}
 
-			enemyInfo += fmt.Sprintf("%s%s %-14s RAM: %d/%d  CPU: %d%s\n",
+			// Colorize enemy RAM with accessibility indicators (like player RAM)
+			enemyRAMStr := m.colorizeEnemyRAM(enemy.Stats.RAM, enemy.MaxStats.MaxRAM)
+
+			enemyInfo += fmt.Sprintf("%s%s %-14s RAM: %s/%d  CPU: %d%s\n",
 				targetIndicator,
 				m.styles.Enemy.Render(string(enemy.Glyph())),
 				enemy.Name(),
-				enemy.Stats.RAM,
+				enemyRAMStr,
 				enemy.MaxStats.MaxRAM,
 				enemy.Stats.CPU,
 				bossTag)
@@ -767,20 +778,20 @@ func (m *Model) getItemDetails(item *entity.Item) string {
 	return details
 }
 
-// formatRarity returns a styled rarity string.
+// formatRarity returns a styled rarity string with visual prefix for accessibility.
 func (m *Model) formatRarity(rarity entity.ItemRarity) string {
 	name := rarity.String()
 	switch rarity {
 	case entity.RarityCommon:
 		return m.styles.Muted.Render(name)
 	case entity.RarityUncommon:
-		return m.styles.Normal.Render(name)
+		return m.styles.Normal.Render("+ " + name)
 	case entity.RarityRare:
-		return m.styles.Highlight.Render(name)
+		return m.styles.Highlight.Render("++ " + name)
 	case entity.RarityEpic:
-		return m.styles.Title.Render(name)
+		return m.styles.Title.Render("+++ " + name)
 	case entity.RarityLegendary:
-		return m.styles.Danger.Render(name)
+		return m.styles.Danger.Render("*** " + name)
 	default:
 		return name
 	}
@@ -1404,14 +1415,14 @@ func (m *Model) viewDailyLeaderboard() string {
 	canGoBack := !m.dailyLeaderboardDate.Equal(minDate) && !m.dailyLeaderboardDate.Before(minDate)
 	canGoForward := !m.dailyLeaderboardDate.Equal(today) && !m.dailyLeaderboardDate.After(today)
 
-	// Build navigation arrows - use consistent characters
+	// Build navigation arrows - show muted when disabled for accessibility
 	leftArrow := "←"
 	rightArrow := "→"
 	if !canGoBack {
-		leftArrow = " "
+		leftArrow = m.styles.Muted.Render("←")
 	}
 	if !canGoForward {
-		rightArrow = " "
+		rightArrow = m.styles.Muted.Render("→")
 	}
 
 	// Build date navigation line (43 chars inner width to match box)

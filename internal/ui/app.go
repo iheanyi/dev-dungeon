@@ -1091,26 +1091,7 @@ func (m *Model) updateGame(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "p", "esc":
 		m.currentView = ViewPause
 	case "q":
-		// Save and return to main menu
-		if m.engine != nil {
-			// Call save callback BEFORE destroying the engine
-			if m.saveCallback != nil {
-				if savedData, err := m.saveCallback(); err != nil {
-					m.statusMsg = "Failed to save game."
-				} else {
-					m.statusMsg = "Game saved."
-					m.hasValidSave = true     // Enable Continue option
-					m.pendingSave = savedData // Update for next Continue in same session
-				}
-			} else {
-				m.statusMsg = "Returned to menu."
-			}
-			m.engine.Shutdown()
-			m.engine = nil
-		}
-		m.player = nil
-		m.currentView = ViewMainMenu
-		m.gameState = types.StateMainMenu
+		m.saveGameAndReturnToMenu()
 	case "`":
 		// Open admin console - disabled in multiplayer to prevent cheating
 		if m.isMultiplayer {
@@ -1172,26 +1153,7 @@ func (m *Model) updatePause(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc", "p":
 		m.currentView = ViewGame
 	case "q":
-		// Save before returning to main menu
-		if m.engine != nil {
-			// Call save callback BEFORE destroying the engine
-			if m.saveCallback != nil {
-				if savedData, err := m.saveCallback(); err != nil {
-					m.statusMsg = "Failed to save game."
-				} else {
-					m.statusMsg = "Game saved."
-					m.hasValidSave = true     // Enable Continue option
-					m.pendingSave = savedData // Update for next Continue in same session
-				}
-			} else {
-				m.statusMsg = "Returned to menu."
-			}
-			m.engine.Shutdown()
-			m.engine = nil
-		}
-		m.player = nil
-		m.currentView = ViewMainMenu
-		m.gameState = types.StateMainMenu
+		m.saveGameAndReturnToMenu()
 	}
 	return m, nil
 }
@@ -1555,6 +1517,44 @@ func (m *Model) clearSaveOnRunEnd() {
 			_ = m.saveManager.DeleteSave(seed) // Best-effort delete
 		}
 	}
+}
+
+// saveGameAndReturnToMenu saves the game and returns to the main menu.
+// Works for both multiplayer (saveCallback) and offline (saveManager) modes.
+func (m *Model) saveGameAndReturnToMenu() {
+	if m.engine == nil {
+		return
+	}
+
+	// Try multiplayer save callback first
+	if m.saveCallback != nil {
+		if savedData, err := m.saveCallback(); err != nil {
+			m.statusMsg = "Failed to save game."
+		} else {
+			m.statusMsg = "Game saved."
+			m.hasValidSave = true
+			m.pendingSave = savedData
+		}
+	} else if m.saveManager != nil {
+		// Offline mode - save to local files
+		saveData := m.GetSaveData()
+		if saveData != nil {
+			if err := m.saveManager.SaveSync(saveData, save.TriggerManual); err != nil {
+				m.statusMsg = "Failed to save game."
+			} else {
+				m.statusMsg = "Game saved."
+				m.hasValidSave = true
+			}
+		}
+	} else {
+		m.statusMsg = "Returned to menu."
+	}
+
+	m.engine.Shutdown()
+	m.engine = nil
+	m.player = nil
+	m.currentView = ViewMainMenu
+	m.gameState = types.StateMainMenu
 }
 
 // updateConfirmDialog handles confirmation dialog input.
