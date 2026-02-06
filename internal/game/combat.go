@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 
+	"github.com/iheanyi/devdungeon/internal/content"
 	"github.com/iheanyi/devdungeon/internal/entity"
 	"github.com/iheanyi/devdungeon/internal/save"
 	"github.com/iheanyi/devdungeon/internal/types"
@@ -11,15 +12,16 @@ import (
 
 // CombatState represents the current state of combat.
 type CombatState struct {
-	Player      *entity.Player
-	Enemies     []*entity.Enemy
-	CurrentTurn int // 0 = player, 1+ = enemy index
-	TurnNumber  int
-	Log         []string
-	IsOver      bool
-	Victory     bool
-	FleeChance  float64
-	rng         *rand.Rand
+	Player        *entity.Player
+	Enemies       []*entity.Enemy
+	CurrentTurn   int // 0 = player, 1+ = enemy index
+	TurnNumber    int
+	Log           []string
+	IsOver        bool
+	Victory       bool
+	FleeChance    float64
+	rng           *rand.Rand
+	bossLastPhase int
 }
 
 // CombatAction is an alias for types.ActionType.
@@ -67,6 +69,28 @@ func (cs *CombatState) ExecutePlayerAction(action CombatAction, targetIdx int, s
 		result = cs.playerFlee()
 	case types.ActionUseItem:
 		result = CombatResult{Message: "Select an item from inventory."}
+	}
+
+	// Check boss phase transitions after player deals damage
+	for _, enemy := range cs.Enemies {
+		if enemy.Type == entity.EnemyKernelPanic && enemy.IsAlive() {
+			healthPct := (enemy.Stats.RAM * 100) / enemy.MaxStats.MaxRAM
+			var currentPhase int
+			if healthPct > 75 {
+				currentPhase = 0
+			} else if healthPct > 50 {
+				currentPhase = 1
+			} else if healthPct > 25 {
+				currentPhase = 2
+			} else {
+				currentPhase = 3
+			}
+			if currentPhase > cs.bossLastPhase {
+				phaseMsg := content.GetBossPhaseMessage(healthPct)
+				cs.Log = append(cs.Log, phaseMsg)
+				cs.bossLastPhase = currentPhase
+			}
+		}
 	}
 
 	// Check for victory
@@ -137,6 +161,23 @@ func (cs *CombatState) playerAttack(targetIdx int) CombatResult {
 		return CombatResult{Message: fmt.Sprintf("%s is already dead.", enemy.Name())}
 	}
 
+	// Check for InstantKill weapon effect (before normal damage calc)
+	if cs.Player.Equipment.Weapon != nil && !enemy.IsBoss {
+		for _, effect := range cs.Player.Equipment.Weapon.Effects {
+			if effect.Type == entity.EffectInstantKill {
+				// Roll for instant kill: chance scales with effect value
+				// kill_9 (Value 15) = 8% chance, rm_rf (Value 20) = 5% chance
+				instantKillChance := 0.03 + float64(effect.Value)/500.0
+				if cs.rng.Float64() < instantKillChance {
+					enemy.Stats.RAM = 0
+					msg := fmt.Sprintf("INSTANT KILL! %s obliterates %s!", cs.Player.Equipment.Weapon.Name(), enemy.Name())
+					cs.Log = append(cs.Log, msg)
+					return CombatResult{Message: msg, Damage: enemy.MaxStats.MaxRAM, TargetName: enemy.Name()}
+				}
+			}
+		}
+	}
+
 	// Calculate damage using effective CPU (includes buffs)
 	baseDamage := cs.Player.GetEffectiveCPU()
 
@@ -155,6 +196,15 @@ func (cs *CombatState) playerAttack(targetIdx int) CombatResult {
 	isCritical := cs.rng.Float64() < critChance
 	if isCritical {
 		damage = int(float64(damage) * 1.5)
+	}
+
+	// Apply scheduled damage buff (crontab: 2x multiplier)
+	if cs.Player.HasBuff(entity.BuffScheduledDmg) {
+		buff := cs.Player.GetBuff(entity.BuffScheduledDmg)
+		if buff != nil {
+			damage *= buff.Value
+			cs.Player.RemoveBuff(entity.BuffScheduledDmg)
+		}
 	}
 
 	// Apply damage
@@ -203,6 +253,19 @@ func (cs *CombatState) playerUseSkill(targetIdx int, skillIdx int) CombatResult 
 
 	// Set cooldown
 	skill.CurrentCD = skill.Cooldown
+
+	// Special handling for crontab: schedule 2x damage on next attack
+	if skill.ID == "schedule" {
+		cs.Player.AddBuff(entity.Buff{
+			Type:     entity.BuffScheduledDmg,
+			Name:     "Scheduled Damage",
+			Duration: 2, // Lasts until next attack (ticked at end of round)
+			Value:    2, // 2x multiplier
+		})
+		msg := fmt.Sprintf("%s scheduled! Next attack deals 2x damage!", skill.Name)
+		cs.Log = append(cs.Log, msg)
+		return CombatResult{Message: msg}
+	}
 
 	// Calculate damage
 	damage := skill.BaseDamage + cs.Player.Stats.CPU/2
@@ -501,8 +564,8 @@ func (cs *CombatState) CalculateRewards() (xp int, exitCodes int, loot []*entity
 			// Roll for loot drops
 			for _, itemID := range enemy.LootTable {
 				// 50% drop chance per item in loot table
-				if rand.Float64() < 0.5 {
-					item := entity.NewItem(itemID, fmt.Sprintf("loot_%s_%d", itemID, rand.Int()), types.Position{})
+				if cs.rng.Float64() < 0.5 {
+					item := entity.NewItem(itemID, fmt.Sprintf("loot_%s_%d", itemID, cs.rng.Int()), types.Position{})
 					if item != nil {
 						loot = append(loot, item)
 					}

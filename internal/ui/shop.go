@@ -282,11 +282,11 @@ func (m *Model) purchaseBonusUnlock() {
 	// Apply the bonus
 	switch bonus.StatType {
 	case "RAM":
-		m.metaProgress.PermanentBonuses.PID += bonus.BonusAmount
+		m.metaProgress.PermanentBonuses.RAM += bonus.BonusAmount
 	case "CPU":
 		m.metaProgress.PermanentBonuses.CPU += bonus.BonusAmount
 	case "MEM":
-		m.metaProgress.PermanentBonuses.MEM += bonus.BonusAmount
+		m.metaProgress.PermanentBonuses.FD += bonus.BonusAmount
 	case "NICE":
 		m.metaProgress.PermanentBonuses.NICE += bonus.BonusAmount
 	}
@@ -332,9 +332,9 @@ func (m *Model) purchaseItemUnlock() {
 // getUnlockableBonuses returns the list of permanent stat bonuses available.
 func (m *Model) getUnlockableBonuses() []UnlockableBonus {
 	// Calculate current levels from meta progress
-	ramLevel := m.metaProgress.PermanentBonuses.PID / 5
+	ramLevel := m.metaProgress.PermanentBonuses.RAM / 5
 	cpuLevel := m.metaProgress.PermanentBonuses.CPU / 2
-	memLevel := m.metaProgress.PermanentBonuses.MEM / 2
+	memLevel := m.metaProgress.PermanentBonuses.FD / 2
 	niceLevel := m.metaProgress.PermanentBonuses.NICE / 1
 
 	return []UnlockableBonus{

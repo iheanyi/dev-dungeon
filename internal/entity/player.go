@@ -257,11 +257,12 @@ type Skill struct {
 type BuffType string
 
 const (
-	BuffInvincible BuffType = "invincible" // Immune to damage (sudo mode)
-	BuffStrength   BuffType = "strength"   // Increased CPU
-	BuffHaste      BuffType = "haste"      // Lower NICE (faster)
-	BuffRegenRAM   BuffType = "regen_ram"  // Heal over time
-	BuffRegenFD    BuffType = "regen_fd"   // FD restore over time
+	BuffInvincible   BuffType = "invincible"    // Immune to damage (sudo mode)
+	BuffStrength     BuffType = "strength"      // Increased CPU
+	BuffHaste        BuffType = "haste"         // Lower NICE (faster)
+	BuffRegenRAM     BuffType = "regen_ram"     // Heal over time
+	BuffRegenFD      BuffType = "regen_fd"      // FD restore over time
+	BuffScheduledDmg BuffType = "scheduled_dmg" // Next attack deals 2x damage (crontab)
 )
 
 // Buff represents an active buff on the player.
@@ -345,6 +346,10 @@ func (p *Player) IsAlive() bool {
 	return p.Stats.RAM > 0
 }
 
+// MaxBuffStackValue is the maximum value a stacking buff can reach.
+// This prevents infinite buff stacking from breaking game balance.
+const MaxBuffStackValue = 100
+
 // AddBuff adds a buff to the player. If the buff type already exists, refreshes duration.
 func (p *Player) AddBuff(buff Buff) {
 	// Check if buff already exists
@@ -354,9 +359,18 @@ func (p *Player) AddBuff(buff Buff) {
 			if buff.Duration > existing.Duration {
 				p.ActiveBuffs[i].Duration = buff.Duration
 			}
-			// Stack value for some buffs
+			// Stack value for some buffs, with a cap
 			if buff.Type == BuffStrength || buff.Type == BuffRegenRAM || buff.Type == BuffRegenFD {
-				p.ActiveBuffs[i].Value += buff.Value
+				newValue := p.ActiveBuffs[i].Value + buff.Value
+				// Cap at the lesser of 5x the incoming buff value or MaxBuffStackValue
+				maxForBuff := buff.Value * 5
+				if maxForBuff > MaxBuffStackValue {
+					maxForBuff = MaxBuffStackValue
+				}
+				if newValue > maxForBuff {
+					newValue = maxForBuff
+				}
+				p.ActiveBuffs[i].Value = newValue
 			}
 			return
 		}

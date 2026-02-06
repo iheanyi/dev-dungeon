@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/iheanyi/devdungeon/internal/config"
+	"github.com/iheanyi/devdungeon/internal/content"
 	"github.com/iheanyi/devdungeon/internal/entity"
 	"github.com/iheanyi/devdungeon/internal/save"
 	"github.com/iheanyi/devdungeon/internal/types"
@@ -132,6 +133,12 @@ func (e *Engine) StartNewGameWithBonuses(playerClass entity.PlayerClass, bonuses
 
 	e.state = types.StateExploring
 	e.addMessage("Welcome to /dev/dungeon. You are in %s.", e.world.CurrentFloor.Type.FloorName())
+
+	// Show floor lore for the first floor
+	floorName := e.world.CurrentFloor.Type.FloorName()
+	if lore, ok := content.GetFloorLore(floorName); ok {
+		e.addMessage("%s — %s", lore.Name, lore.Description)
+	}
 
 	return nil
 }
@@ -339,10 +346,18 @@ func (e *Engine) findEmptyPosition(rng *rand.Rand) *types.Position {
 		// Pick a random room
 		room := floor.Rooms[rng.Intn(len(floor.Rooms))]
 
-		// Pick a random position in the room
-		pos := types.Position{
-			X: room.X + 1 + rng.Intn(room.Width-2),
-			Y: room.Y + 1 + rng.Intn(room.Height-2),
+		// Defensive check: if room is too small, use center position
+		var pos types.Position
+		if room.Width <= 2 || room.Height <= 2 {
+			pos = types.Position{
+				X: room.X + room.Width/2,
+				Y: room.Y + room.Height/2,
+			}
+		} else {
+			pos = types.Position{
+				X: room.X + 1 + rng.Intn(room.Width-2),
+				Y: room.Y + 1 + rng.Intn(room.Height-2),
+			}
 		}
 
 		// Check if position is valid and empty
@@ -608,20 +623,20 @@ func (e *Engine) gatherNearbyEnemies(target *entity.Enemy, radius int) []*entity
 }
 
 // DescendStairs attempts to go down stairs.
-// Note: Save is called outside the lock to avoid deadlock with toSaveData().
+// Save data is captured under the lock and I/O performed after releasing it.
 func (e *Engine) DescendStairs() error {
-	// Save before floor transition (outside lock to avoid deadlock)
-	e.Save(save.TriggerFloorTransition)
+	var saveData *save.SaveData
 
 	e.mu.Lock()
-	defer e.mu.Unlock()
 
 	if e.player == nil || e.world.CurrentFloor == nil {
+		e.mu.Unlock()
 		return errors.New("no active game")
 	}
 
 	// Can't descend past the final floor (/dev/null at depth 8)
 	if e.world.CurrentDepth >= 8 {
+		e.mu.Unlock()
 		return errors.New("you've reached the deepest level - defeat the Kernel Panic to escape")
 	}
 
@@ -629,7 +644,13 @@ func (e *Engine) DescendStairs() error {
 	tile := e.world.CurrentFloor.GetTile(playerPos)
 
 	if tile == nil || tile.Type != types.TileStairsDown {
+		e.mu.Unlock()
 		return errors.New("no stairs down here")
+	}
+
+	// Capture save data while holding the lock (before mutation)
+	if e.saveManager != nil && e.player != nil {
+		saveData = e.toSaveDataLocked()
 	}
 
 	// Cache current floor state
@@ -638,6 +659,7 @@ func (e *Engine) DescendStairs() error {
 	// Generate or load next floor
 	nextDepth := e.world.CurrentDepth + 1
 	if err := e.generateFloor(nextDepth); err != nil {
+		e.mu.Unlock()
 		return fmt.Errorf("failed to descend: %w", err)
 	}
 
@@ -657,20 +679,37 @@ func (e *Engine) DescendStairs() error {
 
 	e.addMessage("You descend to %s (depth %d).", e.world.CurrentFloor.Type.FloorName(), nextDepth)
 
+	// Show floor lore on first entry
+	floorName := e.world.CurrentFloor.Type.FloorName()
+	if lore, ok := content.GetFloorLore(floorName); ok {
+		e.addMessage("%s — %s", lore.Name, lore.Description)
+	}
+
+	e.mu.Unlock()
+
+	// Perform save I/O outside the lock
+	if saveData != nil {
+		e.saveManager.Save(saveData, save.TriggerFloorTransition)
+	}
+
 	return nil
 }
 
 // ForceDescend forces descent to the next floor regardless of player position (admin/debug).
-// Note: Save is called outside the lock to avoid deadlock with toSaveData().
+// Save data is captured under the lock and I/O performed after releasing it.
 func (e *Engine) ForceDescend() error {
-	// Save before floor transition (outside lock to avoid deadlock)
-	e.Save(save.TriggerFloorTransition)
+	var saveData *save.SaveData
 
 	e.mu.Lock()
-	defer e.mu.Unlock()
 
 	if e.player == nil || e.world.CurrentFloor == nil {
+		e.mu.Unlock()
 		return errors.New("no active game")
+	}
+
+	// Capture save data while holding the lock (before mutation)
+	if e.saveManager != nil && e.player != nil {
+		saveData = e.toSaveDataLocked()
 	}
 
 	// Cache current floor state
@@ -679,6 +718,7 @@ func (e *Engine) ForceDescend() error {
 	// Generate or load next floor
 	nextDepth := e.world.CurrentDepth + 1
 	if err := e.generateFloor(nextDepth); err != nil {
+		e.mu.Unlock()
 		return fmt.Errorf("failed to descend: %w", err)
 	}
 
@@ -690,23 +730,30 @@ func (e *Engine) ForceDescend() error {
 
 	e.addMessage("[ADMIN] Forced descent to %s (depth %d).", e.world.CurrentFloor.Type.FloorName(), nextDepth)
 
+	e.mu.Unlock()
+
+	// Perform save I/O outside the lock
+	if saveData != nil {
+		e.saveManager.Save(saveData, save.TriggerFloorTransition)
+	}
+
 	return nil
 }
 
 // AscendStairs attempts to go up stairs.
-// Note: Save is called outside the lock to avoid deadlock with toSaveData().
+// Save data is captured under the lock and I/O performed after releasing it.
 func (e *Engine) AscendStairs() error {
-	// Save before floor transition (outside lock to avoid deadlock)
-	e.Save(save.TriggerFloorTransition)
+	var saveData *save.SaveData
 
 	e.mu.Lock()
-	defer e.mu.Unlock()
 
 	if e.player == nil || e.world.CurrentFloor == nil {
+		e.mu.Unlock()
 		return errors.New("no active game")
 	}
 
 	if e.world.CurrentDepth <= 1 {
+		e.mu.Unlock()
 		return errors.New("you cannot go up from here - this is the first floor")
 	}
 
@@ -714,7 +761,13 @@ func (e *Engine) AscendStairs() error {
 	tile := e.world.CurrentFloor.GetTile(playerPos)
 
 	if tile == nil || tile.Type != types.TileStairsUp {
+		e.mu.Unlock()
 		return errors.New("no stairs up here")
+	}
+
+	// Capture save data while holding the lock (before mutation)
+	if e.saveManager != nil && e.player != nil {
+		saveData = e.toSaveDataLocked()
 	}
 
 	// Cache current floor state
@@ -723,6 +776,7 @@ func (e *Engine) AscendStairs() error {
 	// Load previous floor (should be cached)
 	prevDepth := e.world.CurrentDepth - 1
 	if !e.world.LoadCachedFloor(prevDepth) {
+		e.mu.Unlock()
 		return errors.New("cannot return to previous floor - cache missing")
 	}
 
@@ -733,6 +787,13 @@ func (e *Engine) AscendStairs() error {
 	e.world.UpdateVisibility(e.player.Position(), e.getViewRadius())
 
 	e.addMessage("You ascend to %s (depth %d).", e.world.CurrentFloor.Type.FloorName(), prevDepth)
+
+	e.mu.Unlock()
+
+	// Perform save I/O outside the lock
+	if saveData != nil {
+		e.saveManager.Save(saveData, save.TriggerFloorTransition)
+	}
 
 	return nil
 }
@@ -777,6 +838,12 @@ func (e *Engine) Config() *config.Config {
 // MasterSeed returns the master seed used for this game.
 func (e *Engine) MasterSeed() int64 {
 	return e.masterSeed
+}
+
+// RNG returns the engine's seeded random number generator.
+// Used for exploration messages and other random content that should be deterministic.
+func (e *Engine) RNG() *rand.Rand {
+	return e.rng
 }
 
 // addMessage adds a message to the game log.
@@ -1093,11 +1160,23 @@ func (e *Engine) Shutdown() {
 	}
 }
 
+// toSaveDataLocked converts the current game state to SaveData.
+// Caller must already hold the mutex (read or write lock).
+func (e *Engine) toSaveDataLocked() *save.SaveData {
+	return e.buildSaveData()
+}
+
 // toSaveData converts the current game state to SaveData.
 // Acquires a read lock to prevent races with game state modifications.
 func (e *Engine) toSaveData() *save.SaveData {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
+	return e.buildSaveData()
+}
+
+// buildSaveData does the actual work of building save data.
+// Must be called with the mutex held (either read or write lock).
+func (e *Engine) buildSaveData() *save.SaveData {
 
 	// Convert inventory - use TemplateID (not ID()) so items can be recreated on load
 	var invData []save.ItemData

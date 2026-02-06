@@ -396,3 +396,197 @@ func TestPermanentBonusesDefaultNoEffect(t *testing.T) {
 		t.Error("zero bonuses should not affect NICE")
 	}
 }
+
+func TestBuffStackingCap(t *testing.T) {
+	player := NewPlayer(ClassInit)
+
+	// Add a strength buff with value 10
+	player.AddBuff(Buff{
+		Type:     BuffStrength,
+		Name:     "Strength",
+		Duration: 5,
+		Value:    10,
+	})
+
+	// Stack it many times - should cap at 5x the incoming buff value (50) or MaxBuffStackValue (100)
+	for i := 0; i < 20; i++ {
+		player.AddBuff(Buff{
+			Type:     BuffStrength,
+			Name:     "Strength",
+			Duration: 5,
+			Value:    10,
+		})
+	}
+
+	buff := player.GetBuff(BuffStrength)
+	if buff == nil {
+		t.Fatal("strength buff should exist")
+	}
+
+	// Cap is min(5 * 10, 100) = 50
+	if buff.Value > 50 {
+		t.Errorf("buff value %d exceeds cap of 50 (5x base value)", buff.Value)
+	}
+	if buff.Value != 50 {
+		t.Errorf("buff value should be capped at 50, got %d", buff.Value)
+	}
+}
+
+func TestBuffStackingCapSmallValue(t *testing.T) {
+	player := NewPlayer(ClassInit)
+
+	// Add a regen buff with value 2
+	player.AddBuff(Buff{
+		Type:     BuffRegenRAM,
+		Name:     "Regen",
+		Duration: 10,
+		Value:    2,
+	})
+
+	// Stack many times - cap is min(5 * 2, 100) = 10
+	for i := 0; i < 50; i++ {
+		player.AddBuff(Buff{
+			Type:     BuffRegenRAM,
+			Name:     "Regen",
+			Duration: 10,
+			Value:    2,
+		})
+	}
+
+	buff := player.GetBuff(BuffRegenRAM)
+	if buff == nil {
+		t.Fatal("regen buff should exist")
+	}
+
+	if buff.Value > 10 {
+		t.Errorf("buff value %d exceeds cap of 10 (5x base value of 2)", buff.Value)
+	}
+	if buff.Value != 10 {
+		t.Errorf("buff value should be capped at 10, got %d", buff.Value)
+	}
+}
+
+func TestBuffStackingCapLargeValue(t *testing.T) {
+	player := NewPlayer(ClassInit)
+
+	// Add a buff with value 30 - cap is min(5 * 30, 100) = 100
+	player.AddBuff(Buff{
+		Type:     BuffStrength,
+		Name:     "Strength",
+		Duration: 5,
+		Value:    30,
+	})
+
+	for i := 0; i < 20; i++ {
+		player.AddBuff(Buff{
+			Type:     BuffStrength,
+			Name:     "Strength",
+			Duration: 5,
+			Value:    30,
+		})
+	}
+
+	buff := player.GetBuff(BuffStrength)
+	if buff == nil {
+		t.Fatal("strength buff should exist")
+	}
+
+	if buff.Value > MaxBuffStackValue {
+		t.Errorf("buff value %d exceeds MaxBuffStackValue %d", buff.Value, MaxBuffStackValue)
+	}
+	if buff.Value != MaxBuffStackValue {
+		t.Errorf("buff value should be capped at %d, got %d", MaxBuffStackValue, buff.Value)
+	}
+}
+
+func TestBuffStackingFirstAddNotCapped(t *testing.T) {
+	player := NewPlayer(ClassInit)
+
+	// First buff add should not be affected by cap
+	player.AddBuff(Buff{
+		Type:     BuffStrength,
+		Name:     "Strength",
+		Duration: 5,
+		Value:    10,
+	})
+
+	buff := player.GetBuff(BuffStrength)
+	if buff == nil {
+		t.Fatal("strength buff should exist")
+	}
+	if buff.Value != 10 {
+		t.Errorf("first buff add should have value 10, got %d", buff.Value)
+	}
+}
+
+// TestClassStatsMatchExpected verifies actual class stats match what is displayed in the UI.
+func TestClassStatsMatchExpected(t *testing.T) {
+	tests := []struct {
+		class       PlayerClass
+		expectedRAM int
+		expectedCPU int
+		expectedFD  int
+		expectedNIC int
+		expectedUID int
+	}{
+		{ClassInit, 100, 10, 16, 10, 1000},
+		{ClassCron, 100, 8, 16, 5, 1000},
+		{ClassBash, 100, 12, 12, 10, 1000}, // CPU was nerfed from 15 to 12
+		{ClassVim, 100, 8, 20, 10, 1000},   // FD was nerfed from 24 to 20
+		{ClassSudo, 80, 10, 16, 10, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.class), func(t *testing.T) {
+			player := NewPlayer(tt.class)
+			if player.Stats.RAM != tt.expectedRAM {
+				t.Errorf("%s: expected RAM %d, got %d", tt.class, tt.expectedRAM, player.Stats.RAM)
+			}
+			if player.Stats.CPU != tt.expectedCPU {
+				t.Errorf("%s: expected CPU %d, got %d", tt.class, tt.expectedCPU, player.Stats.CPU)
+			}
+			if player.Stats.FD != tt.expectedFD {
+				t.Errorf("%s: expected FD %d, got %d", tt.class, tt.expectedFD, player.Stats.FD)
+			}
+			if player.Stats.NICE != tt.expectedNIC {
+				t.Errorf("%s: expected NICE %d, got %d", tt.class, tt.expectedNIC, player.Stats.NICE)
+			}
+			if player.Stats.UID != tt.expectedUID {
+				t.Errorf("%s: expected UID %d, got %d", tt.class, tt.expectedUID, player.Stats.UID)
+			}
+		})
+	}
+}
+
+func TestBuffStackingNonStackableNotAffected(t *testing.T) {
+	player := NewPlayer(ClassInit)
+
+	// Invincible buff should not stack (it's not in the stacking list)
+	player.AddBuff(Buff{
+		Type:     BuffInvincible,
+		Name:     "Invincible",
+		Duration: 3,
+		Value:    0,
+	})
+
+	player.AddBuff(Buff{
+		Type:     BuffInvincible,
+		Name:     "Invincible",
+		Duration: 5,
+		Value:    0,
+	})
+
+	buff := player.GetBuff(BuffInvincible)
+	if buff == nil {
+		t.Fatal("invincible buff should exist")
+	}
+
+	// Duration should be refreshed to 5
+	if buff.Duration != 5 {
+		t.Errorf("invincible buff duration should be 5, got %d", buff.Duration)
+	}
+	// Value should still be 0 (not stacked)
+	if buff.Value != 0 {
+		t.Errorf("invincible buff value should be 0, got %d", buff.Value)
+	}
+}

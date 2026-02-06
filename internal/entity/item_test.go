@@ -322,3 +322,112 @@ func TestEquipmentGetAll(t *testing.T) {
 		t.Errorf("should have 4 equipped items, got %d", len(all))
 	}
 }
+
+func TestGetStatBonusAggregatesNICE(t *testing.T) {
+	eq := NewEquipment()
+
+	// pipe_wrench weapon has NICE: -1
+	weapon := NewItem("pipe_wrench", "weapon", types.Position{})
+	if weapon == nil {
+		t.Fatal("pipe_wrench template should exist")
+	}
+	eq.Equip(weapon)
+
+	bonus := eq.GetStatBonus()
+	if bonus.NICE != -1 {
+		t.Errorf("expected NICE bonus -1 from pipe_wrench, got %d", bonus.NICE)
+	}
+
+	// Add cron_claw (NICE: -2) - this will replace the weapon
+	weapon2 := NewItem("cron_claw", "weapon2", types.Position{})
+	eq.Equip(weapon2)
+
+	bonus = eq.GetStatBonus()
+	if bonus.NICE != -2 {
+		t.Errorf("expected NICE bonus -2 from cron_claw, got %d", bonus.NICE)
+	}
+
+	// Add env_vars utility (NICE: -2)
+	util := NewItem("env_vars", "util1", types.Position{})
+	eq.Equip(util)
+
+	bonus = eq.GetStatBonus()
+	expectedNICE := -2 + -2 // cron_claw + env_vars
+	if bonus.NICE != expectedNICE {
+		t.Errorf("expected combined NICE bonus %d, got %d", expectedNICE, bonus.NICE)
+	}
+
+	// Add cron_tab utility2 (NICE: -3)
+	util2 := NewItem("cron_tab", "util2", types.Position{})
+	eq.Equip(util2)
+
+	bonus = eq.GetStatBonus()
+	expectedNICE = -2 + -2 + -3 // cron_claw + env_vars + cron_tab
+	if bonus.NICE != expectedNICE {
+		t.Errorf("expected combined NICE bonus %d, got %d", expectedNICE, bonus.NICE)
+	}
+}
+
+func TestGetStatBonusAggregatesUIDFromUtilities(t *testing.T) {
+	eq := NewEquipment()
+
+	// ssh_key utility has UID: -200
+	util := NewItem("ssh_key", "util1", types.Position{})
+	if util == nil {
+		t.Fatal("ssh_key template should exist")
+	}
+	eq.Equip(util)
+
+	bonus := eq.GetStatBonus()
+	if bonus.UID != -200 {
+		t.Errorf("expected UID bonus -200 from ssh_key, got %d", bonus.UID)
+	}
+
+	// Also equip armor with UID bonus (selinux_shield: UID -200)
+	armor := NewItem("selinux_shield", "armor", types.Position{})
+	eq.Equip(armor)
+
+	bonus = eq.GetStatBonus()
+	expectedUID := -200 + -200 // ssh_key + selinux_shield
+	if bonus.UID != expectedUID {
+		t.Errorf("expected combined UID bonus %d, got %d", expectedUID, bonus.UID)
+	}
+}
+
+func TestGetStatBonusAggregatesAllStats(t *testing.T) {
+	eq := NewEquipment()
+
+	// Equip fork_bomb (CPU: 15, NICE: -3)
+	weapon := NewItem("fork_bomb", "weapon", types.Position{})
+	eq.Equip(weapon)
+
+	// Equip sudo_armor (RAM: 50, UID: -500)
+	armor := NewItem("sudo_armor", "armor", types.Position{})
+	eq.Equip(armor)
+
+	// Equip ssh_key (UID: -200, FD: 2)
+	util1 := NewItem("ssh_key", "util1", types.Position{})
+	eq.Equip(util1)
+
+	// Equip cron_tab (NICE: -3, FD: 3)
+	util2 := NewItem("cron_tab", "util2", types.Position{})
+	eq.Equip(util2)
+
+	bonus := eq.GetStatBonus()
+
+	if bonus.CPU != 15 {
+		t.Errorf("expected CPU 15, got %d", bonus.CPU)
+	}
+	if bonus.RAM != 50 {
+		t.Errorf("expected RAM 50, got %d", bonus.RAM)
+	}
+	if bonus.NICE != -3+-3 {
+		t.Errorf("expected NICE %d, got %d", -3+-3, bonus.NICE)
+	}
+	if bonus.UID != -500+-200 {
+		t.Errorf("expected UID %d, got %d", -500+-200, bonus.UID)
+	}
+	if bonus.FD != 2+3 {
+		t.Errorf("expected FD %d, got %d", 2+3, bonus.FD)
+	}
+}

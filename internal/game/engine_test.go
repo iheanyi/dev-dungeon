@@ -1,6 +1,7 @@
 package game
 
 import (
+	"math/rand"
 	"testing"
 	"time"
 
@@ -1876,4 +1877,50 @@ func TestFloorDeltasPreservedAfterLoadAndFloorChange(t *testing.T) {
 	if !foundFloor1Deltas {
 		t.Error("BUG: floor 1 deltas lost after re-saving from floor 2")
 	}
+}
+
+func TestFindEmptyPositionSmallRooms(t *testing.T) {
+	cfg := config.DefaultConfig()
+	engine := NewEngine(cfg, 12345)
+
+	if err := engine.StartNewGame(entity.ClassInit); err != nil {
+		t.Fatalf("StartNewGame failed: %v", err)
+	}
+
+	// Create a floor with a very small room (Width=2, Height=2)
+	// This should not panic due to rng.Intn(0) with Width-2 or Height-2
+	floor := engine.world.CurrentFloor
+	originalRooms := floor.Rooms
+
+	testCases := []struct {
+		name   string
+		width  int
+		height int
+	}{
+		{"Width=2, Height=2", 2, 2},
+		{"Width=1, Height=1", 1, 1},
+		{"Width=2, Height=5", 2, 5},
+		{"Width=5, Height=2", 5, 2},
+		{"Width=0, Height=0", 0, 0},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Replace rooms with our small test room
+			floor.Rooms = []types.Room{
+				{X: 10, Y: 10, Width: tc.width, Height: tc.height, Connected: true},
+			}
+
+			floorRng := rand.New(rand.NewSource(42))
+
+			// This should NOT panic
+			pos := engine.findEmptyPosition(floorRng)
+			// pos may be nil (position might not be walkable) - that's fine
+			// The important thing is no panic occurred
+			_ = pos
+		})
+	}
+
+	// Restore original rooms
+	floor.Rooms = originalRooms
 }

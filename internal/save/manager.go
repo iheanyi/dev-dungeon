@@ -51,7 +51,7 @@ func DefaultConfig() Config {
 // NewManager creates a new save manager.
 func NewManager(cfg Config) (*Manager, error) {
 	// Create save directory if it doesn't exist
-	if err := os.MkdirAll(cfg.SaveDir, 0755); err != nil {
+	if err := os.MkdirAll(cfg.SaveDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create save directory: %w", err)
 	}
 
@@ -126,10 +126,22 @@ func (m *Manager) Save(data *SaveData, trigger SaveTrigger) {
 }
 
 // SaveSync saves and waits for completion.
+// Returns an error if the save doesn't complete within 5 seconds.
 func (m *Manager) SaveSync(data *SaveData, trigger SaveTrigger) error {
 	done := make(chan error, 1)
-	m.saveChan <- saveRequest{data: data, trigger: trigger, done: done}
-	return <-done
+
+	select {
+	case m.saveChan <- saveRequest{data: data, trigger: trigger, done: done}:
+	case <-time.After(5 * time.Second):
+		return fmt.Errorf("save timed out: could not queue save request")
+	}
+
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(5 * time.Second):
+		return fmt.Errorf("save timed out: waiting for save completion")
+	}
 }
 
 // doSave performs the actual save operation.
@@ -151,7 +163,7 @@ func (m *Manager) doSave(data *SaveData, trigger SaveTrigger) error {
 
 	// Write atomically (write to temp, then rename)
 	tempFile := filename + ".tmp"
-	if err := os.WriteFile(tempFile, jsonData, 0644); err != nil {
+	if err := os.WriteFile(tempFile, jsonData, 0600); err != nil {
 		return fmt.Errorf("failed to write save file: %w", err)
 	}
 
@@ -316,7 +328,7 @@ func (m *Manager) SaveMetaProgress(meta *MetaProgress) error {
 	}
 
 	tempFile := path + ".tmp"
-	if err := os.WriteFile(tempFile, jsonData, 0644); err != nil {
+	if err := os.WriteFile(tempFile, jsonData, 0600); err != nil {
 		return fmt.Errorf("failed to write meta progress: %w", err)
 	}
 

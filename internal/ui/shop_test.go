@@ -489,9 +489,9 @@ func TestPermanentBonusesAppliedToPlayer(t *testing.T) {
 	m := newTestModel()
 
 	// Set some permanent bonuses
-	m.metaProgress.PermanentBonuses.PID = 20 // +20 RAM
+	m.metaProgress.PermanentBonuses.RAM = 20 // +20 RAM
 	m.metaProgress.PermanentBonuses.CPU = 5  // +5 CPU
-	m.metaProgress.PermanentBonuses.MEM = 10 // +10 FD
+	m.metaProgress.PermanentBonuses.FD = 10  // +10 FD
 
 	// Start a new game
 	cfg := config.DefaultConfig()

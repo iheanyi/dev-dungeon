@@ -224,11 +224,6 @@ j, Down   - Move south
 k, Up     - Move north
 l, Right  - Move east
 
-y - Move northwest
-u - Move northeast
-b - Move southwest
-n - Move southeast
-
 > - Descend stairs
 < - Ascend stairs`,
 

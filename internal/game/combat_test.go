@@ -467,6 +467,241 @@ func TestPlayerExitCodesCanBeSpent(t *testing.T) {
 	}
 }
 
+func TestCalculateRewardsDeterministic(t *testing.T) {
+	// Two combat states with identical enemies and same seed should produce
+	// identical loot results, verifying that CalculateRewards uses cs.rng
+	// (seeded RNG) and not the global rand.
+	seed := int64(42)
+
+	for trial := 0; trial < 5; trial++ {
+		player1 := entity.NewPlayer(entity.ClassInit)
+		player2 := entity.NewPlayer(entity.ClassInit)
+
+		// Create identical enemies with loot tables
+		enemy1a := entity.NewEnemy(entity.EnemyDaemon, "daemon1", types.Position{}, 3)
+		enemy1b := entity.NewEnemy(entity.EnemyDaemon, "daemon1", types.Position{}, 3)
+		enemy2a := entity.NewEnemy(entity.EnemySegfault, "segfault1", types.Position{}, 5)
+		enemy2b := entity.NewEnemy(entity.EnemySegfault, "segfault1", types.Position{}, 5)
+
+		// Kill all enemies
+		enemy1a.Stats.RAM = 0
+		enemy1b.Stats.RAM = 0
+		enemy2a.Stats.RAM = 0
+		enemy2b.Stats.RAM = 0
+
+		combat1 := NewCombatState(player1, []*entity.Enemy{enemy1a, enemy2a}, seed)
+		combat2 := NewCombatState(player2, []*entity.Enemy{enemy1b, enemy2b}, seed)
+
+		// Advance both RNGs the same way (simulate some combat turns)
+		combat1.rng.Float64()
+		combat2.rng.Float64()
+
+		xp1, ec1, loot1 := combat1.CalculateRewards()
+		xp2, ec2, loot2 := combat2.CalculateRewards()
+
+		if xp1 != xp2 {
+			t.Errorf("trial %d: XP differs: %d vs %d", trial, xp1, xp2)
+		}
+		if ec1 != ec2 {
+			t.Errorf("trial %d: exit codes differ: %d vs %d", trial, ec1, ec2)
+		}
+		if len(loot1) != len(loot2) {
+			t.Errorf("trial %d: loot count differs: %d vs %d", trial, len(loot1), len(loot2))
+		} else {
+			for i := range loot1 {
+				if loot1[i].TemplateID != loot2[i].TemplateID {
+					t.Errorf("trial %d: loot[%d] template differs: %s vs %s",
+						trial, i, loot1[i].TemplateID, loot2[i].TemplateID)
+				}
+			}
+		}
+	}
+}
+
+// === Crontab Skill Tests ===
+
+func TestCrontabSkillSchedulesDamage(t *testing.T) {
+	player := entity.NewPlayer(entity.ClassCron)
+	// Cron has a "schedule" skill (crontab) at index 1
+	if len(player.Skills) < 2 {
+		t.Fatal("cron player should have at least 2 skills")
+	}
+
+	scheduleSkillIdx := -1
+	for i, skill := range player.Skills {
+		if skill.ID == "schedule" {
+			scheduleSkillIdx = i
+			break
+		}
+	}
+	if scheduleSkillIdx == -1 {
+		t.Fatal("cron player should have 'schedule' (crontab) skill")
+	}
+
+	enemy := entity.NewEnemy(entity.EnemyZombie, "zombie", types.Position{}, 1)
+	enemy.Stats.RAM = 1000
+	enemy.MaxStats.MaxRAM = 1000
+	combat := NewCombatState(player, []*entity.Enemy{enemy}, 12345)
+
+	// Use crontab skill - should NOT deal damage, should add scheduled buff
+	initialRAM := enemy.Stats.RAM
+	result := combat.ExecutePlayerAction(types.ActionHack, 0, scheduleSkillIdx)
+
+	// No damage should have been dealt
+	if result.Damage != 0 {
+		t.Errorf("crontab should not deal immediate damage, got %d", result.Damage)
+	}
+	if enemy.Stats.RAM != initialRAM {
+		t.Errorf("enemy RAM should be unchanged after crontab, expected %d got %d", initialRAM, enemy.Stats.RAM)
+	}
+
+	// Player should now have the scheduled damage buff
+	if !player.HasBuff(entity.BuffScheduledDmg) {
+		t.Error("player should have BuffScheduledDmg after using crontab")
+	}
+
+	// Message should mention scheduling
+	if result.Message == "" {
+		t.Error("crontab should produce a message")
+	}
+}
+
+func TestCrontabBuffDoublesNextAttack(t *testing.T) {
+	player := entity.NewPlayer(entity.ClassCron)
+	player.Stats.CPU = 20 // Known CPU for predictable damage
+
+	enemy := entity.NewEnemy(entity.EnemyZombie, "zombie", types.Position{}, 1)
+	enemy.Stats.RAM = 10000 // Very high so we can measure damage
+	enemy.MaxStats.MaxRAM = 10000
+
+	// Add the scheduled damage buff manually
+	player.AddBuff(entity.Buff{
+		Type:     entity.BuffScheduledDmg,
+		Name:     "Scheduled Damage",
+		Duration: 2,
+		Value:    2,
+	})
+
+	combat := NewCombatState(player, []*entity.Enemy{enemy}, 42)
+
+	// Attack - should deal 2x damage
+	result := combat.ExecutePlayerAction(types.ActionAttack, 0, 0)
+
+	// The buff should be consumed
+	if player.HasBuff(entity.BuffScheduledDmg) {
+		t.Error("scheduled damage buff should be consumed after attack")
+	}
+
+	// Damage should be at least 2x the minimum expected (baseDamage * 0.8 * 2)
+	// Base = CPU (20), variance min = 0.8, multiplier = 2
+	minExpected := int(float64(20) * 0.8 * 2)
+	if result.Damage < minExpected {
+		t.Errorf("expected at least %d damage with 2x buff, got %d", minExpected, result.Damage)
+	}
+}
+
+// === InstantKill Weapon Effect Tests ===
+
+func TestInstantKillEffectCheckedInCombat(t *testing.T) {
+	player := entity.NewPlayer(entity.ClassInit)
+
+	// Equip kill_9 weapon (has InstantKill effect)
+	weapon := entity.NewItem("kill_9", "test_kill9", types.Position{})
+	if weapon == nil {
+		t.Fatal("kill_9 weapon template should exist")
+	}
+	player.Equipment.Equip(weapon)
+
+	// Verify the weapon has InstantKill effect
+	hasInstantKill := false
+	for _, effect := range weapon.Effects {
+		if effect.Type == entity.EffectInstantKill {
+			hasInstantKill = true
+			break
+		}
+	}
+	if !hasInstantKill {
+		t.Fatal("kill_9 should have InstantKill effect")
+	}
+
+	// Run many trials - instant kill should trigger at least once with enough attempts
+	instantKills := 0
+	trials := 500
+	for i := 0; i < trials; i++ {
+		enemy := entity.NewEnemy(entity.EnemyZombie, "zombie", types.Position{}, 1)
+		enemy.Stats.RAM = 1000 // High health so normal attack can't one-shot
+		enemy.MaxStats.MaxRAM = 1000
+
+		combat := NewCombatState(player, []*entity.Enemy{enemy}, int64(i*7+13))
+		result := combat.ExecutePlayerAction(types.ActionAttack, 0, 0)
+
+		if enemy.Stats.RAM == 0 && result.Damage >= enemy.MaxStats.MaxRAM {
+			instantKills++
+		}
+	}
+
+	if instantKills == 0 {
+		t.Error("InstantKill effect should trigger at least once in 500 trials")
+	}
+	if instantKills == trials {
+		t.Error("InstantKill should not trigger every time")
+	}
+}
+
+func TestInstantKillDoesNotWorkOnBosses(t *testing.T) {
+	player := entity.NewPlayer(entity.ClassInit)
+
+	weapon := entity.NewItem("kill_9", "test_kill9", types.Position{})
+	player.Equipment.Equip(weapon)
+
+	// Boss enemy
+	for i := 0; i < 200; i++ {
+		boss := entity.NewEnemy(entity.EnemyDaemon, "boss", types.Position{}, 5)
+		boss.IsBoss = true
+		boss.Stats.RAM = 1000
+		boss.MaxStats.MaxRAM = 1000
+
+		combat := NewCombatState(player, []*entity.Enemy{boss}, int64(i))
+		combat.ExecutePlayerAction(types.ActionAttack, 0, 0)
+
+		// Boss should never be instantly killed (RAM should not be 0 from InstantKill)
+		// Normal damage could kill if very high, but with CPU ~10 + weapon 10 = 20,
+		// max normal damage ~ 20 * 1.2 * 1.5 (crit) = 36, not enough to kill 1000 HP boss
+		if boss.Stats.RAM == 0 {
+			t.Fatal("InstantKill should never trigger against bosses")
+		}
+	}
+}
+
+// === Flee Mechanics Tests ===
+
+func TestFleeUsesProperMechanics(t *testing.T) {
+	player := entity.NewPlayer(entity.ClassInit)
+	player.Stats.RAM = player.MaxStats.MaxRAM
+
+	enemy := entity.NewEnemy(entity.EnemyZombie, "zombie", types.Position{}, 1)
+	combat := NewCombatState(player, []*entity.Enemy{enemy}, 42)
+
+	// Fleeing should use the proper flee mechanics (not instant)
+	result := combat.ExecutePlayerAction(types.ActionFlee, 0, 0)
+
+	// Result should indicate flee attempt (success or failure)
+	// With normal flee mechanics, it should have a chance to fail
+	_ = result // Just verifying the path works
+
+	// The combat log should contain a flee-related message
+	hasFleeMsg := false
+	for _, msg := range combat.Log {
+		if msg == "You successfully fled from combat!" || msg == "Failed to flee!" {
+			hasFleeMsg = true
+			break
+		}
+	}
+	if !hasFleeMsg {
+		t.Error("flee should produce a standard flee message")
+	}
+}
+
 func TestPlayerExitCodesSavedAndLoaded(t *testing.T) {
 	// This is tested in engine_test.go but let's add explicit verification
 	player := entity.NewPlayer(entity.ClassVim)

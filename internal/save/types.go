@@ -92,10 +92,11 @@ type MetaProgress struct {
 }
 
 // StatBonuses represents permanent stat bonuses from meta-progression.
+// JSON tags use old names (pid/mem) for backward compatibility with existing saves.
 type StatBonuses struct {
-	PID  int `json:"pid"`
+	RAM  int `json:"pid"`
 	CPU  int `json:"cpu"`
-	MEM  int `json:"mem"`
+	FD   int `json:"mem"`
 	NICE int `json:"nice"`
 	UID  int `json:"uid"`
 }

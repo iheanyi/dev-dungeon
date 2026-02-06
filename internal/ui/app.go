@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/iheanyi/devdungeon/internal/config"
+	"github.com/iheanyi/devdungeon/internal/content"
 	"github.com/iheanyi/devdungeon/internal/dungeon"
 	"github.com/iheanyi/devdungeon/internal/entity"
 	"github.com/iheanyi/devdungeon/internal/game"
@@ -1015,9 +1016,9 @@ func (m *Model) startNewGame(playerClass entity.PlayerClass) {
 	// Build permanent bonuses from meta progress
 	bonuses := entity.PermanentBonuses{}
 	if m.metaProgress != nil {
-		bonuses.RAM = m.metaProgress.PermanentBonuses.PID // PID maps to RAM
+		bonuses.RAM = m.metaProgress.PermanentBonuses.RAM
 		bonuses.CPU = m.metaProgress.PermanentBonuses.CPU
-		bonuses.FD = m.metaProgress.PermanentBonuses.MEM // MEM maps to FD
+		bonuses.FD = m.metaProgress.PermanentBonuses.FD
 		bonuses.NICE = m.metaProgress.PermanentBonuses.NICE
 
 		// Set unlocked items for loot pool (must be set before StartNewGame generates floors)
@@ -1139,6 +1140,32 @@ func (m *Model) movePlayer(dir types.Direction) {
 	// Update status message
 	if result.Message != "" {
 		m.addToHistory(result.Message)
+	}
+
+	// Wall bump feedback (replace generic message with thematic one)
+	if !result.Moved && len(result.Combat) == 0 && result.Message == "You cannot walk there." {
+		m.statusMsg = "You bump into a wall."
+	}
+
+	// Trigger exploration messages when the player actually moved
+	if result.Moved && m.engine.RNG() != nil {
+		rng := m.engine.RNG()
+		roll := rng.Float64()
+
+		// Single roll for all message types to avoid consuming extra RNG
+		if roll < 0.01 {
+			// Easter egg messages: ~1% chance
+			msg := content.EasterEggs[rng.Intn(len(content.EasterEggs))]
+			m.addToHistory(msg)
+		} else if roll < 0.06 {
+			// Exploration messages: ~5% chance
+			msg := content.ExplorationMessages[rng.Intn(len(content.ExplorationMessages))]
+			m.addToHistory(msg)
+		} else if roll < 0.09 {
+			// Random encounter messages: ~3% chance
+			msg := content.RandomEncounterMessages[rng.Intn(len(content.RandomEncounterMessages))]
+			m.addToHistory(msg)
+		}
 	}
 
 	// Check for combat initiation

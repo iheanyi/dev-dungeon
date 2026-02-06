@@ -518,15 +518,15 @@ func TestFloorStateStruct(t *testing.T) {
 
 func TestStatBonusesStruct(t *testing.T) {
 	bonuses := StatBonuses{
-		PID:  10,
+		RAM:  10,
 		CPU:  5,
-		MEM:  8,
+		FD:   8,
 		NICE: -2,
 		UID:  0,
 	}
 
-	if bonuses.PID != 10 {
-		t.Error("PID not set correctly")
+	if bonuses.RAM != 10 {
+		t.Error("RAM not set correctly")
 	}
 	if bonuses.NICE != -2 {
 		t.Error("NICE not set correctly")
@@ -830,5 +830,115 @@ func TestDeleteSaveNonExistent(t *testing.T) {
 	err := manager.DeleteSave(99999)
 	if err != nil {
 		t.Errorf("DeleteSave should not error for non-existent save: %v", err)
+	}
+}
+
+func TestSaveFilePermissions(t *testing.T) {
+	tempDir := t.TempDir()
+	saveDir := filepath.Join(tempDir, "restricted_saves")
+
+	cfg := Config{
+		SaveDir:         saveDir,
+		MinSaveInterval: 0,
+	}
+
+	manager, err := NewManager(cfg)
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	manager.Start()
+	defer manager.Stop()
+
+	// Verify directory was created with 0700
+	info, err := os.Stat(saveDir)
+	if err != nil {
+		t.Fatalf("failed to stat save directory: %v", err)
+	}
+	dirPerm := info.Mode().Perm()
+	if dirPerm != 0700 {
+		t.Errorf("save directory permissions = %o, want 0700", dirPerm)
+	}
+
+	// Save a file and check its permissions
+	saveData := &SaveData{
+		Version:    Version,
+		MasterSeed: 12345,
+		Player: PlayerData{
+			Class: "init",
+			Level: 1,
+		},
+	}
+	if err := manager.SaveSync(saveData, TriggerManual); err != nil {
+		t.Fatalf("SaveSync failed: %v", err)
+	}
+
+	// Check save file permissions
+	savePath := filepath.Join(saveDir, fmt.Sprintf("run_%d.json", 12345))
+	fileInfo, err := os.Stat(savePath)
+	if err != nil {
+		t.Fatalf("failed to stat save file: %v", err)
+	}
+	filePerm := fileInfo.Mode().Perm()
+	if filePerm != 0600 {
+		t.Errorf("save file permissions = %o, want 0600", filePerm)
+	}
+
+	// Check meta progress file permissions
+	meta := NewMetaProgress()
+	meta.TotalExitCodes = 50
+	if err := manager.SaveMetaProgress(&meta); err != nil {
+		t.Fatalf("SaveMetaProgress failed: %v", err)
+	}
+
+	metaPath := filepath.Join(saveDir, "meta_progress.json")
+	metaInfo, err := os.Stat(metaPath)
+	if err != nil {
+		t.Fatalf("failed to stat meta file: %v", err)
+	}
+	metaPerm := metaInfo.Mode().Perm()
+	if metaPerm != 0600 {
+		t.Errorf("meta progress file permissions = %o, want 0600", metaPerm)
+	}
+}
+
+func TestSaveSyncTimeout(t *testing.T) {
+	tempDir := t.TempDir()
+	cfg := Config{
+		SaveDir:         tempDir,
+		MinSaveInterval: 0,
+	}
+
+	manager, err := NewManager(cfg)
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	// Do NOT call manager.Start() - the background saver is not running,
+	// so the save channel will not be drained and SaveSync should time out.
+
+	saveData := &SaveData{
+		Version:    Version,
+		MasterSeed: 99999,
+	}
+
+	// Fill the channel buffer (capacity 10) to ensure the send also blocks
+	for i := 0; i < 10; i++ {
+		select {
+		case manager.saveChan <- saveRequest{data: saveData, trigger: TriggerManual}:
+		default:
+		}
+	}
+
+	// SaveSync should time out since no background saver is draining the channel
+	start := time.Now()
+	err = manager.SaveSync(saveData, TriggerManual)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Error("SaveSync should return an error when it times out")
+	}
+
+	// Should not block for more than ~6 seconds (5s timeout + some slack)
+	if elapsed > 7*time.Second {
+		t.Errorf("SaveSync blocked for %v, expected ~5s timeout", elapsed)
 	}
 }

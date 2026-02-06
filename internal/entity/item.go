@@ -436,7 +436,7 @@ var ItemTemplates = map[string]ItemTemplate{
 	"ssh_key": {
 		ID:          "ssh_key",
 		Name:        "id_rsa",
-		Glyph:       '~',
+		Glyph:       'u',
 		ItemType:    ItemTypeUtility,
 		Rarity:      RarityUncommon,
 		Description: "SSH private key - grants access",
@@ -447,7 +447,7 @@ var ItemTemplates = map[string]ItemTemplate{
 	"gpg_ring": {
 		ID:          "gpg_ring",
 		Name:        "GPG keyring",
-		Glyph:       '~',
+		Glyph:       'u',
 		ItemType:    ItemTypeUtility,
 		Rarity:      RarityRare,
 		Description: "Cryptographic identity",
@@ -458,7 +458,7 @@ var ItemTemplates = map[string]ItemTemplate{
 	"env_vars": {
 		ID:          "env_vars",
 		Name:        "$PATH",
-		Glyph:       '~',
+		Glyph:       'u',
 		ItemType:    ItemTypeUtility,
 		Rarity:      RarityCommon,
 		Description: "Environment variables for efficiency",
@@ -469,7 +469,7 @@ var ItemTemplates = map[string]ItemTemplate{
 	"cron_tab": {
 		ID:          "cron_tab",
 		Name:        "crontab",
-		Glyph:       '~',
+		Glyph:       'u',
 		ItemType:    ItemTypeUtility,
 		Rarity:      RarityUncommon,
 		Description: "Scheduled task automation",
@@ -528,7 +528,7 @@ var ItemTemplates = map[string]ItemTemplate{
 	"mmap": {
 		ID:          "mmap",
 		Name:        "mmap()",
-		Glyph:       '+',
+		Glyph:       'h',
 		ItemType:    ItemTypeConsumable,
 		Rarity:      RarityRare,
 		Description: "Memory map: major heal",
@@ -763,22 +763,28 @@ func (eq *Equipment) GetStatBonus() types.Stats {
 		bonus.CPU += eq.Weapon.StatBonus.CPU
 		bonus.RAM += eq.Weapon.StatBonus.RAM
 		bonus.FD += eq.Weapon.StatBonus.FD
+		bonus.NICE += eq.Weapon.StatBonus.NICE
 	}
 	if eq.Armor != nil {
 		bonus.CPU += eq.Armor.StatBonus.CPU
 		bonus.RAM += eq.Armor.StatBonus.RAM
 		bonus.FD += eq.Armor.StatBonus.FD
 		bonus.UID += eq.Armor.StatBonus.UID
+		bonus.NICE += eq.Armor.StatBonus.NICE
 	}
 	if eq.Utility1 != nil {
 		bonus.CPU += eq.Utility1.StatBonus.CPU
 		bonus.RAM += eq.Utility1.StatBonus.RAM
 		bonus.FD += eq.Utility1.StatBonus.FD
+		bonus.UID += eq.Utility1.StatBonus.UID
+		bonus.NICE += eq.Utility1.StatBonus.NICE
 	}
 	if eq.Utility2 != nil {
 		bonus.CPU += eq.Utility2.StatBonus.CPU
 		bonus.RAM += eq.Utility2.StatBonus.RAM
 		bonus.FD += eq.Utility2.StatBonus.FD
+		bonus.UID += eq.Utility2.StatBonus.UID
+		bonus.NICE += eq.Utility2.StatBonus.NICE
 	}
 	return bonus
 }

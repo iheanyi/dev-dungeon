@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/iheanyi/devdungeon/internal/content"
 	"github.com/iheanyi/devdungeon/internal/entity"
 	"github.com/iheanyi/devdungeon/internal/types"
 )
@@ -63,10 +64,10 @@ func (m *Model) getClassDescription(class entity.PlayerClass) (string, string) {
 			"RAM: 100  CPU: 8   FD: 16  NICE: 5 (fast!)\nSkill: crontab - schedule 2x damage"
 	case entity.ClassBash:
 		return "Powerful shell. High attack output.",
-			"RAM: 100  CPU: 15  FD: 12  NICE: 10\nSkill: pipe | - chain attacks"
+			"RAM: 100  CPU: 12  FD: 12  NICE: 10\nSkill: pipe | - chain attacks"
 	case entity.ClassVim:
 		return "Complex editor. Many abilities.",
-			"RAM: 100  CPU: 8   FD: 24  NICE: 10\nSkill: :normal - macro replay attack"
+			"RAM: 100  CPU: 8   FD: 20  NICE: 10\nSkill: :normal - macro replay attack"
 	case entity.ClassSudo:
 		return "Root access. High risk, high power.",
 			"RAM: 80   CPU: 10  FD: 16  UID: 0 (root!)\nSkill: sudo !! - bypass all defenses"
@@ -316,15 +317,16 @@ func (m *Model) colorizeEnemyRAM(current, max int) string {
 }
 
 // colorizeFD colors FD (ability resource) based on percentage.
+// Matches colorizeRAM pattern: low = Danger, medium = Highlight, high = Success.
 func (m *Model) colorizeFD(current, max int) string {
 	pct := float64(current) / float64(max)
 	str := fmt.Sprintf("%d", current)
-	if pct > 0.5 {
-		return m.styles.Normal.Render(str)
-	} else if pct > 0.25 {
-		return m.styles.Muted.Render(str)
+	if pct > 0.6 {
+		return m.styles.Success.Render(str)
+	} else if pct > 0.3 {
+		return m.styles.Highlight.Render(str)
 	}
-	return m.styles.Muted.Render(str)
+	return m.styles.Danger.Render(str)
 }
 
 // getViewportSize calculates the map viewport size based on terminal dimensions.
@@ -775,6 +777,13 @@ func (m *Model) getItemDetails(item *entity.Item) string {
 	if statStr != "" {
 		details += m.styles.Highlight.Render(statStr) + "\n"
 	}
+
+	// Show flavor text from content package if available
+	examineText := content.GetItemExamine(item.TemplateID)
+	if examineText != "A mysterious item. Its purpose is unclear." {
+		details += m.styles.Muted.Render(examineText) + "\n"
+	}
+
 	return details
 }
 
@@ -817,13 +826,16 @@ func (m *Model) formatStatBonus(item *entity.Item) string {
 	if item.StatBonus.FD != 0 {
 		bonuses = append(bonuses, fmt.Sprintf("FD %+d", item.StatBonus.FD))
 	}
+	if item.StatBonus.NICE != 0 {
+		bonuses = append(bonuses, fmt.Sprintf("NICE %+d", item.StatBonus.NICE))
+	}
 	if item.StatBonus.UID != 0 {
 		bonuses = append(bonuses, fmt.Sprintf("UID %+d", item.StatBonus.UID))
 	}
 	if len(bonuses) == 0 {
 		return ""
 	}
-	return "Stats: " + fmt.Sprintf("%v", bonuses)
+	return "Stats: " + strings.Join(bonuses, ", ")
 }
 
 // viewPause renders the pause menu.

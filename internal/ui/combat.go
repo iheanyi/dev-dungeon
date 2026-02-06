@@ -46,10 +46,7 @@ func (m *Model) updateCombat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cycleTarget(msg.String() == "left" || msg.String() == "h")
 	case "enter", " ", "1", "2", "3", "4":
 		return m.executeCombatAction(msg.String())
-	case "esc":
-		// Debug: instant flee
-		m.endCombat(false)
-		m.statusMsg = "[DEBUG] Escaped combat"
+		// Esc is intentionally not handled in combat - players must use the Flee action
 	}
 	return m, nil
 }
