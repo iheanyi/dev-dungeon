@@ -30,6 +30,7 @@ import (
 type rateLimiter struct {
 	attempts map[string]*attemptInfo
 	mu       sync.RWMutex
+	stop     chan struct{}
 }
 
 type attemptInfo struct {
@@ -74,6 +75,7 @@ const sshKeyHelp = `
 func newRateLimiter() *rateLimiter {
 	rl := &rateLimiter{
 		attempts: make(map[string]*attemptInfo),
+		stop:     make(chan struct{}),
 	}
 	// Start cleanup goroutine
 	go rl.cleanup()
@@ -82,17 +84,28 @@ func newRateLimiter() *rateLimiter {
 
 func (rl *rateLimiter) cleanup() {
 	ticker := time.NewTicker(time.Minute)
-	for range ticker.C {
-		rl.mu.Lock()
-		now := time.Now()
-		for ip, info := range rl.attempts {
-			// Remove entries older than block duration
-			if now.Sub(info.firstTime) > blockDuration {
-				delete(rl.attempts, ip)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			rl.mu.Lock()
+			now := time.Now()
+			for ip, info := range rl.attempts {
+				// Remove entries older than block duration
+				if now.Sub(info.firstTime) > blockDuration {
+					delete(rl.attempts, ip)
+				}
 			}
+			rl.mu.Unlock()
+		case <-rl.stop:
+			return
 		}
-		rl.mu.Unlock()
 	}
+}
+
+// Close stops the cleanup goroutine.
+func (rl *rateLimiter) Close() {
+	close(rl.stop)
 }
 
 func (rl *rateLimiter) isAllowed(ip string) bool {
@@ -263,6 +276,7 @@ func (s *Server) Run() error {
 	log.Info("Waiting for auto-save goroutines to complete...")
 	s.sessions.WaitForAutoSaves()
 
+	s.rateLimiter.Close()
 	s.db.Close()
 	log.Info("Server stopped")
 	return nil

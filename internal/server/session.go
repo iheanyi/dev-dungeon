@@ -29,6 +29,41 @@ const (
 	dbCreateTimeout = 5 * time.Second
 )
 
+// dbMetaToSaveMeta converts a db.MetaProgress to save.MetaProgress.
+// The permanent_bonuses JSONB blob is deserialized into save.StatBonuses.
+func dbMetaToSaveMeta(dbMeta *db.MetaProgress) *save.MetaProgress {
+	if dbMeta == nil {
+		return nil
+	}
+
+	meta := &save.MetaProgress{
+		TotalExitCodes:  dbMeta.TotalExitCodes,
+		UnlockedClasses: dbMeta.UnlockedClasses,
+		UnlockedItems:   dbMeta.UnlockedItems,
+		RunsCompleted:   dbMeta.RunsCompleted,
+		DeepestFloor:    dbMeta.DeepestFloor,
+		TotalDeaths:     dbMeta.TotalDeaths,
+	}
+
+	// Deserialize permanent_bonuses JSONB
+	if len(dbMeta.PermanentBonuses) > 0 {
+		if err := json.Unmarshal(dbMeta.PermanentBonuses, &meta.PermanentBonuses); err != nil {
+			log.Error("Failed to unmarshal permanent_bonuses", "error", err)
+			// Continue with zero bonuses rather than failing
+		}
+	}
+
+	// Ensure defaults
+	if meta.UnlockedClasses == nil {
+		meta.UnlockedClasses = []string{"init"}
+	}
+	if meta.UnlockedItems == nil {
+		meta.UnlockedItems = []string{}
+	}
+
+	return meta
+}
+
 // GameSession represents an active player session.
 type GameSession struct {
 	User        *db.User
@@ -329,6 +364,17 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 	// Create UI model
 	model := ui.NewWithRenderer(cfg, renderer)
 	model.SetMultiplayerMode(user.Username) // Disable cheats in multiplayer
+
+	// Load meta-progress from database (permanent bonuses, unlocked classes/items)
+	metaCtx, metaCancel := context.WithTimeout(context.Background(), dbLoadTimeout)
+	defer metaCancel()
+	dbMeta, err := s.db.GetMetaProgress(metaCtx, user.ID)
+	if err != nil {
+		log.Error("Failed to load meta progress", "error", err, "user", user.Username)
+	}
+	if saveMeta := dbMetaToSaveMeta(dbMeta); saveMeta != nil {
+		model.SetMetaProgress(saveMeta)
+	}
 
 	// Set up leaderboard fetcher
 	model.SetLeaderboardFetcher(func(runType string, limit int) ([]ui.LeaderboardEntry, error) {
@@ -979,6 +1025,17 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 	model := ui.NewWithRenderer(cfg, renderer)
 	model.SetMultiplayerMode(user.Username) // Disable cheats in multiplayer
 
+	// Load meta-progress from database (permanent bonuses, unlocked classes/items)
+	metaCtx, metaCancel := context.WithTimeout(context.Background(), dbLoadTimeout)
+	defer metaCancel()
+	dbMeta, err := s.db.GetMetaProgress(metaCtx, user.ID)
+	if err != nil {
+		log.Error("Failed to load meta progress for new user", "error", err, "user", user.Username)
+	}
+	if saveMeta := dbMetaToSaveMeta(dbMeta); saveMeta != nil {
+		model.SetMetaProgress(saveMeta)
+	}
+
 	// Set up leaderboard fetcher
 	model.SetLeaderboardFetcher(func(runType string, limit int) ([]ui.LeaderboardEntry, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -1164,6 +1221,63 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 
 		return entries, playerRank, playerEntry, nil
 	})
+
+	// Set up daily run features
+	dailySeedCtx, dailySeedCancel := context.WithTimeout(context.Background(), dbLoadTimeout)
+	defer dailySeedCancel()
+	todaysDailySeed, err := s.db.GetOrCreateDailySeed(dailySeedCtx)
+	if err != nil {
+		log.Error("Failed to get daily seed for new user", "error", err)
+		todaysDailySeed = 0
+	}
+
+	// Check daily run status
+	var dailyRunCompleted bool
+	if todaysDailySeed != 0 {
+		rankCtx, rankCancel := context.WithTimeout(context.Background(), dbLoadTimeout)
+		defer rankCancel()
+		rank, entry, err := s.db.GetPlayerDailyRank(rankCtx, time.Now().UTC(), user.ID)
+		if err != nil {
+			log.Error("Failed to check daily rank for new user", "error", err)
+		} else if rank > 0 && entry != nil {
+			dailyRunCompleted = true
+		}
+	}
+
+	// Set up callback for submitting abandoned daily runs
+	model.SetSubmitDailyCallback(func(abandonedSave *save.SaveData) error {
+		if abandonedSave == nil {
+			return fmt.Errorf("no save data to submit")
+		}
+
+		submitCtx, submitCancel := context.WithTimeout(context.Background(), dbSaveTimeout)
+		defer submitCancel()
+
+		floorsCleared := abandonedSave.CurrentDepth
+		score := floorsCleared * 100
+		score += abandonedSave.Player.Level * 50
+
+		entry := &db.LeaderboardEntry{
+			UserID:        user.ID,
+			Username:      user.Username,
+			RunType:       "daily",
+			Seed:          abandonedSave.MasterSeed,
+			Score:         score,
+			FloorsCleared: floorsCleared,
+			TimeSeconds:   0,
+			Class:         string(abandonedSave.Player.Class),
+		}
+
+		if err := s.db.AddLeaderboardEntry(submitCtx, entry); err != nil {
+			log.Error("Failed to submit abandoned daily run", "error", err, "user", user.Username)
+			return err
+		}
+		log.Info("Submitted abandoned daily run", "user", user.Username, "score", score)
+		return nil
+	})
+
+	// Set daily run status (no in-progress since this is a fresh registration)
+	model.SetDailyRunStatus(dailyRunCompleted, false, todaysDailySeed)
 
 	// Register session (kicks any existing session for this user)
 	if kickedSession := s.sessions.Add(fingerprint, gameSession); kickedSession != nil {

@@ -620,6 +620,15 @@ func (m *Model) SetMetaProgressUpdater(updater MetaProgressUpdater) {
 	m.metaProgressUpdater = updater
 }
 
+// SetMetaProgress replaces the model's meta-progress state.
+// This is used by the server to inject DB-loaded meta-progress in multiplayer,
+// overriding the default (empty) meta-progress from the constructor.
+func (m *Model) SetMetaProgress(mp *save.MetaProgress) {
+	if mp != nil {
+		m.metaProgress = mp
+	}
+}
+
 // SetHasValidSave sets whether a valid save exists and optionally stores the save data.
 // This is used by the server for multiplayer sessions where saves are stored in the database.
 // The save data will be loaded when the user selects Continue.

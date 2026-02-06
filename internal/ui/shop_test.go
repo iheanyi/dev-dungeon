@@ -441,6 +441,97 @@ func TestMetaProgressInitialization(t *testing.T) {
 	}
 }
 
+func TestSetMetaProgress(t *testing.T) {
+	m := newTestModel()
+
+	// Default meta progress should have zero bonuses
+	if m.metaProgress.PermanentBonuses.RAM != 0 {
+		t.Error("default RAM bonus should be 0")
+	}
+	if m.metaProgress.PermanentBonuses.CPU != 0 {
+		t.Error("default CPU bonus should be 0")
+	}
+
+	// Simulate DB-loaded meta progress (as would happen in multiplayer)
+	dbMeta := &save.MetaProgress{
+		TotalExitCodes:  500,
+		UnlockedClasses: []string{"init", "bash", "vim"},
+		UnlockedItems:   []string{"advanced_malloc"},
+		PermanentBonuses: save.StatBonuses{
+			RAM:  20,
+			CPU:  5,
+			FD:   10,
+			NICE: -2,
+		},
+		RunsCompleted: 3,
+		DeepestFloor:  7,
+		TotalDeaths:   5,
+	}
+
+	m.SetMetaProgress(dbMeta)
+
+	// Verify all fields were set
+	if m.metaProgress.TotalExitCodes != 500 {
+		t.Errorf("TotalExitCodes = %d, want 500", m.metaProgress.TotalExitCodes)
+	}
+	if m.metaProgress.PermanentBonuses.RAM != 20 {
+		t.Errorf("RAM bonus = %d, want 20", m.metaProgress.PermanentBonuses.RAM)
+	}
+	if m.metaProgress.PermanentBonuses.CPU != 5 {
+		t.Errorf("CPU bonus = %d, want 5", m.metaProgress.PermanentBonuses.CPU)
+	}
+	if m.metaProgress.PermanentBonuses.FD != 10 {
+		t.Errorf("FD bonus = %d, want 10", m.metaProgress.PermanentBonuses.FD)
+	}
+	if m.metaProgress.PermanentBonuses.NICE != -2 {
+		t.Errorf("NICE bonus = %d, want -2", m.metaProgress.PermanentBonuses.NICE)
+	}
+	if len(m.metaProgress.UnlockedClasses) != 3 {
+		t.Errorf("UnlockedClasses = %v, want 3 classes", m.metaProgress.UnlockedClasses)
+	}
+	if len(m.metaProgress.UnlockedItems) != 1 {
+		t.Errorf("UnlockedItems = %v, want 1 item", m.metaProgress.UnlockedItems)
+	}
+	if m.metaProgress.RunsCompleted != 3 {
+		t.Errorf("RunsCompleted = %d, want 3", m.metaProgress.RunsCompleted)
+	}
+
+	// Nil meta progress should not change anything
+	m.SetMetaProgress(nil)
+	if m.metaProgress.TotalExitCodes != 500 {
+		t.Error("nil SetMetaProgress should not change existing meta progress")
+	}
+}
+
+func TestSetMetaProgressAffectsNewGame(t *testing.T) {
+	m := newTestModel()
+
+	// Set meta progress with bonuses
+	dbMeta := &save.MetaProgress{
+		TotalExitCodes:  100,
+		UnlockedClasses: []string{"init", "bash"},
+		UnlockedItems:   []string{},
+		PermanentBonuses: save.StatBonuses{
+			RAM: 15,
+			CPU: 3,
+		},
+	}
+	m.SetMetaProgress(dbMeta)
+
+	// Start a new game - bonuses should be applied
+	m.startNewGame(entity.ClassInit)
+
+	if m.player == nil {
+		t.Fatal("player should be created")
+	}
+
+	// Player should have base stats + bonuses
+	// Init class has base RAM=100, so with +15 bonus the MaxRAM should be higher
+	if m.player.MaxStats.MaxRAM < 115 {
+		t.Errorf("MaxRAM = %d, expected >= 115 (base 100 + 15 bonus)", m.player.MaxStats.MaxRAM)
+	}
+}
+
 func TestOpenUnlockShop(t *testing.T) {
 	m := newTestModel()
 

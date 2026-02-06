@@ -62,9 +62,9 @@ CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     nanoid VARCHAR(21) UNIQUE NOT NULL,
     username CITEXT UNIQUE NOT NULL,
-    public_key_fingerprint VARCHAR(64) UNIQUE NOT NULL,
-    created_at TIMESTAMP DEFAULT NOW(),
-    last_login TIMESTAMP,
+    public_key_fingerprint VARCHAR(128) UNIQUE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    last_login TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     is_banned BOOLEAN DEFAULT FALSE
 );
 
@@ -74,8 +74,8 @@ CREATE TABLE IF NOT EXISTS game_saves (
     nanoid VARCHAR(21) UNIQUE NOT NULL,
     user_id INT UNIQUE REFERENCES users(id) ON DELETE CASCADE,
     save_data JSONB NOT NULL,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Meta progression
@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS leaderboard_entries (
     floors_cleared INT,
     time_seconds INT,
     class VARCHAR(32),
-    created_at TIMESTAMP DEFAULT NOW()
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Unique constraint for UPSERT on (user_id, seed)
@@ -118,23 +118,23 @@ CREATE TABLE IF NOT EXISTS world_drops (
     position_y INT,
     drop_type VARCHAR(16),
     content TEXT,
-    expires_at TIMESTAMP,
-    created_at TIMESTAMP DEFAULT NOW()
+    expires_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Daily seeds
 CREATE TABLE IF NOT EXISTS daily_seeds (
     date DATE PRIMARY KEY,
     seed BIGINT NOT NULL,
-    created_at TIMESTAMP DEFAULT NOW()
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Auth tokens (magic links)
 CREATE TABLE IF NOT EXISTS auth_tokens (
     token VARCHAR(64) PRIMARY KEY,
     user_id INT REFERENCES users(id) ON DELETE CASCADE,
-    created_at TIMESTAMP DEFAULT NOW(),
-    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
     used BOOLEAN DEFAULT FALSE
 );
 
@@ -142,9 +142,9 @@ CREATE TABLE IF NOT EXISTS auth_tokens (
 CREATE TABLE IF NOT EXISTS web_sessions (
     token VARCHAR(64) PRIMARY KEY,
     user_id INT REFERENCES users(id) ON DELETE CASCADE,
-    created_at TIMESTAMP DEFAULT NOW(),
-    expires_at TIMESTAMP NOT NULL,
-    last_used_at TIMESTAMP DEFAULT NOW()
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    last_used_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 `
 
