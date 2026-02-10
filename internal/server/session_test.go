@@ -150,3 +150,63 @@ func TestDbMetaToSaveMeta(t *testing.T) {
 		}
 	})
 }
+
+func TestAbbreviateFingerprint(t *testing.T) {
+	t.Run("short fingerprint remains unchanged", func(t *testing.T) {
+		fp := "SHA256:abc"
+		if got := abbreviateFingerprint(fp, 20); got != fp {
+			t.Fatalf("abbreviateFingerprint() = %q, want %q", got, fp)
+		}
+	})
+
+	t.Run("long fingerprint is truncated with ellipsis", func(t *testing.T) {
+		fp := "SHA256:abcdefghijklmnopqrstuvwxyz"
+		got := abbreviateFingerprint(fp, 10)
+		want := "SHA256:abc..."
+		if got != want {
+			t.Fatalf("abbreviateFingerprint() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("non-positive visible chars returns original", func(t *testing.T) {
+		fp := "SHA256:abcdefghijklmnopqrstuvwxyz"
+		if got := abbreviateFingerprint(fp, 0); got != fp {
+			t.Fatalf("abbreviateFingerprint() = %q, want %q", got, fp)
+		}
+	})
+}
+
+func TestSessionManagerCanAccept(t *testing.T) {
+	sm := NewSessionManager()
+
+	user1 := &db.User{ID: 1, Username: "player1"}
+	user2 := &db.User{ID: 2, Username: "player2"}
+	user3 := &db.User{ID: 3, Username: "player3"}
+
+	_ = sm.Add("fp1", &GameSession{User: user1})
+	_ = sm.Add("fp2", &GameSession{User: user2})
+
+	if sm.Count() != 2 {
+		t.Fatalf("expected 2 sessions, got %d", sm.Count())
+	}
+
+	// New user should be rejected at capacity.
+	if sm.canAccept(user3.ID, "fp3", 2) {
+		t.Fatal("expected new user to be rejected when at capacity")
+	}
+
+	// Existing user replacing their own session should be allowed.
+	if !sm.canAccept(user1.ID, "fp1-new", 2) {
+		t.Fatal("expected existing user session replacement to be allowed")
+	}
+
+	// Existing fingerprint reconnect should be allowed.
+	if !sm.canAccept(user1.ID, "fp1", 2) {
+		t.Fatal("expected reconnect with same fingerprint to be allowed")
+	}
+
+	// Unlimited mode should always accept.
+	if !sm.canAccept(user3.ID, "fp3", 0) {
+		t.Fatal("expected unlimited max sessions to accept")
+	}
+}

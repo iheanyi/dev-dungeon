@@ -4,6 +4,7 @@ package ui
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -689,6 +690,76 @@ func (m *Model) showConfirmDialog(message string, onConfirm func(), returnView V
 	m.currentView = ViewConfirmDialog
 }
 
+func normalizeKey(key string) string {
+	return strings.ToLower(strings.TrimSpace(key))
+}
+
+func (m *Model) controls() config.ControlsConfig {
+	if m.config == nil {
+		return config.DefaultConfig().Controls
+	}
+	return m.config.Controls
+}
+
+func (m *Model) keyMatches(input string, keys ...string) bool {
+	normalized := normalizeKey(input)
+	for _, key := range keys {
+		if key == "" {
+			continue
+		}
+		if normalizeKey(key) == normalized {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Model) isMoveUpKey(input string) bool {
+	c := m.controls()
+	return m.keyMatches(input, c.MoveUp, "up", "k")
+}
+
+func (m *Model) isMoveDownKey(input string) bool {
+	c := m.controls()
+	return m.keyMatches(input, c.MoveDown, "down", "j")
+}
+
+func (m *Model) isMoveLeftKey(input string) bool {
+	c := m.controls()
+	return m.keyMatches(input, c.MoveLeft, "left", "h")
+}
+
+func (m *Model) isMoveRightKey(input string) bool {
+	c := m.controls()
+	return m.keyMatches(input, c.MoveRight, "right", "l")
+}
+
+func (m *Model) isInventoryKey(input string) bool {
+	c := m.controls()
+	return m.keyMatches(input, c.Inventory)
+}
+
+func (m *Model) isPauseKey(input string) bool {
+	c := m.controls()
+	return m.keyMatches(input, c.Pause)
+}
+
+func (m *Model) combatActionIndexForKey(input string) (int, bool) {
+	c := m.controls()
+	switch {
+	case m.keyMatches(input, c.Attack, "1"):
+		return 0, true
+	case m.keyMatches(input, c.Hack, "2"):
+		return 1, true
+	case m.keyMatches(input, c.UseItem, "3"):
+		return 2, true
+	case m.keyMatches(input, c.Flee, "4"):
+		return 3, true
+	default:
+		return 0, false
+	}
+}
+
 // Init implements tea.Model.
 func (m *Model) Init() tea.Cmd {
 	// Request initial window size
@@ -719,38 +790,39 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// View-specific input
-	switch m.currentView {
-	case ViewMainMenu:
+	if m.currentView == ViewMainMenu {
 		return m.updateMainMenu(msg)
-	case ViewClassSelect:
+	} else if m.currentView == ViewClassSelect {
 		return m.updateClassSelect(msg)
-	case ViewGame:
+	} else if m.currentView == ViewGame {
 		return m.updateGame(msg)
-	case ViewCombat:
+	} else if m.currentView == ViewCombat {
 		return m.updateCombat(msg)
-	case ViewInventory:
+	} else if m.currentView == ViewInventory {
 		return m.updateInventory(msg)
-	case ViewPause:
+	} else if m.currentView == ViewPause {
 		return m.updatePause(msg)
-	case ViewGameOver:
+	} else if m.currentView == ViewGameOver {
 		return m.updateGameOver(msg)
-	case ViewAdmin:
+	} else if m.currentView == ViewVictory {
+		return m.updateGameOver(msg)
+	} else if m.currentView == ViewAdmin {
 		return m.updateAdmin(msg)
-	case ViewHelp:
+	} else if m.currentView == ViewHelp {
 		return m.updateHelp(msg)
-	case ViewMessageHistory:
+	} else if m.currentView == ViewMessageHistory {
 		return m.updateMessageHistory(msg)
-	case ViewIntro:
+	} else if m.currentView == ViewIntro {
 		return m.updateIntro(msg)
-	case ViewShop:
+	} else if m.currentView == ViewShop {
 		return m.updateShop(msg)
-	case ViewUnlockShop:
+	} else if m.currentView == ViewUnlockShop {
 		return m.updateUnlockShop(msg)
-	case ViewLeaderboard:
+	} else if m.currentView == ViewLeaderboard {
 		return m.updateLeaderboard(msg)
-	case ViewDailyLeaderboard:
+	} else if m.currentView == ViewDailyLeaderboard {
 		return m.updateDailyLeaderboard(msg)
-	case ViewConfirmDialog:
+	} else if m.currentView == ViewConfirmDialog {
 		return m.updateConfirmDialog(msg)
 	}
 
@@ -1069,16 +1141,18 @@ func (m *Model) startNewGame(playerClass entity.PlayerClass) {
 
 // updateGame handles game view input.
 func (m *Model) updateGame(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "w", "up", "k":
+	key := normalizeKey(msg.String())
+
+	switch {
+	case m.isMoveUpKey(key):
 		m.movePlayer(types.DirUp)
-	case "s", "down", "j":
+	case m.isMoveDownKey(key):
 		m.movePlayer(types.DirDown)
-	case "a", "left", "h":
+	case m.isMoveLeftKey(key):
 		m.movePlayer(types.DirLeft)
-	case "d", "right", "l":
+	case m.isMoveRightKey(key):
 		m.movePlayer(types.DirRight)
-	case ">", ".":
+	case key == ">" || key == ".":
 		// Descend stairs
 		if m.engine != nil {
 			if err := m.engine.DescendStairs(); err != nil {
@@ -1087,7 +1161,7 @@ func (m *Model) updateGame(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.statusMsg = fmt.Sprintf("Descended to %s (depth %d).", m.engine.CurrentFloorType().FloorName(), m.engine.CurrentDepth())
 			}
 		}
-	case "<", ",":
+	case key == "<" || key == ",":
 		// Ascend stairs
 		if m.engine != nil {
 			if err := m.engine.AscendStairs(); err != nil {
@@ -1096,13 +1170,17 @@ func (m *Model) updateGame(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.statusMsg = fmt.Sprintf("Ascended to %s (depth %d).", m.engine.CurrentFloorType().FloorName(), m.engine.CurrentDepth())
 			}
 		}
-	case "i":
+	case m.isInventoryKey(key):
 		m.currentView = ViewInventory
-	case "p", "esc":
+	case m.isPauseKey(key) || key == "esc":
 		m.currentView = ViewPause
-	case "q":
-		m.saveGameAndReturnToMenu()
-	case "`":
+	case key == "q":
+		m.showConfirmDialog(
+			"Save your run and return to the main menu?",
+			func() { m.saveGameAndReturnToMenu() },
+			ViewGame,
+		)
+	case key == "`":
 		// Open admin console - disabled in multiplayer to prevent cheating
 		if m.isMultiplayer {
 			m.statusMsg = "Admin console disabled in multiplayer mode."
@@ -1121,14 +1199,14 @@ func (m *Model) updateGame(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.statusMsg = "Permission denied: requires root. Try 'sudo' class, find root_shard, or run with actual sudo."
 		}
-	case "?":
+	case key == "?":
 		m.prevView = ViewGame
 		m.currentView = ViewHelp
-	case "m":
+	case key == "m":
 		m.prevView = ViewGame
 		m.messageScrollIdx = 0
 		m.currentView = ViewMessageHistory
-	case "$":
+	case key == "$":
 		// Open shop
 		m.openShop()
 	}
@@ -1185,11 +1263,17 @@ func (m *Model) movePlayer(dir types.Direction) {
 
 // updatePause handles pause menu input.
 func (m *Model) updatePause(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc", "p":
+	key := normalizeKey(msg.String())
+
+	switch {
+	case key == "esc" || m.isPauseKey(key):
 		m.currentView = ViewGame
-	case "q":
-		m.saveGameAndReturnToMenu()
+	case key == "q":
+		m.showConfirmDialog(
+			"Save your run and return to the main menu?",
+			func() { m.saveGameAndReturnToMenu() },
+			ViewPause,
+		)
 	}
 	return m, nil
 }
@@ -1556,7 +1640,7 @@ func (m *Model) clearSaveOnRunEnd() {
 }
 
 // saveGameAndReturnToMenu saves the game and returns to the main menu.
-// Works for both multiplayer (saveCallback) and offline (saveManager) modes.
+// Works for both multiplayer (saveCallback) and offline (engine save manager) modes.
 func (m *Model) saveGameAndReturnToMenu() {
 	if m.engine == nil {
 		return
@@ -1571,19 +1655,15 @@ func (m *Model) saveGameAndReturnToMenu() {
 			m.hasValidSave = true
 			m.pendingSave = savedData
 		}
-	} else if m.saveManager != nil {
-		// Offline mode - save to local files
-		saveData := m.GetSaveData()
-		if saveData != nil {
-			if err := m.saveManager.SaveSync(saveData, save.TriggerManual); err != nil {
-				m.statusMsg = "Failed to save game."
-			} else {
-				m.statusMsg = "Game saved."
-				m.hasValidSave = true
-			}
-		}
 	} else {
-		m.statusMsg = "Returned to menu."
+		// Offline mode - use the engine's save manager (already running)
+		if err := m.engine.SaveSync(save.TriggerManual); err != nil {
+			m.statusMsg = "Failed to save game."
+		} else {
+			m.statusMsg = "Game saved."
+			m.hasValidSave = true
+			m.pendingSave = m.GetSaveData()
+		}
 	}
 
 	m.engine.Shutdown()
@@ -1600,9 +1680,11 @@ func (m *Model) updateConfirmDialog(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.confirmAction != nil {
 			m.confirmAction()
 		}
+		m.confirmAction = nil
 		return m, nil
 	case "n", "N", "esc", "q":
 		m.currentView = m.confirmReturnView
+		m.confirmAction = nil
 		return m, nil
 	}
 	return m, nil

@@ -211,6 +211,15 @@ func (m *Model) viewMainMenu() string {
 
 // viewGame renders the main game view.
 func (m *Model) viewGame() string {
+	// Avoid rendering a cramped, unreadable layout in very small terminals.
+	if m.width > 0 && m.height > 0 && (m.width < 80 || m.height < 24) {
+		warning := m.styles.Danger.Render("Terminal window is too small.")
+		dimensions := m.styles.Muted.Render(fmt.Sprintf("Current: %dx%d  Required: at least 80x24", m.width, m.height))
+		hint := m.styles.Muted.Render("Resize your terminal to continue.")
+		content := m.styles.Container.Render(warning + "\n" + dimensions + "\n\n" + hint)
+		return m.centerContent(content)
+	}
+
 	// Get viewport dimensions for consistent sizing
 	vpWidth, _ := m.getViewportSize()
 
@@ -981,25 +990,37 @@ func (m *Model) viewAdmin() string {
 // viewHelp renders the help/keybindings screen.
 func (m *Model) viewHelp() string {
 	title := m.styles.Title.Render("═══ HELP / KEYBINDINGS ═══") + "\n\n"
+	controls := m.controls()
+
+	moveUp := m.displayControlKey(controls.MoveUp, "w")
+	moveDown := m.displayControlKey(controls.MoveDown, "s")
+	moveLeft := m.displayControlKey(controls.MoveLeft, "a")
+	moveRight := m.displayControlKey(controls.MoveRight, "d")
+	inventoryKey := m.displayControlKey(controls.Inventory, "i")
+	pauseKey := m.displayControlKey(controls.Pause, "p")
+	attackKey := m.displayControlKey(controls.Attack, "1")
+	hackKey := m.displayControlKey(controls.Hack, "2")
+	useItemKey := m.displayControlKey(controls.UseItem, "3")
+	fleeKey := m.displayControlKey(controls.Flee, "4")
 
 	movement := m.styles.Highlight.Render("Movement:") + "\n"
-	movement += "  WASD / Arrow Keys / hjkl  - Move\n"
+	movement += fmt.Sprintf("  %s/%s/%s/%s + arrows/hjkl - Move\n", moveUp, moveDown, moveLeft, moveRight)
 	movement += "  > or .                    - Descend stairs\n"
 	movement += "  < or ,                    - Ascend stairs\n\n"
 
 	actions := m.styles.Highlight.Render("Actions:") + "\n"
-	actions += "  I                         - Open inventory\n"
+	actions += fmt.Sprintf("  %-25s - Open inventory\n", inventoryKey)
 	actions += "  $                         - Open shop (ls -la)\n"
 	actions += "  M                         - Message history\n"
-	actions += "  P or Esc                  - Pause menu\n"
-	actions += "  Q                         - Save & quit to menu\n"
+	actions += fmt.Sprintf("  %-25s - Pause menu\n", pauseKey+" or Esc")
+	actions += "  Q                         - Save & quit to menu (with confirmation)\n"
 	actions += "  ?                         - This help screen\n\n"
 
 	combat := m.styles.Highlight.Render("Combat:") + "\n"
-	combat += "  1 or Enter                - Attack (kill -TERM)\n"
-	combat += "  2                         - Hack (use skill)\n"
-	combat += "  3                         - Use item\n"
-	combat += "  4                         - Attempt to flee\n\n"
+	combat += fmt.Sprintf("  %-25s - Attack (kill -TERM)\n", attackKey+" or Enter")
+	combat += fmt.Sprintf("  %-25s - Hack (use skill)\n", hackKey)
+	combat += fmt.Sprintf("  %-25s - Use item\n", useItemKey)
+	combat += fmt.Sprintf("  %-25s - Attempt to flee\n\n", fleeKey)
 
 	inventory := m.styles.Highlight.Render("Inventory:") + "\n"
 	inventory += "  Enter / Space            - Use or equip item\n"
@@ -1024,6 +1045,24 @@ func (m *Model) viewHelp() string {
 
 	content := m.styles.Container.Render(title + movement + actions + combat + inventory + stats + tips + footer)
 	return m.centerContent(content)
+}
+
+func (m *Model) displayControlKey(configured, fallback string) string {
+	key := normalizeKey(configured)
+	if key == "" {
+		key = normalizeKey(fallback)
+	}
+
+	switch key {
+	case "enter":
+		return "Enter"
+	case "esc":
+		return "Esc"
+	case "space":
+		return "Space"
+	default:
+		return strings.ToUpper(key)
+	}
 }
 
 // viewMessageHistory renders the scrollable message history.
@@ -1098,10 +1137,12 @@ func (m *Model) viewIntro() string {
 
 // viewShop renders the shop interface styled like ls -la output.
 func (m *Model) viewShop() string {
+	dateStamp := time.Now().UTC().Format("Jan _2 15:04")
+
 	title := m.styles.Title.Render("$ ls -la /dev/store") + "\n"
 	title += m.styles.Muted.Render("total 42\n")
-	title += m.styles.Muted.Render("drwxr-xr-x  2 root  shop  4096 Jan 13 04:20 .\n")
-	title += m.styles.Muted.Render("drwxr-xr-x 10 root  root  4096 Jan 13 04:20 ..\n\n")
+	title += m.styles.Muted.Render(fmt.Sprintf("drwxr-xr-x  2 root  shop  4096 %s .\n", dateStamp))
+	title += m.styles.Muted.Render(fmt.Sprintf("drwxr-xr-x 10 root  root  4096 %s ..\n\n", dateStamp))
 
 	// Show player's exit codes like a shell variable
 	balance := m.styles.Muted.Render("$ echo $EXIT_CODES\n")
@@ -1140,7 +1181,7 @@ func (m *Model) viewShop() string {
 		}
 
 		// ls -la format: perms links owner group size date name
-		itemLine := fmt.Sprintf("%s %s 1 shop shop %s Jan 13 %s", cursor, perms, priceStr, nameStr)
+		itemLine := fmt.Sprintf("%s %s 1 shop shop %s %s %s", cursor, perms, priceStr, dateStamp, nameStr)
 		items += style.Render(itemLine) + "\n"
 	}
 

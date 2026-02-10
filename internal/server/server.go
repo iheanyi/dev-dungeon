@@ -41,9 +41,10 @@ type attemptInfo struct {
 
 // Rate limit settings
 const (
-	maxAuthAttempts = 5           // Max attempts per window
-	rateLimitWindow = time.Minute // Window duration
-	blockDuration   = 5 * time.Minute
+	maxAuthAttempts              = 5           // Max attempts per window
+	rateLimitWindow              = time.Minute // Window duration
+	blockDuration                = 5 * time.Minute
+	defaultMaxConcurrentSessions = 200
 )
 
 // SSH banner shown during connection
@@ -152,11 +153,12 @@ func (rl *rateLimiter) isAllowed(ip string) bool {
 
 // Config holds SSH server configuration.
 type Config struct {
-	Host        string
-	Port        string
-	HostKeyPath string
-	DatabaseURL string
-	WebBaseURL  string // Base URL for magic links (e.g., "https://dev-dungeon.com")
+	Host                  string
+	Port                  string
+	HostKeyPath           string
+	DatabaseURL           string
+	WebBaseURL            string // Base URL for magic links (e.g., "https://dev-dungeon.com")
+	MaxConcurrentSessions int
 }
 
 // Server is the SSH game server.
@@ -171,6 +173,10 @@ type Server struct {
 // New creates a new SSH game server.
 func New(cfg Config) (*Server, error) {
 	ctx := context.Background()
+
+	if cfg.MaxConcurrentSessions <= 0 {
+		cfg.MaxConcurrentSessions = defaultMaxConcurrentSessions
+	}
 
 	// Connect to database
 	dbClient, err := db.NewClient(ctx, cfg.DatabaseURL)
@@ -201,6 +207,8 @@ func New(cfg Config) (*Server, error) {
 		wish.WithHostKeyPath(cfg.HostKeyPath),
 		wish.WithBanner(sshBanner),
 		wish.WithPublicKeyAuth(s.publicKeyAuth),
+		wish.WithPasswordAuth(func(_ ssh.Context, _ string) bool { return false }),
+		wish.WithKeyboardInteractiveAuth(func(_ ssh.Context, _ gossh.KeyboardInteractiveChallenge) bool { return false }),
 		wish.WithMiddleware(
 			s.gameMiddleware(),
 			activeterm.Middleware(),
@@ -311,7 +319,7 @@ func (s *Server) publicKeyAuth(ctx ssh.Context, key ssh.PublicKey) bool {
 	}
 
 	// Look up user by fingerprint with timeout
-	dbCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	dbCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	user, err := s.db.GetUserByFingerprint(dbCtx, fingerprint)
@@ -344,7 +352,7 @@ func (s *Server) publicKeyAuth(ctx ssh.Context, key ssh.PublicKey) bool {
 	ctx.SetValue("fingerprint", fingerprint)
 
 	// Update last login with timeout
-	updateCtx, updateCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	updateCtx, updateCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer updateCancel()
 	if err := s.db.UpdateLastLogin(updateCtx, user.ID); err != nil {
 		log.Error("Failed to update last login", "error", err)

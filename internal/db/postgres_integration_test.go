@@ -451,6 +451,54 @@ func TestPostgres_MetaProgress_CRUD(t *testing.T) {
 	}
 }
 
+func TestPostgres_ApplyRunMetaProgress(t *testing.T) {
+	client, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	user, err := client.CreateUser(ctx, "metaatomicuser", "SHA256:metaatomicfp")
+	if err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
+	}
+
+	// First run: loss
+	meta, err := client.ApplyRunMetaProgress(ctx, user.ID, 15, 4, false)
+	if err != nil {
+		t.Fatalf("ApplyRunMetaProgress failed: %v", err)
+	}
+	if meta.TotalExitCodes != 15 {
+		t.Fatalf("expected total exit codes 15, got %d", meta.TotalExitCodes)
+	}
+	if meta.TotalDeaths != 1 {
+		t.Fatalf("expected total deaths 1, got %d", meta.TotalDeaths)
+	}
+	if meta.RunsCompleted != 0 {
+		t.Fatalf("expected runs completed 0, got %d", meta.RunsCompleted)
+	}
+	if meta.DeepestFloor != 4 {
+		t.Fatalf("expected deepest floor 4, got %d", meta.DeepestFloor)
+	}
+
+	// Second run: win, lower depth should not reduce deepest floor
+	meta, err = client.ApplyRunMetaProgress(ctx, user.ID, 40, 2, true)
+	if err != nil {
+		t.Fatalf("ApplyRunMetaProgress second update failed: %v", err)
+	}
+	if meta.TotalExitCodes != 55 {
+		t.Fatalf("expected total exit codes 55, got %d", meta.TotalExitCodes)
+	}
+	if meta.TotalDeaths != 1 {
+		t.Fatalf("expected total deaths to remain 1, got %d", meta.TotalDeaths)
+	}
+	if meta.RunsCompleted != 1 {
+		t.Fatalf("expected runs completed 1, got %d", meta.RunsCompleted)
+	}
+	if meta.DeepestFloor != 4 {
+		t.Fatalf("expected deepest floor to remain 4, got %d", meta.DeepestFloor)
+	}
+}
+
 // --- Leaderboard Tests ---
 
 func TestPostgres_Leaderboard(t *testing.T) {
