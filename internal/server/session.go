@@ -29,6 +29,20 @@ const (
 	dbCreateTimeout = 5 * time.Second
 )
 
+func newTimeoutContext(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	return context.WithTimeout(parent, timeout)
+}
+
+func abbreviateFingerprint(fingerprint string, visibleChars int) string {
+	if visibleChars <= 0 || len(fingerprint) <= visibleChars {
+		return fingerprint
+	}
+	return fingerprint[:visibleChars] + "..."
+}
+
 // dbMetaToSaveMeta converts a db.MetaProgress to save.MetaProgress.
 // The permanent_bonuses JSONB blob is deserialized into save.StatBonuses.
 func dbMetaToSaveMeta(dbMeta *db.MetaProgress) *save.MetaProgress {
@@ -141,6 +155,36 @@ func (sm *SessionManager) Get(fingerprint string) *GameSession {
 	return sm.sessions[fingerprint]
 }
 
+// Count returns the number of active sessions.
+func (sm *SessionManager) Count() int {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return len(sm.sessions)
+}
+
+// canAccept returns whether a session can be accepted under the configured limit.
+// Existing users replacing their own active session are always allowed.
+func (sm *SessionManager) canAccept(userID int, fingerprint string, maxConcurrentSessions int) bool {
+	if maxConcurrentSessions <= 0 {
+		return true
+	}
+
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	// Existing fingerprint reconnect.
+	if _, ok := sm.sessions[fingerprint]; ok {
+		return true
+	}
+
+	// Same user replacing their own session is allowed.
+	if oldFingerprint, ok := sm.userSessions[userID]; ok && oldFingerprint != "" {
+		return true
+	}
+
+	return len(sm.sessions) < maxConcurrentSessions
+}
+
 // SaveAll saves all active sessions to the database.
 func (sm *SessionManager) SaveAll(ctx context.Context, dbClient *db.Client) {
 	sm.mu.RLock()
@@ -216,7 +260,7 @@ func (sm *SessionManager) NotifyShutdown(message string) {
 		if session.Session != nil {
 			// Write directly to SSH session - ignore errors as session may be closing
 			if _, err := session.Session.Write([]byte(formattedMsg)); err != nil {
-				log.Warn("Failed to notify session of shutdown", "fingerprint", fingerprint[:16]+"...", "error", err)
+				log.Warn("Failed to notify session of shutdown", "fingerprint", abbreviateFingerprint(fingerprint, 16), "error", err)
 			} else {
 				notified++
 				username := "unknown"
@@ -243,7 +287,11 @@ func (s *Server) handleKickedSession(session *GameSession) {
 	}
 
 	// Try to save their progress before kicking
-	saveCtx, saveCancel := context.WithTimeout(context.Background(), dbSaveTimeout)
+	parentCtx := context.Background()
+	if session.Session != nil && session.Session.Context() != nil {
+		parentCtx = session.Session.Context()
+	}
+	saveCtx, saveCancel := newTimeoutContext(parentCtx, dbSaveTimeout)
 	defer saveCancel()
 
 	if _, err := saveSessionToDatabase(saveCtx, s.db, session); err != nil {
@@ -299,6 +347,18 @@ func saveSessionToDatabase(ctx context.Context, dbClient *db.Client, session *Ga
 	return saveData, nil
 }
 
+func writeSessionLimitMessage(sess ssh.Session, maxConcurrentSessions int) {
+	if sess == nil {
+		return
+	}
+
+	msg := fmt.Sprintf(
+		"\r\nServer is currently at capacity (%d active sessions).\r\nPlease try again in a moment.\r\n\r\n",
+		maxConcurrentSessions,
+	)
+	_, _ = sess.Write([]byte(msg))
+}
+
 // newGameSession creates a new Bubble Tea model for a game session.
 func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOption) {
 	ctx := sess.Context()
@@ -323,6 +383,11 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 	renderer := bubbletea.MakeRenderer(sess)
 
 	if needsRegistration {
+		if s.config.MaxConcurrentSessions > 0 && s.sessions.Count() >= s.config.MaxConcurrentSessions {
+			log.Warn("Rejecting registration session: server at capacity", "maxSessions", s.config.MaxConcurrentSessions)
+			writeSessionLimitMessage(sess, s.config.MaxConcurrentSessions)
+			return nil, nil
+		}
 		// Show registration flow
 		return s.newRegistrationModel(sess, fingerprint), []tea.ProgramOption{tea.WithAltScreen()}
 	}
@@ -336,6 +401,12 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 	user, ok := userVal.(*db.User)
 	if !ok || user == nil {
 		log.Error("Invalid user type in context", "type", fmt.Sprintf("%T", userVal))
+		return nil, nil
+	}
+
+	if !s.sessions.canAccept(user.ID, fingerprint, s.config.MaxConcurrentSessions) {
+		log.Warn("Rejecting session: server at capacity", "user", user.Username, "maxSessions", s.config.MaxConcurrentSessions)
+		writeSessionLimitMessage(sess, s.config.MaxConcurrentSessions)
 		return nil, nil
 	}
 
@@ -354,7 +425,7 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 	}
 
 	// Try to load existing save from database
-	loadCtx, loadCancel := context.WithTimeout(context.Background(), dbLoadTimeout)
+	loadCtx, loadCancel := newTimeoutContext(ctx, dbLoadTimeout)
 	defer loadCancel()
 	gameSave, err := s.db.GetGameSave(loadCtx, user.ID)
 	if err != nil {
@@ -366,7 +437,7 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 	model.SetMultiplayerMode(user.Username) // Disable cheats in multiplayer
 
 	// Load meta-progress from database (permanent bonuses, unlocked classes/items)
-	metaCtx, metaCancel := context.WithTimeout(context.Background(), dbLoadTimeout)
+	metaCtx, metaCancel := newTimeoutContext(ctx, dbLoadTimeout)
 	defer metaCancel()
 	dbMeta, err := s.db.GetMetaProgress(metaCtx, user.ID)
 	if err != nil {
@@ -378,7 +449,7 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 
 	// Set up leaderboard fetcher
 	model.SetLeaderboardFetcher(func(runType string, limit int) ([]ui.LeaderboardEntry, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		queryCtx, cancel := newTimeoutContext(ctx, 5*time.Second)
 		defer cancel()
 
 		// Convert "all" to empty string for the database query
@@ -387,7 +458,7 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 			dbRunType = ""
 		}
 
-		dbEntries, err := s.db.GetLeaderboard(ctx, dbRunType, limit)
+		dbEntries, err := s.db.GetLeaderboard(queryCtx, dbRunType, limit)
 		if err != nil {
 			return nil, err
 		}
@@ -410,16 +481,16 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 
 	// Set up save callback - this is called when user presses Q to return to menu
 	model.SetSaveCallback(func() (*save.SaveData, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), dbSaveTimeout)
+		saveCtx, cancel := newTimeoutContext(ctx, dbSaveTimeout)
 		defer cancel()
-		return saveSessionToDatabase(ctx, s.db, gameSession)
+		return saveSessionToDatabase(saveCtx, s.db, gameSession)
 	})
 
 	// Set up clear save callback - called on death or victory to delete the save
 	model.SetClearSaveCallback(func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), dbSaveTimeout)
+		clearCtx, cancel := newTimeoutContext(ctx, dbSaveTimeout)
 		defer cancel()
-		if err := s.db.DeleteGameSave(ctx, user.ID); err != nil {
+		if err := s.db.DeleteGameSave(clearCtx, user.ID); err != nil {
 			log.Error("Failed to delete game save on run end", "error", err, "user", user.Username)
 			monitoring.CaptureException(err, map[string]string{
 				"operation": "clear_save_on_run_end",
@@ -433,10 +504,10 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 
 	// Set up meta progress updater - called on death or victory to persist exit codes
 	model.SetMetaProgressUpdater(func(exitCodesEarned int, victory bool, maxDepthReached int) error {
-		ctx, cancel := context.WithTimeout(context.Background(), dbSaveTimeout)
+		updateCtx, cancel := newTimeoutContext(ctx, dbSaveTimeout)
 		defer cancel()
 
-		meta, err := s.db.ApplyRunMetaProgress(ctx, user.ID, exitCodesEarned, maxDepthReached, victory)
+		meta, err := s.db.ApplyRunMetaProgress(updateCtx, user.ID, exitCodesEarned, maxDepthReached, victory)
 		if err != nil {
 			log.Error("Failed to update meta progress", "error", err, "user", user.Username)
 			monitoring.CaptureException(err, map[string]string{
@@ -459,7 +530,7 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 
 	// Set up leaderboard submitter - called on death or victory
 	model.SetLeaderboardSubmitter(func(score, floorsCleared, timeSeconds int, class string, seed int64, runType string, victory bool) error {
-		ctx, cancel := context.WithTimeout(context.Background(), dbSaveTimeout)
+		submitCtx, cancel := newTimeoutContext(ctx, dbSaveTimeout)
 		defer cancel()
 
 		entry := &db.LeaderboardEntry{
@@ -473,7 +544,7 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 			RunType:       runType,
 		}
 
-		if err := s.db.AddLeaderboardEntry(ctx, entry); err != nil {
+		if err := s.db.AddLeaderboardEntry(submitCtx, entry); err != nil {
 			log.Error("Failed to submit leaderboard entry", "error", err, "user", user.Username)
 			return err
 		}
@@ -493,11 +564,11 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 
 	// Set up daily leaderboard fetcher (date-navigable)
 	model.SetDailyLeaderboardFetcher(func(date time.Time, limit int, _ int) ([]ui.LeaderboardEntry, int, *ui.LeaderboardEntry, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		queryCtx, cancel := newTimeoutContext(ctx, 5*time.Second)
 		defer cancel()
 
 		// Get top entries for this date
-		dbEntries, _, err := s.db.GetDailyLeaderboard(ctx, date, limit, nil)
+		dbEntries, _, err := s.db.GetDailyLeaderboard(queryCtx, date, limit, nil)
 		if err != nil {
 			return nil, 0, nil, err
 		}
@@ -517,7 +588,7 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 		}
 
 		// Get player's rank for this date
-		playerRank, dbPlayerEntry, err := s.db.GetPlayerDailyRank(ctx, date, user.ID)
+		playerRank, dbPlayerEntry, err := s.db.GetPlayerDailyRank(queryCtx, date, user.ID)
 		if err != nil {
 			return entries, 0, nil, err
 		}
@@ -539,7 +610,7 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 	})
 
 	// Get today's daily seed for comparison
-	dailySeedCtx, dailySeedCancel := context.WithTimeout(context.Background(), dbLoadTimeout)
+	dailySeedCtx, dailySeedCancel := newTimeoutContext(ctx, dbLoadTimeout)
 	defer dailySeedCancel()
 	todaysDailySeed, err := s.db.GetOrCreateDailySeed(dailySeedCtx)
 	if err != nil {
@@ -553,7 +624,7 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 
 	// Check if player completed today's daily (has leaderboard entry)
 	if todaysDailySeed != 0 {
-		rankCtx, rankCancel := context.WithTimeout(context.Background(), dbLoadTimeout)
+		rankCtx, rankCancel := newTimeoutContext(ctx, dbLoadTimeout)
 		defer rankCancel()
 		rank, entry, err := s.db.GetPlayerDailyRank(rankCtx, time.Now().UTC(), user.ID)
 		if err != nil {
@@ -585,7 +656,7 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 			return fmt.Errorf("no save data to submit")
 		}
 
-		submitCtx, submitCancel := context.WithTimeout(context.Background(), dbSaveTimeout)
+		submitCtx, submitCancel := newTimeoutContext(ctx, dbSaveTimeout)
 		defer submitCancel()
 
 		// Calculate score from save data (same formula as normal submission)
@@ -680,7 +751,11 @@ func (sw *sessionWrapper) autoSaveLoop() {
 		case <-sw.sessCtx.Done():
 			// SSH session ended (disconnect, network drop, etc.)
 			// Perform final save and clean up
-			log.Info("SSH session ended, performing final save", "user", sw.session.User.Username)
+			username := "unknown"
+			if sw.session != nil && sw.session.User != nil {
+				username = sw.session.User.Username
+			}
+			log.Info("SSH session ended, performing final save", "user", username)
 			sw.performAutoSave()
 			sw.server.sessions.Remove(sw.fingerprint)
 			return
@@ -694,7 +769,7 @@ func (sw *sessionWrapper) performAutoSave() {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), dbSaveTimeout)
+	ctx, cancel := newTimeoutContext(sw.sessCtx, dbSaveTimeout)
 	defer cancel()
 
 	if _, err := saveSessionToDatabase(ctx, sw.server.db, sw.session); err != nil {
@@ -778,7 +853,7 @@ func (sw *sessionWrapper) generateMagicLink() {
 	}
 
 	// Generate token
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := newTimeoutContext(sw.sessCtx, 5*time.Second)
 	defer cancel()
 
 	token, err := sw.server.db.CreateAuthToken(ctx, sw.session.User.ID)
@@ -913,7 +988,7 @@ func (m *registrationModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if len(m.username) >= 3 {
 				// Try to create user with timeout
-				createCtx, cancel := context.WithTimeout(context.Background(), dbCreateTimeout)
+				createCtx, cancel := newTimeoutContext(m.sess.Context(), dbCreateTimeout)
 				user, err := m.server.db.CreateUser(createCtx, m.username, m.fingerprint)
 				cancel()
 				if err != nil {
@@ -979,12 +1054,20 @@ func (m *registrationModel) View() string {
 	s += "  ║                                        ║\n"
 	s += "  ╚════════════════════════════════════════╝\n"
 	s += "\n"
-	s += fmt.Sprintf("  Your key: %s\n", m.fingerprint[:20]+"...")
+	s += fmt.Sprintf("  Your key: %s\n", abbreviateFingerprint(m.fingerprint, 20))
 	return s
 }
 
 // createGameModel creates the actual game model after registration.
 func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint string) (tea.Model, tea.Cmd) {
+	ctx := sess.Context()
+
+	if !s.sessions.canAccept(user.ID, fingerprint, s.config.MaxConcurrentSessions) {
+		log.Warn("Rejecting post-registration session: server at capacity", "user", user.Username, "maxSessions", s.config.MaxConcurrentSessions)
+		writeSessionLimitMessage(sess, s.config.MaxConcurrentSessions)
+		return nil, nil
+	}
+
 	renderer := bubbletea.MakeRenderer(sess)
 
 	// Use fixed dungeon dimensions for save compatibility across different terminal sizes.
@@ -1002,7 +1085,7 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 	model.SetMultiplayerMode(user.Username) // Disable cheats in multiplayer
 
 	// Load meta-progress from database (permanent bonuses, unlocked classes/items)
-	metaCtx, metaCancel := context.WithTimeout(context.Background(), dbLoadTimeout)
+	metaCtx, metaCancel := newTimeoutContext(ctx, dbLoadTimeout)
 	defer metaCancel()
 	dbMeta, err := s.db.GetMetaProgress(metaCtx, user.ID)
 	if err != nil {
@@ -1014,7 +1097,7 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 
 	// Set up leaderboard fetcher
 	model.SetLeaderboardFetcher(func(runType string, limit int) ([]ui.LeaderboardEntry, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		queryCtx, cancel := newTimeoutContext(ctx, 5*time.Second)
 		defer cancel()
 
 		// Convert "all" to empty string for the database query
@@ -1023,7 +1106,7 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 			dbRunType = ""
 		}
 
-		dbEntries, err := s.db.GetLeaderboard(ctx, dbRunType, limit)
+		dbEntries, err := s.db.GetLeaderboard(queryCtx, dbRunType, limit)
 		if err != nil {
 			return nil, err
 		}
@@ -1046,16 +1129,16 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 
 	// Set up save callback - this is called when user presses Q to return to menu
 	model.SetSaveCallback(func() (*save.SaveData, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), dbSaveTimeout)
+		saveCtx, cancel := newTimeoutContext(ctx, dbSaveTimeout)
 		defer cancel()
-		return saveSessionToDatabase(ctx, s.db, gameSession)
+		return saveSessionToDatabase(saveCtx, s.db, gameSession)
 	})
 
 	// Set up clear save callback - called on death or victory to delete the save
 	model.SetClearSaveCallback(func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), dbSaveTimeout)
+		clearCtx, cancel := newTimeoutContext(ctx, dbSaveTimeout)
 		defer cancel()
-		if err := s.db.DeleteGameSave(ctx, user.ID); err != nil {
+		if err := s.db.DeleteGameSave(clearCtx, user.ID); err != nil {
 			log.Error("Failed to delete game save on run end", "error", err, "user", user.Username)
 			monitoring.CaptureException(err, map[string]string{
 				"operation": "clear_save_on_run_end",
@@ -1069,42 +1152,18 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 
 	// Set up meta progress updater - called on death or victory to persist exit codes
 	model.SetMetaProgressUpdater(func(exitCodesEarned int, victory bool, maxDepthReached int) error {
-		ctx, cancel := context.WithTimeout(context.Background(), dbSaveTimeout)
+		updateCtx, cancel := newTimeoutContext(ctx, dbSaveTimeout)
 		defer cancel()
 
-		// Get existing meta progress or create new
-		meta, err := s.db.GetMetaProgress(ctx, user.ID)
+		meta, err := s.db.ApplyRunMetaProgress(updateCtx, user.ID, exitCodesEarned, maxDepthReached, victory)
 		if err != nil {
-			log.Error("Failed to get meta progress", "error", err, "user", user.Username)
-			monitoring.CaptureException(err, map[string]string{
-				"operation": "get_meta_progress_on_run_end",
-				"user":      user.Username,
-			})
-			return err
-		}
-		if meta == nil {
-			meta = &db.MetaProgress{UserID: user.ID}
-		}
-
-		// Update meta progress
-		meta.TotalExitCodes += exitCodesEarned
-		if victory {
-			meta.RunsCompleted++
-		} else {
-			meta.TotalDeaths++
-		}
-		if maxDepthReached > meta.DeepestFloor {
-			meta.DeepestFloor = maxDepthReached
-		}
-
-		if err := s.db.UpdateMetaProgress(ctx, meta); err != nil {
 			log.Error("Failed to update meta progress", "error", err, "user", user.Username)
 			monitoring.CaptureException(err, map[string]string{
-				"operation":   "update_meta_progress_on_run_end",
-				"user":        user.Username,
-				"exit_codes":  fmt.Sprintf("%d", exitCodesEarned),
-				"victory":     fmt.Sprintf("%t", victory),
-				"total_codes": fmt.Sprintf("%d", meta.TotalExitCodes),
+				"operation":  "apply_meta_progress_on_run_end",
+				"user":       user.Username,
+				"exit_codes": fmt.Sprintf("%d", exitCodesEarned),
+				"victory":    fmt.Sprintf("%t", victory),
+				"max_depth":  fmt.Sprintf("%d", maxDepthReached),
 			})
 			return err
 		}
@@ -1119,7 +1178,7 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 
 	// Set up leaderboard submitter - called on death or victory
 	model.SetLeaderboardSubmitter(func(score, floorsCleared, timeSeconds int, class string, seed int64, runType string, victory bool) error {
-		ctx, cancel := context.WithTimeout(context.Background(), dbSaveTimeout)
+		submitCtx, cancel := newTimeoutContext(ctx, dbSaveTimeout)
 		defer cancel()
 
 		entry := &db.LeaderboardEntry{
@@ -1133,7 +1192,7 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 			RunType:       runType,
 		}
 
-		if err := s.db.AddLeaderboardEntry(ctx, entry); err != nil {
+		if err := s.db.AddLeaderboardEntry(submitCtx, entry); err != nil {
 			log.Error("Failed to submit leaderboard entry", "error", err, "user", user.Username)
 			return err
 		}
@@ -1153,11 +1212,11 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 
 	// Set up daily leaderboard fetcher (date-navigable)
 	model.SetDailyLeaderboardFetcher(func(date time.Time, limit int, _ int) ([]ui.LeaderboardEntry, int, *ui.LeaderboardEntry, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		queryCtx, cancel := newTimeoutContext(ctx, 5*time.Second)
 		defer cancel()
 
 		// Get top entries for this date
-		dbEntries, _, err := s.db.GetDailyLeaderboard(ctx, date, limit, nil)
+		dbEntries, _, err := s.db.GetDailyLeaderboard(queryCtx, date, limit, nil)
 		if err != nil {
 			return nil, 0, nil, err
 		}
@@ -1177,7 +1236,7 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 		}
 
 		// Get player's rank for this date
-		playerRank, dbPlayerEntry, err := s.db.GetPlayerDailyRank(ctx, date, user.ID)
+		playerRank, dbPlayerEntry, err := s.db.GetPlayerDailyRank(queryCtx, date, user.ID)
 		if err != nil {
 			return entries, 0, nil, err
 		}
@@ -1199,7 +1258,7 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 	})
 
 	// Set up daily run features
-	dailySeedCtx, dailySeedCancel := context.WithTimeout(context.Background(), dbLoadTimeout)
+	dailySeedCtx, dailySeedCancel := newTimeoutContext(ctx, dbLoadTimeout)
 	defer dailySeedCancel()
 	todaysDailySeed, err := s.db.GetOrCreateDailySeed(dailySeedCtx)
 	if err != nil {
@@ -1210,7 +1269,7 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 	// Check daily run status
 	var dailyRunCompleted bool
 	if todaysDailySeed != 0 {
-		rankCtx, rankCancel := context.WithTimeout(context.Background(), dbLoadTimeout)
+		rankCtx, rankCancel := newTimeoutContext(ctx, dbLoadTimeout)
 		defer rankCancel()
 		rank, entry, err := s.db.GetPlayerDailyRank(rankCtx, time.Now().UTC(), user.ID)
 		if err != nil {
@@ -1226,7 +1285,7 @@ func (s *Server) createGameModel(sess ssh.Session, user *db.User, fingerprint st
 			return fmt.Errorf("no save data to submit")
 		}
 
-		submitCtx, submitCancel := context.WithTimeout(context.Background(), dbSaveTimeout)
+		submitCtx, submitCancel := newTimeoutContext(ctx, dbSaveTimeout)
 		defer submitCancel()
 
 		floorsCleared := abandonedSave.CurrentDepth

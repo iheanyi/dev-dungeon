@@ -790,40 +790,39 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// View-specific input
-	switch m.currentView {
-	case ViewMainMenu:
+	if m.currentView == ViewMainMenu {
 		return m.updateMainMenu(msg)
-	case ViewClassSelect:
+	} else if m.currentView == ViewClassSelect {
 		return m.updateClassSelect(msg)
-	case ViewGame:
+	} else if m.currentView == ViewGame {
 		return m.updateGame(msg)
-	case ViewCombat:
+	} else if m.currentView == ViewCombat {
 		return m.updateCombat(msg)
-	case ViewInventory:
+	} else if m.currentView == ViewInventory {
 		return m.updateInventory(msg)
-	case ViewPause:
+	} else if m.currentView == ViewPause {
 		return m.updatePause(msg)
-	case ViewGameOver:
+	} else if m.currentView == ViewGameOver {
 		return m.updateGameOver(msg)
-	case ViewVictory:
+	} else if m.currentView == ViewVictory {
 		return m.updateGameOver(msg)
-	case ViewAdmin:
+	} else if m.currentView == ViewAdmin {
 		return m.updateAdmin(msg)
-	case ViewHelp:
+	} else if m.currentView == ViewHelp {
 		return m.updateHelp(msg)
-	case ViewMessageHistory:
+	} else if m.currentView == ViewMessageHistory {
 		return m.updateMessageHistory(msg)
-	case ViewIntro:
+	} else if m.currentView == ViewIntro {
 		return m.updateIntro(msg)
-	case ViewShop:
+	} else if m.currentView == ViewShop {
 		return m.updateShop(msg)
-	case ViewUnlockShop:
+	} else if m.currentView == ViewUnlockShop {
 		return m.updateUnlockShop(msg)
-	case ViewLeaderboard:
+	} else if m.currentView == ViewLeaderboard {
 		return m.updateLeaderboard(msg)
-	case ViewDailyLeaderboard:
+	} else if m.currentView == ViewDailyLeaderboard {
 		return m.updateDailyLeaderboard(msg)
-	case ViewConfirmDialog:
+	} else if m.currentView == ViewConfirmDialog {
 		return m.updateConfirmDialog(msg)
 	}
 
