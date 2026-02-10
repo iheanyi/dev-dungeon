@@ -436,39 +436,15 @@ func (s *Server) newGameSession(sess ssh.Session) (tea.Model, []tea.ProgramOptio
 		ctx, cancel := context.WithTimeout(context.Background(), dbSaveTimeout)
 		defer cancel()
 
-		// Get existing meta progress or create new
-		meta, err := s.db.GetMetaProgress(ctx, user.ID)
+		meta, err := s.db.ApplyRunMetaProgress(ctx, user.ID, exitCodesEarned, maxDepthReached, victory)
 		if err != nil {
-			log.Error("Failed to get meta progress", "error", err, "user", user.Username)
-			monitoring.CaptureException(err, map[string]string{
-				"operation": "get_meta_progress_on_run_end",
-				"user":      user.Username,
-			})
-			return err
-		}
-		if meta == nil {
-			meta = &db.MetaProgress{UserID: user.ID}
-		}
-
-		// Update meta progress
-		meta.TotalExitCodes += exitCodesEarned
-		if victory {
-			meta.RunsCompleted++
-		} else {
-			meta.TotalDeaths++
-		}
-		if maxDepthReached > meta.DeepestFloor {
-			meta.DeepestFloor = maxDepthReached
-		}
-
-		if err := s.db.UpdateMetaProgress(ctx, meta); err != nil {
 			log.Error("Failed to update meta progress", "error", err, "user", user.Username)
 			monitoring.CaptureException(err, map[string]string{
-				"operation":   "update_meta_progress_on_run_end",
-				"user":        user.Username,
-				"exit_codes":  fmt.Sprintf("%d", exitCodesEarned),
-				"victory":     fmt.Sprintf("%t", victory),
-				"total_codes": fmt.Sprintf("%d", meta.TotalExitCodes),
+				"operation":  "apply_meta_progress_on_run_end",
+				"user":       user.Username,
+				"exit_codes": fmt.Sprintf("%d", exitCodesEarned),
+				"victory":    fmt.Sprintf("%t", victory),
+				"max_depth":  fmt.Sprintf("%d", maxDepthReached),
 			})
 			return err
 		}

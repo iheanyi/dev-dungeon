@@ -258,6 +258,50 @@ func (c *Client) UpdateMetaProgress(ctx context.Context, meta *MetaProgress) err
 	return err
 }
 
+// ApplyRunMetaProgress atomically applies run completion results to meta-progress.
+// This avoids read-modify-write races when multiple sessions update the same user.
+func (c *Client) ApplyRunMetaProgress(ctx context.Context, userID, exitCodesEarned, maxDepthReached int, victory bool) (*MetaProgress, error) {
+	tx, err := c.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Defensive upsert in case a legacy user row is missing meta_progress.
+	_, err = tx.Exec(ctx, `
+		INSERT INTO meta_progress (user_id)
+		VALUES ($1)
+		ON CONFLICT (user_id) DO NOTHING
+	`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to ensure meta progress row: %w", err)
+	}
+
+	var meta MetaProgress
+	err = tx.QueryRow(ctx, `
+		UPDATE meta_progress
+		SET total_exit_codes = total_exit_codes + $2,
+		    runs_completed = runs_completed + CASE WHEN $4 THEN 1 ELSE 0 END,
+		    total_deaths = total_deaths + CASE WHEN $4 THEN 0 ELSE 1 END,
+		    deepest_floor = GREATEST(deepest_floor, $3)
+		WHERE user_id = $1
+		RETURNING user_id, total_exit_codes, unlocked_classes, permanent_bonuses,
+		          unlocked_items, runs_completed, deepest_floor, total_deaths
+	`, userID, exitCodesEarned, maxDepthReached, victory).Scan(
+		&meta.UserID, &meta.TotalExitCodes, &meta.UnlockedClasses, &meta.PermanentBonuses,
+		&meta.UnlockedItems, &meta.RunsCompleted, &meta.DeepestFloor, &meta.TotalDeaths,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to apply meta progress update: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return &meta, nil
+}
+
 // --- Leaderboard Operations ---
 
 // AddLeaderboardEntry adds or updates a score entry.

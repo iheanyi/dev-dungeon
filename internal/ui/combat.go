@@ -30,22 +30,28 @@ func (m *Model) updateCombat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateSkillSelect(msg)
 	}
 
-	switch msg.String() {
-	case "up", "k", "w":
+	key := normalizeKey(msg.String())
+
+	switch {
+	case m.isMoveUpKey(key):
 		m.combatCursor--
 		if m.combatCursor < 0 {
 			m.combatCursor = 3 // 4 combat options
 		}
-	case "down", "j", "s":
+	case m.isMoveDownKey(key):
 		m.combatCursor++
 		if m.combatCursor > 3 {
 			m.combatCursor = 0
 		}
-	case "left", "h", "right", "l", "tab":
+	case key == "left" || key == "h" || key == "right" || key == "l" || key == "tab":
 		// Cycle through targets
-		m.cycleTarget(msg.String() == "left" || msg.String() == "h")
-	case "enter", " ", "1", "2", "3", "4":
-		return m.executeCombatAction(msg.String())
+		m.cycleTarget(key == "left" || key == "h")
+	case key == "enter" || key == " ":
+		return m.executeCombatAction(key)
+	default:
+		if _, ok := m.combatActionIndexForKey(key); ok {
+			return m.executeCombatAction(key)
+		}
 		// Esc is intentionally not handled in combat - players must use the Flee action
 	}
 	return m, nil
@@ -121,27 +127,29 @@ func (m *Model) updateSkillSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	switch msg.String() {
-	case "up", "k", "w":
+	key := normalizeKey(msg.String())
+
+	switch {
+	case m.isMoveUpKey(key):
 		m.skillCursor--
 		if m.skillCursor < 0 {
 			m.skillCursor = numSkills - 1
 		}
-	case "down", "j", "s":
+	case m.isMoveDownKey(key):
 		m.skillCursor++
 		if m.skillCursor >= numSkills {
 			m.skillCursor = 0
 		}
-	case "enter", " ":
+	case key == "enter" || key == " ":
 		// Execute the selected skill
 		m.selectingSkill = false
 		return m.executeSkill(m.skillCursor)
-	case "esc", "q":
+	case key == "esc" || key == "q":
 		// Cancel skill selection
 		m.selectingSkill = false
-	case "1", "2", "3", "4", "5":
+	case key == "1", key == "2", key == "3", key == "4", key == "5":
 		// Quick select skill by number
-		idx := int(msg.String()[0] - '1')
+		idx := int(key[0] - '1')
 		if idx >= 0 && idx < numSkills {
 			m.selectingSkill = false
 			return m.executeSkill(idx)
@@ -156,10 +164,12 @@ func (m *Model) executeCombatAction(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	normalizedKey := normalizeKey(key)
+
 	// Map keys to actions
 	actionIndex := m.combatCursor
-	if key >= "1" && key <= "4" {
-		actionIndex = int(key[0] - '1')
+	if idx, ok := m.combatActionIndexForKey(normalizedKey); ok {
+		actionIndex = idx
 	}
 
 	var action types.ActionType

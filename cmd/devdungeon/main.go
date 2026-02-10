@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
@@ -118,8 +119,7 @@ func runLocal() {
 	// Create and run the Bubble Tea program
 	p := tea.NewProgram(
 		model,
-		tea.WithAltScreen(),       // Use alternate screen buffer
-		tea.WithMouseCellMotion(), // Enable mouse support
+		tea.WithAltScreen(), // Use alternate screen buffer
 	)
 
 	if _, err := p.Run(); err != nil {
@@ -190,6 +190,50 @@ func runServer(cfg serverConfig) {
 
 	// Use errgroup for coordinated goroutine management
 	g, gctx := errgroup.WithContext(ctx)
+
+	// Periodically clean up expired DB rows to keep tables bounded.
+	g.Go(func() error {
+		runCleanup := func() {
+			cleanupCtx, cleanupCancel := context.WithTimeout(gctx, 10*time.Second)
+			defer cleanupCancel()
+
+			dropsDeleted, dropsErr := dbClient.CleanupExpiredDrops(cleanupCtx)
+			tokensDeleted, tokensErr := dbClient.CleanupExpiredTokens(cleanupCtx)
+			sessionsDeleted, sessionsErr := dbClient.CleanupExpiredSessions(cleanupCtx)
+
+			if dropsErr != nil {
+				log.Warn("Failed to clean up expired world drops", "error", dropsErr)
+			}
+			if tokensErr != nil {
+				log.Warn("Failed to clean up expired auth tokens", "error", tokensErr)
+			}
+			if sessionsErr != nil {
+				log.Warn("Failed to clean up expired web sessions", "error", sessionsErr)
+			}
+
+			totalDeleted := dropsDeleted + tokensDeleted + sessionsDeleted
+			if totalDeleted > 0 {
+				log.Info("Expired data cleanup complete",
+					"worldDropsDeleted", dropsDeleted,
+					"authTokensDeleted", tokensDeleted,
+					"webSessionsDeleted", sessionsDeleted)
+			}
+		}
+
+		// Run one cleanup pass at startup, then on an interval.
+		runCleanup()
+		ticker := time.NewTicker(30 * time.Minute)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-gctx.Done():
+				return nil
+			case <-ticker.C:
+				runCleanup()
+			}
+		}
+	})
 
 	// Start SSH server if enabled
 	var sshSrv *server.Server
@@ -271,7 +315,7 @@ func runServer(cfg serverConfig) {
 
 	// Graceful shutdown
 	log.Info("Shutting down servers...")
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 
 	if httpSrv != nil {

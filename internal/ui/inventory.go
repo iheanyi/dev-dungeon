@@ -14,6 +14,8 @@ func (m *Model) updateInventory(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	key := normalizeKey(msg.String())
+
 	// Total items = inventory + 4 equipment slots
 	invLen := len(m.player.Inventory.Items)
 	totalItems := invLen + 4 // weapon, armor, util1, util2
@@ -21,30 +23,30 @@ func (m *Model) updateInventory(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		totalItems = 4 // At minimum, show equipment slots
 	}
 
-	switch msg.String() {
-	case "esc", "i":
+	switch {
+	case key == "esc" || m.isInventoryKey(key):
 		if m.gameState == types.StateCombat {
 			m.currentView = ViewCombat
 		} else {
 			m.currentView = ViewGame
 		}
-	case "up", "k", "w":
+	case m.isMoveUpKey(key):
 		m.invCursor--
 		if m.invCursor < 0 {
 			m.invCursor = totalItems - 1
 		}
-	case "down", "j", "s":
+	case m.isMoveDownKey(key):
 		m.invCursor++
 		if m.invCursor >= totalItems {
 			m.invCursor = 0
 		}
-	case "enter", " ":
+	case key == "enter" || key == " ":
 		m.useOrEquipItem()
-	case "e":
+	case key == "e":
 		m.equipItem()
-	case "d":
+	case key == "d":
 		m.dropItem()
-	case "u":
+	case key == "u":
 		m.unequipItem()
 	}
 	return m, nil

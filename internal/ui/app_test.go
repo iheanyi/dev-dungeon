@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/iheanyi/devdungeon/internal/config"
 	"github.com/iheanyi/devdungeon/internal/entity"
 	"github.com/iheanyi/devdungeon/internal/game"
@@ -154,6 +155,58 @@ func TestCombatToVictory(t *testing.T) {
 
 	if m.currentView != ViewVictory {
 		t.Error("should transition to victory")
+	}
+}
+
+func TestVictoryScreenEnterReturnsToMainMenu(t *testing.T) {
+	m := newTestModel()
+	m.currentView = ViewVictory
+	m.gameState = types.StateVictory
+
+	msg := tea.KeyMsg{Type: tea.KeyEnter}
+	m.handleKeyPress(msg)
+
+	if m.currentView != ViewMainMenu {
+		t.Errorf("victory Enter should return to main menu, got view %v", m.currentView)
+	}
+	if m.gameState != types.StateMainMenu {
+		t.Errorf("victory Enter should set game state to main menu, got %v", m.gameState)
+	}
+}
+
+func TestGameQuitOpensConfirmDialog(t *testing.T) {
+	m := newTestModelWithEngine(12345)
+	m.currentView = ViewGame
+	m.gameState = types.StateExploring
+
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
+	m.updateGame(msg)
+
+	if m.currentView != ViewConfirmDialog {
+		t.Fatalf("pressing q in game should open confirm dialog, got view %v", m.currentView)
+	}
+	if m.confirmReturnView != ViewGame {
+		t.Fatalf("confirm dialog should return to game, got %v", m.confirmReturnView)
+	}
+}
+
+func TestSaveGameAndReturnToMenuOfflineUsesEngineSave(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	m := newTestModelWithEngine(12345)
+	m.currentView = ViewGame
+	m.gameState = types.StateExploring
+
+	m.saveGameAndReturnToMenu()
+
+	if m.statusMsg != "Game saved." {
+		t.Fatalf("expected successful save status, got %q", m.statusMsg)
+	}
+	if !m.hasValidSave {
+		t.Fatal("hasValidSave should be true after saving to menu")
+	}
+	if m.currentView != ViewMainMenu {
+		t.Fatalf("should return to main menu, got %v", m.currentView)
 	}
 }
 
