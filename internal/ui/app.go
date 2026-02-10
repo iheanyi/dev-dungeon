@@ -691,6 +691,9 @@ func (m *Model) showConfirmDialog(message string, onConfirm func(), returnView V
 }
 
 func normalizeKey(key string) string {
+	if key == " " {
+		return " "
+	}
 	return strings.ToLower(strings.TrimSpace(key))
 }
 
